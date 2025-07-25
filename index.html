@@ -74,6 +74,33 @@
             background: rgba(255,255,255,0.1);
             margin: 16px 0;
         }
+        .tariff-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+        .tariff-card {
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+        }
+        .tariff-title {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .tariff-price {
+            color: var(--primary);
+            font-weight: bold;
+        }
+        .tariff-devices {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+        .best-value {
+            background: rgba(46, 204, 113, 0.1);
+            border: 1px solid var(--primary);
+        }
     </style>
 </head>
 <body>
@@ -87,8 +114,48 @@
 
     <!-- Блок тарифа -->
     <div class="card">
-        <div class="section-title">ТАРИФ</div>
-        <div>100 ₽/мес за 1 устройство</div>
+        <div class="section-title">ТАРИФНЫЕ ПЛАНЫ</div>
+        <div class="tariff-grid">
+            <!-- Базовый тариф -->
+            <div class="tariff-card">
+                <div class="tariff-title">1 месяц</div>
+                <div class="tariff-price">100 ₽</div>
+                <div class="tariff-devices">1 устройство</div>
+                <button class="button" onclick="handleTariffPurchase('1month', 100, 1)">КУПИТЬ</button>
+            </div>
+            
+            <!-- 3 месяца -->
+            <div class="tariff-card">
+                <div class="tariff-title">3 месяца</div>
+                <div class="tariff-price">250 ₽ <span style="font-size:12px;opacity:0.7;">(экономия 50 ₽)</span></div>
+                <div class="tariff-devices">5 устройств</div>
+                <button class="button" onclick="handleTariffPurchase('3months', 250, 5)">КУПИТЬ</button>
+            </div>
+            
+            <!-- 6 месяцев -->
+            <div class="tariff-card best-value">
+                <div class="tariff-title">6 месяцев</div>
+                <div class="tariff-price">500 ₽ <span style="font-size:12px;opacity:0.7;">(экономия 100 ₽)</span></div>
+                <div class="tariff-devices">10 устройств</div>
+                <button class="button" onclick="handleTariffPurchase('6months', 500, 10)">КУПИТЬ</button>
+            </div>
+            
+            <!-- 1 год -->
+            <div class="tariff-card">
+                <div class="tariff-title">1 год</div>
+                <div class="tariff-price">1100 ₽ <span style="font-size:12px;opacity:0.7;">(экономия 100 ₽)</span></div>
+                <div class="tariff-devices">15 устройств</div>
+                <button class="button" onclick="handleTariffPurchase('1year', 1100, 15)">КУПИТЬ</button>
+            </div>
+            
+            <!-- Безлимит -->
+            <div class="tariff-card">
+                <div class="tariff-title">Безлимит</div>
+                <div class="tariff-price">2000 ₽</div>
+                <div class="tariff-devices">Без ограничений по устройствам</div>
+                <button class="button" onclick="handleTariffPurchase('unlimited', 2000, 999)">КУПИТЬ</button>
+            </div>
+        </div>
     </div>
 
     <div class="divider"></div>
@@ -123,6 +190,16 @@
             Telegram.WebApp.sendData(JSON.stringify({
                 action: 'payment',
                 amount: 100
+            }));
+        }
+
+        // Обработка покупки тарифа
+        function handleTariffPurchase(tariffId, amount, devices) {
+            Telegram.WebApp.sendData(JSON.stringify({
+                action: 'purchase_tariff',
+                tariff: tariffId,
+                amount: amount,
+                devices: devices
             }));
         }
     </script>
