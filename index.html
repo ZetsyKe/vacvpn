@@ -7,7 +7,7 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            --primary: #B0CB1F; /* Зеленый акцент */
+            --primary: #2ECC71; /* Зеленый акцент */
             --dark: #121212;    /* Тёмный фон */
             --text: #FFFFFF;    /* Белый текст */
             --card: #1E1E1E;    /* Карточки */
@@ -19,6 +19,14 @@
             padding: 16px;
             margin: 0;
             line-height: 1.5;
+            position: relative;
+        }
+        .logo {
+            position: absolute;
+            top: 48px;
+            right: 48px;
+            height: 96px;
+            width: auto;
         }
         .card {
             background: var(--card);
@@ -100,6 +108,9 @@
     </style>
 </head>
 <body>
+    <!-- Логотип в правом верхнем углу -->
+    <img src="C:\Users\rogov\Downloads\Airbrush-Image-Enhancer-1753455007914.png" alt="VAC VPN Logo" class="logo">
+
     <!-- Блок баланса -->
     <div class="card">
         <div class="section-title">БАЛАНС</div>
@@ -108,27 +119,48 @@
         <div class="warning">Недостаточно средств. Аккаунт приостановлен.</div>
     </div>
 
-    <!-- Блок тарифа -->
+    <!-- Остальной код остается без изменений -->
     <div class="card">
         <div class="section-title">ТАРИФНЫЕ ПЛАНЫ</div>
         <div class="tariff-grid">
             <!-- Базовый тариф -->
             <div class="tariff-card">
                 <div class="tariff-title">1 месяц</div>
-                <div class="tariff-price">150 ₽</div>
+                <div class="tariff-price">100 ₽</div>
                 <div class="tariff-devices">1 устройство</div>
                 <button class="button" onclick="handleTariffPurchase('1month', 100, 1)">КУПИТЬ</button>
             </div>
             
+            <!-- 3 месяца -->
+            <div class="tariff-card">
+                <div class="tariff-title">3 месяца</div>
+                <div class="tariff-price">250 ₽ <span style="font-size:12px;opacity:0.7;">(экономия 50 ₽)</span></div>
+                <div class="tariff-devices">5 устройств</div>
+                <button class="button" onclick="handleTariffPurchase('3months', 250, 5)">КУПИТЬ</button>
+            </div>
             
-            
+            <!-- 6 месяцев -->
+            <div class="tariff-card">
+                <div class="tariff-title">6 месяцев</div>
+                <div class="tariff-price">500 ₽ <span style="font-size:12px;opacity:0.7;">(экономия 100 ₽)</span></div>
+                <div class="tariff-devices">10 устройств</div>
+                <button class="button" onclick="handleTariffPurchase('6months', 500, 10)">КУПИТЬ</button>
+            </div>
             
             <!-- 1 год -->
             <div class="tariff-card">
                 <div class="tariff-title">1 год</div>
-                <div class="tariff-price">1300 ₽ <span style="font-size:12px;opacity:0.7;"></span></div>
-                <div class="tariff-devices">1 устройство</div>
+                <div class="tariff-price">1100 ₽ <span style="font-size:12px;opacity:0.7;">(экономия 100 ₽)</span></div>
+                <div class="tariff-devices">15 устройств</div>
                 <button class="button" onclick="handleTariffPurchase('1year', 1100, 15)">КУПИТЬ</button>
+            </div>
+            
+            <!-- Безлимит -->
+            <div class="tariff-card">
+                <div class="tariff-title">Безлимит</div>
+                <div class="tariff-price">2000 ₽</div>
+                <div class="tariff-devices">Без ограничений по устройствам</div>
+                <button class="button" onclick="handleTariffPurchase('unlimited', 2000, 999)">КУПИТЬ</button>
             </div>
         </div>
     </div>
