@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VAC VPN</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --primary: #2ECC71; /* Зеленый акцент */
+            --dark: #121212;    /* Тёмный фон */
+            --text: #FFFFFF;    /* Белый текст */
+            --card: #1E1E1E;    /* Карточки */
+        }
+        body {
+            font-family: 'Arial', sans-serif;
+            background: var(--dark);
+            color: var(--text);
+            padding: 16px;
+            margin: 0;
+            line-height: 1.5;
+        }
+        .card {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .balance {
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--primary);
+            margin: 8px 0;
+        }
+        .button {
+            display: block;
+            background: var(--primary);
+            color: var(--dark);
+            text-align: center;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 16px 0;
+            text-decoration: none;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .button:hover {
+            background: #25A25A;
+            transform: translateY(-2px);
+        }
+        .warning {
+            color: #FF6B6B;
+            font-weight: bold;
+            margin: 8px 0;
+        }
+        .section-title {
+            font-size: 18px;
+            color: var(--primary);
+            margin-bottom: 12px;
+        }
+        .ref-link {
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 6px;
+            word-break: break-all;
+            font-family: monospace;
+            margin: 12px 0;
+        }
+        .divider {
+            height: 1px;
+            background: rgba(255,255,255,0.1);
+            margin: 16px 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Блок баланса -->
+    <div class="card">
+        <div class="section-title">БАЛАНС</div>
+        <div class="balance">0 ₽</div>
+        <button class="button" onclick="handlePayment()">ПОПОЛНИТЬ БАЛАНС</button>
+        <div class="warning">Недостаточно средств. Аккаунт приостановлен.</div>
+    </div>
+
+    <!-- Блок тарифа -->
+    <div class="card">
+        <div class="section-title">ТАРИФ</div>
+        <div>100 ₽/мес за 1 устройство</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Реферальная программа -->
+    <div class="card">
+        <div class="section-title">ПРИГЛАСИ ДРУГА</div>
+        <p>Получи 50 ₽ за каждого друга</p>
+        <div class="ref-link" id="refLink"></div>
+        <button class="button" onclick="copyRefLink()">СКОПИРОВАТЬ ССЫЛКУ</button>
+    </div>
+
+    <script>
+        // Инициализация Telegram Web App
+        Telegram.WebApp.ready();
+        Telegram.WebApp.expand();
+
+        // Генерация реферальной ссылки
+        const userId = Telegram.WebApp.initDataUnsafe.user?.id || '12345';
+        document.getElementById('refLink').textContent = 
+            `https://t.me/vacvpnbot?start=ref_${userId}`;
+
+        // Копирование ссылки
+        function copyRefLink() {
+            const link = document.getElementById('refLink').textContent;
+            navigator.clipboard.writeText(link);
+            Telegram.WebApp.showAlert('Ссылка скопирована!');
+        }
+
+        // Обработка платежа
+        function handlePayment() {
+            Telegram.WebApp.sendData(JSON.stringify({
+                action: 'payment',
+                amount: 100
+            }));
+        }
+    </script>
+</body>
+</html>
