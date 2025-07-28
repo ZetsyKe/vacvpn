@@ -56,7 +56,7 @@
     .menu-dropdown a {
       display: block;
       padding: 12px 16px;
-      color: #FFF;
+      color: #B0CB1F;
       text-decoration: none;
       font-size: 14px;
       font-weight: 500;
@@ -214,7 +214,7 @@
     <img src="Airbrush-Image-Enhancer-1753455007914.png" alt="Logo" class="logo">
     <div style="display:flex;align-items:center;">
       <div class="user-name" id="userName">Пользователь</div>
-      <div class="menu-btn" onclick="toggleMenu()">☰</div>
+      <div class="menu-btn" onclick="toggleMenu()">≡</div>
     </div>
   </div>
 
@@ -260,7 +260,7 @@
       </div>
       <div class="ref-link-box">
         <span id="refLink">https://t.me/vacvpnbot?start=ref_12345</span>
-        <div class="copy-icon" onclick="copyRef()"></div>
+        <div class="copy-icon" onclick="copyRef()">📋</div>
       </div>
     </div>
   </div>
@@ -283,6 +283,14 @@
       const m = document.getElementById('menuDropdown');
       m.style.display = m.style.display === 'block' ? 'none' : 'block';
     }
+
+    document.addEventListener('click', function(e) {
+      const menu = document.getElementById('menuDropdown');
+      const btn = document.querySelector('.menu-btn');
+      if (!menu.contains(e.target) && !btn.contains(e.target)) {
+        menu.style.display = 'none';
+      }
+    });
 
     function showSupportChat(){ Telegram.WebApp.openTelegramLink('https://t.me/vacvpn_support'); toggleMenu(); }
     function showRules(){ Telegram.WebApp.showAlert('Правила использования'); toggleMenu(); }
