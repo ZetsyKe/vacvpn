@@ -1,267 +1,313 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VAC VPN</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://yookassa.ru/checkout-widget/v1/checkout-widget.js"></script>
-    <style>
-        :root {
-            --primary: #B0CB1F; /* Зеленый акцент */
-            --dark: #121212;    /* Тёмный фон */
-            --text: #FFFFFF;    /* Белый текст */
-            --card: #1E1E1E;    /* Карточки */
-        }
-        body {
-            font-family: 'Arial', sans-serif;
-            background: var(--dark);
-            color: var(--text);
-            padding: 16px;
-            margin: 0;
-            line-height: 1.5;
-            position: relative;
-        }
-        .logo {
-            position: absolute;
-            top: 48px;
-            right: 48px;
-            height: 96px;
-            width: auto;
-        }
-        .card {
-            background: var(--card);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 16px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        }
-        .balance {
-            font-size: 28px;
-            font-weight: bold;
-            color: var(--primary);
-            margin: 8px 0;
-        }
-        .button {
-            display: block;
-            background: var(--primary);
-            color: var(--dark);
-            text-align: center;
-            padding: 12px;
-            border-radius: 8px;
-            margin: 16px 0;
-            text-decoration: none;
-            font-weight: bold;
-            border: none;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        .button:hover {
-            background: #25A25A;
-            transform: translateY(-2px);
-        }
-        .warning {
-            color: #FF6B6B;
-            font-weight: bold;
-            margin: 8px 0;
-        }
-        .section-title {
-            font-size: 18px;
-            color: var(--primary);
-            margin-bottom: 12px;
-        }
-        .ref-link {
-            background: rgba(0,0,0,0.3);
-            padding: 10px;
-            border-radius: 6px;
-            word-break: break-all;
-            font-family: monospace;
-            margin: 12px 0;
-        }
-        .divider {
-            height: 1px;
-            background: rgba(255,255,255,0.1);
-            margin: 16px 0;
-        }
-        .tariff-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 12px;
-        }
-        .tariff-card {
-            background: rgba(0,0,0,0.2);
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 8px;
-        }
-        .tariff-title {
-            font-weight: bold;
-            margin-bottom: 4px;
-        }
-        .tariff-price {
-            color: var(--primary);
-            font-weight: bold;
-        }
-        .tariff-devices {
-            font-size: 14px;
-            opacity: 0.8;
-        }
-        .payment-modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.8);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-        .payment-container {
-            background: var(--card);
-            padding: 20px;
-            border-radius: 12px;
-            width: 90%;
-            max-width: 400px;
-        }
-        .close-btn {
-            float: right;
-            cursor: pointer;
-            font-size: 20px;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>VAC VPN</title>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --primary: #B0CB1F;
+      --bg: #121212;
+      --text: #FFFFFF;
+      --card: #1E1E1E;
+    }
+    * {
+      font-family: 'Montserrat', sans-serif;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+    }
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .logo {
+      height: 40px;
+    }
+    .user-name {
+      font-size: 16px;
+      font-weight: 600;
+      margin-right: 12px;
+    }
+    .menu-btn {
+      font-size: 24px;
+      cursor: pointer;
+    }
+    .menu-dropdown {
+      position: absolute;
+      top: 60px;
+      right: 16px;
+      background: #1E1E1E;
+      border-radius: 8px;
+      display: none;
+      flex-direction: column;
+      min-width: 200px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      z-index: 100;
+    }
+    .menu-dropdown a {
+      display: block;
+      padding: 12px 16px;
+      color: #FFF;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .menu-dropdown a:hover {
+      background: rgba(255,255,255,0.1);
+    }
+    .menu-dropdown .divider {
+      height: 1px;
+      background: rgba(255,255,255,0.1);
+      margin: 4px 0;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .balance {
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--primary);
+    }
+    .balance-days {
+      font-size: 14px;
+      opacity: 0.8;
+      margin-bottom: 16px;
+      font-weight: 500;
+    }
+    .button-yellow {
+      background: var(--primary);
+      color: var(--bg);
+      font-weight: 700;
+      padding: 12px;
+      text-align: center;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      cursor: pointer;
+    }
+    .button-outline {
+      background: transparent;
+      color: var(--primary);
+      border: 2px solid var(--primary);
+      padding: 12px;
+      text-align: center;
+      font-weight: 700;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      cursor: pointer;
+    }
+    .tariff-grid {
+      display: grid;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+    .tariff-card {
+      position: relative;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 10px;
+      padding: 16px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .tariff-card.selected {
+      background: rgba(176, 203, 31, 0.1);
+    }
+    .tariff-dot {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid var(--primary);
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    .tariff-card.selected .tariff-dot {
+      background: var(--primary);
+      box-shadow: 0 0 6px var(--primary);
+    }
+    .tariff-label {
+      font-weight: 700;
+      font-size: 16px;
+      margin-bottom: 6px;
+    }
+    .tariff-price {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--primary);
+      margin: 4px 0;
+    }
+    .tariff-period {
+      font-size: 14px;
+      opacity: 0.8;
+      margin-left: 4px;
+    }
+    .tariff-trial {
+      display: inline-block;
+      padding: 4px 12px;
+      background: var(--primary);
+      color: var(--bg);
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .tariff-description {
+      font-size: 14px;
+      opacity: 0.8;
+    }
+    .referral-block {
+      border: 1px solid var(--primary);
+      border-radius: 10px;
+      padding: 12px;
+      margin: 12px 0;
+    }
+    .referral-description {
+      font-size: 13px;
+      opacity: 0.9;
+      margin-bottom: 8px;
+    }
+    .ref-link-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #2A2A2A;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 13px;
+    }
+    .copy-icon {
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 16px;
+      margin-left: 10px;
+      color: var(--primary);
+    }
+    .button-help {
+      font-size: 16px;
+      background: none;
+      border: none;
+      color: var(--primary);
+      font-weight: 600;
+      width: 100%;
+      padding: 16px 0;
+      text-align: center;
+      cursor: pointer;
+    }
+  </style>
 </head>
 <body>
-    <!-- Логотип в правом верхнем углу -->
-    <img src="Airbrush-Image-Enhancer-1753455007914.png" alt="VAC VPN Logo" class="logo">
 
-    <!-- Блок баланса -->
-    <div class="card">
-        <div class="section-title">БАЛАНС</div>
-        <div class="balance" id="userBalance">0 ₽</div>
-        <button class="button" onclick="showPaymentModal()">ПОПОЛНИТЬ БАЛАНС</button>
-        <div class="warning" id="balanceWarning">Недостаточно средств. Аккаунт приостановлен.</div>
+  <div class="top-bar">
+    <img src="Airbrush-Image-Enhancer-1753455007914.png" alt="Logo" class="logo">
+    <div style="display:flex;align-items:center;">
+      <div class="user-name" id="userName">Пользователь</div>
+      <div class="menu-btn" onclick="toggleMenu()">☰</div>
     </div>
+  </div>
 
-    <!-- Модальное окно для платежей -->
-    <div class="payment-modal" id="paymentModal">
-        <div class="payment-container">
-            <span class="close-btn" onclick="closePaymentModal()">&times;</span>
-            <h3>Пополнение баланса</h3>
-            <div class="card">
-                <label for="amount">Сумма пополнения (₽):</label>
-                <input type="number" id="amount" min="10" value="100" class="card" style="width: 100%; padding: 10px; margin: 10px 0; color: var(--text); background: var(--dark); border: 1px solid var(--primary);">
-                <button class="button" onclick="initiatePayment()">ОПЛАТИТЬ</button>
-            </div>
-            <div id="paymentWidget"></div>
-        </div>
-    </div>
-
-    <!-- Тарифные планы -->
-    <div class="card">
-        <div class="section-title">ТАРИФНЫЕ ПЛАНЫ</div>
-        <div class="tariff-grid">
-            <!-- Базовый тариф -->
-            <div class="tariff-card">
-                <div class="tariff-title">1 месяц</div>
-                <div class="tariff-price">150 ₽</div>
-                <div class="tariff-devices">1 устройство</div>
-                <button class="button" onclick="handleTariffPurchase('1month', 150, 1)">КУПИТЬ</button>
-            </div>
-            <!-- 1 год -->
-            <div class="tariff-card">
-                <div class="tariff-title">1 год</div>
-                <div class="tariff-price">1300 ₽ <span style="font-size:12px;opacity:0.7;"></span></div>
-                <div class="tariff-devices">1 устройств</div>
-                <button class="button" onclick="handleTariffPurchase('1year', 1300, 15)">КУПИТЬ</button>
-            </div>
-        </div>
-    </div>
-
+  <div class="menu-dropdown" id="menuDropdown">
+    <a href="#" onclick="showSupportChat()">Чат поддержки</a>
+    <a href="#" onclick="showRules()">Правила</a>
     <div class="divider"></div>
+    <a href="#" onclick="logout()">Выход</a>
+  </div>
 
-    <!-- Реферальная программа -->
-    <div class="card">
-        <div class="section-title">ПРИГЛАСИ ДРУГА</div>
-        <p>Получи 50 ₽ за каждого друга</p>
-        <div class="ref-link" id="refLink"></div>
-        <button class="button" onclick="copyRefLink()">СКОПИРОВАТЬ ССЫЛКУ</button>
+  <div class="card">
+    <div class="balance" id="userBalance">150₽</div>
+    <div class="balance-days" id="balanceDays">Хватит на ~16 дней</div>
+    <div class="button-yellow" onclick="showPaymentModal()">ПОПОЛНИТЬ БАЛАНС</div>
+    <div class="button-outline" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</div>
+  </div>
+
+  <div class="card" id="tariffBlock">
+    <div class="tariff-grid">
+      <div class="tariff-card" id="tariff1month" onclick="selectTariff('1month')">
+        <div class="tariff-dot"></div>
+        <div class="tariff-label">Месячный</div>
+        <div class="tariff-price">150₽<span class="tariff-period">/мес</span></div>
+        <div class="tariff-trial">Пробная версия на 1 неделю</div>
+        <div class="tariff-description">Можно отменить в любое время.</div>
+      </div>
+      <div class="tariff-card" id="tariff1year" onclick="selectTariff('1year')">
+        <div class="tariff-dot"></div>
+        <div class="tariff-label">Годовой</div>
+        <div class="tariff-price">1300₽<span class="tariff-period">/год</span></div>
+        <div class="tariff-trial">Пробная версия на 1 неделю</div>
+        <div class="tariff-description">Можно отменить в любое время.</div>
+      </div>
     </div>
+  </div>
 
-    <script>
-        // Инициализация Telegram Web App
-        Telegram.WebApp.ready();
-        Telegram.WebApp.expand();
+  <div class="card">
+    <div class="referral-block">
+      <div class="referral-description">
+        Отправьте ссылку другу. Когда ваш друг зайдёт в наш сервис и зарегистрируется, вы получите 50₽ на баланс!<br><br>
+        Скопируйте и отправьте ссылку другу:
+      </div>
+      <div class="ref-link-box">
+        <span id="refLink">https://t.me/vacvpnbot?start=ref_12345</span>
+        <div class="copy-icon" onclick="copyRef()">📋</div>
+      </div>
+    </div>
+  </div>
 
-        // Генерация реферальной ссылки
-        const userId = Telegram.WebApp.initDataUnsafe.user?.id || '12345';
-        document.getElementById('refLink').textContent = 
-            `https://t.me/vacvpnbot?start=ref_${userId}`;
+  <div class="card">
+    <button class="button-help" onclick="showHelp()">Помощь</button>
+  </div>
 
-        // Копирование ссылки
-        function copyRefLink() {
-            const link = document.getElementById('refLink').textContent;
-            navigator.clipboard.writeText(link);
-            Telegram.WebApp.showAlert('Ссылка скопирована!');
-        }
+  <script>
+    Telegram.WebApp.ready();
+    Telegram.WebApp.expand();
 
-        // Показ модального окна для платежа
-        function showPaymentModal() {
-            document.getElementById('paymentModal').style.display = 'flex';
-        }
+    const user = Telegram.WebApp.initDataUnsafe.user || {};
+    const name = user.first_name || 'Пользователь';
+    const id = user.id || '12345';
+    document.getElementById('userName').textContent = name;
+    document.getElementById('refLink').textContent = "https://t.me/vacvpnbot?start=ref_" + id;
 
-        // Закрытие модального окна
-        function closePaymentModal() {
-            document.getElementById('paymentModal').style.display = 'none';
-        }
+    function toggleMenu(){
+      const m = document.getElementById('menuDropdown');
+      m.style.display = m.style.display === 'block' ? 'none' : 'block';
+    }
 
-        // Инициализация платежа через ЮКассу
-        function initiatePayment() {
-            const amount = document.getElementById('amount').value;
-            if (!amount || amount < 10) {
-                Telegram.WebApp.showAlert('Минимальная сумма платежа - 10 рублей');
-                return;
-            }
+    function showSupportChat(){ Telegram.WebApp.openTelegramLink('https://t.me/vacvpn_support'); toggleMenu(); }
+    function showRules(){ Telegram.WebApp.showAlert('Правила использования'); toggleMenu(); }
+    function logout(){ Telegram.WebApp.close(); }
 
-            // Здесь нужно заменить YOUR_SHOP_ID и YOUR_SECRET_KEY на реальные данные
-            const shopId = 'YOUR_SHOP_ID';
-            const secretKey = 'YOUR_SECRET_KEY';
-            
-            // В реальном приложении вы должны отправить запрос на ваш сервер
-            // для создания платежа и получения payment_id
-            // Это пример для демонстрации
-            
-            const paymentWidget = new window.YooMoneyCheckoutWidget({
-                confirmation_token: 'ct-123456789012', // В реальности получаете с вашего сервера
-                return_url: 'https://your-site.com/success', // URL для возврата после оплаты
-                error_callback: function(error) {
-                    console.error('Payment error:', error);
-                    Telegram.WebApp.showAlert('Ошибка при оплате: ' + error.message);
-                }
-            });
+    function selectTariff(id){
+      document.querySelectorAll('.tariff-card').forEach(c => c.classList.remove('selected'));
+      document.getElementById('tariff' + id).classList.add('selected');
+    }
 
-            // Отображаем виджет оплаты
-            paymentWidget.render('paymentWidget');
-        }
+    function copyRef(){
+      const link = document.getElementById('refLink').textContent;
+      navigator.clipboard.writeText(link);
+      Telegram.WebApp.showAlert('Ссылка скопирована!');
+    }
 
-        // Обработка покупки тарифа
-        function handleTariffPurchase(tariffId, amount, devices) {
-            // Проверяем баланс (в реальном приложении это делается на сервере)
-            const balance = parseFloat(document.getElementById('userBalance').textContent);
-            
-            if (balance >= amount) {
-                Telegram.WebApp.sendData(JSON.stringify({
-                    action: 'purchase_tariff',
-                    tariff: tariffId,
-                    amount: amount,
-                    devices: devices
-                }));
-            } else {
-                Telegram.WebApp.showAlert('Недостаточно средств на балансе');
-                showPaymentModal();
-            }
-        }
-    </script>
+    function showHelp(){ Telegram.WebApp.showAlert('Раздел помощи'); }
+
+    function showPaymentModal() {
+      Telegram.WebApp.showAlert('Открывается окно оплаты...');
+    }
+
+    function scrollToTariffs() {
+      document.getElementById('tariffBlock').scrollIntoView({behavior:'smooth'});
+    }
+  </script>
+
 </body>
 </html>
