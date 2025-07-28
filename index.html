@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VAC VPN</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://yookassa.ru/checkout-widget/v1/checkout-widget.js"></script>
     <style>
         :root {
             --primary: #B0CB1F; /* Зеленый акцент */
@@ -105,6 +106,30 @@
             font-size: 14px;
             opacity: 0.8;
         }
+        .payment-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .payment-container {
+            background: var(--card);
+            padding: 20px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 400px;
+        }
+        .close-btn {
+            float: right;
+            cursor: pointer;
+            font-size: 20px;
+        }
     </style>
 </head>
 <body>
@@ -114,12 +139,26 @@
     <!-- Блок баланса -->
     <div class="card">
         <div class="section-title">БАЛАНС</div>
-        <div class="balance">0 ₽</div>
-        <button class="button" onclick="handlePayment()">ПОПОЛНИТЬ БАЛАНС</button>
-        <div class="warning">Недостаточно средств. Аккаунт приостановлен.</div>
+        <div class="balance" id="userBalance">0 ₽</div>
+        <button class="button" onclick="showPaymentModal()">ПОПОЛНИТЬ БАЛАНС</button>
+        <div class="warning" id="balanceWarning">Недостаточно средств. Аккаунт приостановлен.</div>
     </div>
 
-    <!-- Остальной код остается без изменений -->
+    <!-- Модальное окно для платежей -->
+    <div class="payment-modal" id="paymentModal">
+        <div class="payment-container">
+            <span class="close-btn" onclick="closePaymentModal()">&times;</span>
+            <h3>Пополнение баланса</h3>
+            <div class="card">
+                <label for="amount">Сумма пополнения (₽):</label>
+                <input type="number" id="amount" min="10" value="100" class="card" style="width: 100%; padding: 10px; margin: 10px 0; color: var(--text); background: var(--dark); border: 1px solid var(--primary);">
+                <button class="button" onclick="initiatePayment()">ОПЛАТИТЬ</button>
+            </div>
+            <div id="paymentWidget"></div>
+        </div>
+    </div>
+
+    <!-- Тарифные планы -->
     <div class="card">
         <div class="section-title">ТАРИФНЫЕ ПЛАНЫ</div>
         <div class="tariff-grid">
@@ -128,14 +167,14 @@
                 <div class="tariff-title">1 месяц</div>
                 <div class="tariff-price">150 ₽</div>
                 <div class="tariff-devices">1 устройство</div>
-                <button class="button" onclick="handleTariffPurchase('1month', 100, 1)">КУПИТЬ</button>
+                <button class="button" onclick="handleTariffPurchase('1month', 150, 1)">КУПИТЬ</button>
             </div>
             <!-- 1 год -->
             <div class="tariff-card">
                 <div class="tariff-title">1 год</div>
                 <div class="tariff-price">1300 ₽ <span style="font-size:12px;opacity:0.7;"></span></div>
                 <div class="tariff-devices">1 устройств</div>
-                <button class="button" onclick="handleTariffPurchase('1year', 1100, 15)">КУПИТЬ</button>
+                <button class="button" onclick="handleTariffPurchase('1year', 1300, 15)">КУПИТЬ</button>
             </div>
         </div>
     </div>
@@ -167,22 +206,61 @@
             Telegram.WebApp.showAlert('Ссылка скопирована!');
         }
 
-        // Обработка платежа
-        function handlePayment() {
-            Telegram.WebApp.sendData(JSON.stringify({
-                action: 'payment',
-                amount: 100
-            }));
+        // Показ модального окна для платежа
+        function showPaymentModal() {
+            document.getElementById('paymentModal').style.display = 'flex';
+        }
+
+        // Закрытие модального окна
+        function closePaymentModal() {
+            document.getElementById('paymentModal').style.display = 'none';
+        }
+
+        // Инициализация платежа через ЮКассу
+        function initiatePayment() {
+            const amount = document.getElementById('amount').value;
+            if (!amount || amount < 10) {
+                Telegram.WebApp.showAlert('Минимальная сумма платежа - 10 рублей');
+                return;
+            }
+
+            // Здесь нужно заменить YOUR_SHOP_ID и YOUR_SECRET_KEY на реальные данные
+            const shopId = 'YOUR_SHOP_ID';
+            const secretKey = 'YOUR_SECRET_KEY';
+            
+            // В реальном приложении вы должны отправить запрос на ваш сервер
+            // для создания платежа и получения payment_id
+            // Это пример для демонстрации
+            
+            const paymentWidget = new window.YooMoneyCheckoutWidget({
+                confirmation_token: 'ct-123456789012', // В реальности получаете с вашего сервера
+                return_url: 'https://your-site.com/success', // URL для возврата после оплаты
+                error_callback: function(error) {
+                    console.error('Payment error:', error);
+                    Telegram.WebApp.showAlert('Ошибка при оплате: ' + error.message);
+                }
+            });
+
+            // Отображаем виджет оплаты
+            paymentWidget.render('paymentWidget');
         }
 
         // Обработка покупки тарифа
         function handleTariffPurchase(tariffId, amount, devices) {
-            Telegram.WebApp.sendData(JSON.stringify({
-                action: 'purchase_tariff',
-                tariff: tariffId,
-                amount: amount,
-                devices: devices
-            }));
+            // Проверяем баланс (в реальном приложении это делается на сервере)
+            const balance = parseFloat(document.getElementById('userBalance').textContent);
+            
+            if (balance >= amount) {
+                Telegram.WebApp.sendData(JSON.stringify({
+                    action: 'purchase_tariff',
+                    tariff: tariffId,
+                    amount: amount,
+                    devices: devices
+                }));
+            } else {
+                Telegram.WebApp.showAlert('Недостаточно средств на балансе');
+                showPaymentModal();
+            }
         }
     </script>
 </body>
