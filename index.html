@@ -30,7 +30,7 @@
       margin-bottom: 16px;
     }
     .logo {
-      height: 100px;
+      height: 40px;
     }
     .user-name {
       font-size: 16px;
@@ -249,6 +249,7 @@
         <div class="tariff-description">Можно отменить в любое время.</div>
       </div>
     </div>
+    <button class="button-yellow" id="subscribeBtn" style="display:none;" onclick="activateSubscription()">ПОДКЛЮЧИТЬ ПОДПИСКУ</button>
   </div>
 
   <div class="card">
@@ -290,6 +291,7 @@
     function selectTariff(id){
       document.querySelectorAll('.tariff-card').forEach(c => c.classList.remove('selected'));
       document.getElementById('tariff' + id).classList.add('selected');
+      document.getElementById('subscribeBtn').style.display = 'block';
     }
 
     function copyRef(){
@@ -306,6 +308,15 @@
 
     function scrollToTariffs() {
       document.getElementById('tariffBlock').scrollIntoView({behavior:'smooth'});
+    }
+
+    function activateSubscription() {
+      const selected = document.querySelector('.tariff-card.selected');
+      if (!selected) {
+        Telegram.WebApp.showAlert("Выберите тариф");
+        return;
+      }
+      Telegram.WebApp.showAlert("Подписка активирована!");
     }
   </script>
 
