@@ -29,9 +29,6 @@ bot = Bot(
     default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# ======================
-# КЛАВИАТУРЫ (полностью сохранены)
-# ======================
 def get_main_keyboard():
     builder = ReplyKeyboardBuilder()
     builder.row(
@@ -118,9 +115,6 @@ def get_referrals_stats_keyboard():
     )
     return builder.as_markup()
 
-# ======================
-# ОБНОВЛЕННЫЕ ТЕКСТОВЫЕ СООБЩЕНИЯ
-# ======================
 def get_welcome_message(user_name: str, is_referral: bool = False):
     return f"""
 <b>Рады видеть вас снова, {user_name}!</b>
@@ -188,9 +182,6 @@ def get_referrals_stats_message(user_id: int):
     
     return message
 
-# ======================
-# ОБРАБОТЧИКИ КОМАНД И КНОПОК (полностью сохранены)
-# ======================
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user = message.from_user
@@ -282,9 +273,7 @@ async def my_referrals_handler(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-# ======================
-# ЗАПУСК БОТА (без изменений)
-# ======================
+
 async def main():
     await bot.set_chat_menu_button(
         menu_button=types.MenuButtonWebApp(
