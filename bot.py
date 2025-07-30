@@ -8,11 +8,9 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder, 
 from dotenv import load_dotenv
 from typing import Dict, List
 
-# Загрузка переменных окружения из key.env
-load_dotenv("backend/key.env")
 
 # Получение токена из окружения
-TOKEN = os.getenv("TOKEN")
+TOKEN = os.environ.get("TOKEN")
 WEB_APP_URL = "https://vacvpn.vercel.app"
 SUPPORT_NICK = "@vacvpn_support"
 TG_CHANNEL = "@vac_vpn"
