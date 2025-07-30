@@ -305,9 +305,19 @@
       }
     });
 
-    function showSupportChat(){ Telegram.WebApp.openTelegramLink('https://t.me/vacvpn_support'); toggleMenu(); }
-    function showRules(){ Telegram.WebApp.showAlert('Правила использования'); toggleMenu(); }
-    function logout(){ Telegram.WebApp.close(); }
+    function showSupportChat(){
+      Telegram.WebApp.openTelegramLink('https://t.me/vacvpn_support');
+      toggleMenu();
+    }
+
+    function showRules(){
+      Telegram.WebApp.showAlert('Правила использования');
+      toggleMenu();
+    }
+
+    function logout(){
+      Telegram.WebApp.close();
+    }
 
     function selectTariff(id){
       document.querySelectorAll('.tariff-card').forEach(c => c.classList.remove('selected'));
@@ -321,11 +331,13 @@
       Telegram.WebApp.showAlert('Ссылка скопирована!');
     }
 
-    function showHelp(){ Telegram.WebApp.showAlert('Раздел помощи'); }
+    function showHelp(){
+      Telegram.WebApp.showAlert('Раздел помощи');
+    }
 
     async function showPaymentModal() {
       try {
-        const response = await fetch("https://warm-dots-make.loca.lt/create-payment", {
+        const response = await fetch("https://slick-pears-return.loca.lt", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
