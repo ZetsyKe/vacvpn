@@ -3,10 +3,9 @@ import uuid
 import yookassa
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path="backend/key.env")
 
-yookassa.Configuration.account_id = os.getenv("SHOP_ID")
-yookassa.Configuration.secret_key = os.getenv("API_KEY")
+yookassa.Configuration.account_id = os.environ.get("SHOP_ID")
+yookassa.Configuration.secret_key = os.environ.get("API_KEY")
 
 
 def create_payment(amount, return_url):
