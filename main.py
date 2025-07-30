@@ -5,10 +5,20 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 from payment import create_payment
+from fastapi.middleware.cors import CORSMiddleware
 
-load_dotenv("backend/key.env")  # путь к .env
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # или укажи конкретный домен, если хочешь безопаснее
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+load_dotenv("backend/key.env")  # путь к .env
 
 BASE_DIR = Path(__file__).resolve().parent
 
