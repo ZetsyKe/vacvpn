@@ -26,8 +26,9 @@
     .top-bar {
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       margin-bottom: 16px;
+      margin-top: -10px;
     }
     .logo {
       height: 120px;
@@ -36,10 +37,12 @@
       font-size: 16px;
       font-weight: 600;
       margin-right: 12px;
+      margin-top: 4px;
     }
     .menu-btn {
       font-size: 24px;
       cursor: pointer;
+      margin-top: 4px;
     }
     .menu-dropdown {
       position: absolute;
@@ -212,7 +215,7 @@
 
   <div class="top-bar">
     <img src="Airbrush-Image-Enhancer-1753455007914.png" alt="Logo" class="logo">
-    <div style="display:flex;align-items:center;">
+    <div style="display:flex;align-items:flex-start;">
       <div class="user-name" id="userName">Пользователь</div>
       <div class="menu-btn" onclick="toggleMenu()">≡</div>
     </div>
@@ -260,7 +263,7 @@
       </div>
       <div class="ref-link-box">
         <span id="refLink">https://t.me/vacvpnbot?start=ref_12345</span>
-        <div class="copy-icon" onclick="copyRef()">📋</div>
+        <div class="copy-icon" onclick="copyRef()"></div>
       </div>
     </div>
   </div>
@@ -287,7 +290,7 @@
     document.addEventListener('click', function(e) {
       const menu = document.getElementById('menuDropdown');
       const btn = document.querySelector('.menu-btn');
-      if (!menu.contains(e.target) && !btn.contains(e.target)) {
+      if (menu && btn && !menu.contains(e.target) && !btn.contains(e.target)) {
         menu.style.display = 'none';
       }
     });
