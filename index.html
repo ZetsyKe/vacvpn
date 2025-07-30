@@ -48,7 +48,7 @@
     }
     .menu-dropdown {
       position: absolute;
-      top: 100px; /* изменено, чтобы не перекрывало */
+      top: 100px;
       right: 16px;
       background: #1E1E1E;
       border-radius: 8px;
@@ -74,7 +74,6 @@
       background: rgba(255,255,255,0.1);
       margin: 4px 0;
     }
-
     .card {
       background: var(--card);
       border-radius: 12px;
@@ -324,8 +323,28 @@
 
     function showHelp(){ Telegram.WebApp.showAlert('Раздел помощи'); }
 
-    function showPaymentModal() {
-      Telegram.WebApp.showAlert('Открывается окно оплаты...');
+    async function showPaymentModal() {
+      try {
+        const response = await fetch("https://warm-dots-make.loca.lt/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: 150,
+            description: "Оплата VAC VPN"
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.payment_url) {
+          Telegram.WebApp.openLink(data.payment_url);
+        } else {
+          Telegram.WebApp.showAlert("Ошибка: " + (data.error || "Не удалось создать платёж"));
+        }
+      } catch (error) {
+        Telegram.WebApp.showAlert("Сервер недоступен");
+        console.error(error);
+      }
     }
 
     function scrollToTariffs() {
