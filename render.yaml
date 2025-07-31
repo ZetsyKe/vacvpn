@@ -1,0 +1,24 @@
+databases:
+  - name: vacvpn
+    databaseName: vacvpn
+    user: vacvpn
+
+services:
+  - type: web
+    name: vacvpn-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m uvicorn main:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: SHOP_ID
+        fromService: 
+          name: vacvpn
+          type: secret
+      - key: API_KEY
+        fromService: 
+          name: vacvpn
+          type: secret
+      - key: TOKEN
+        fromService: 
+          name: vacvpn
+          type: secret
