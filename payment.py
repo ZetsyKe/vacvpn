@@ -15,17 +15,15 @@ app = FastAPI()
 @app.post("/pay")
 async def create_payment(request: Request):
     try:
-        # Проверка наличия ключей
+        # Валидация ключей
         if not SHOP_ID or not API_KEY:
-            raise ValueError("Не настроены SHOP_ID или API_KEY")
-
+            raise ValueError("Не настроены SHOP_ID или API_KEY в .env файле")
+        
         body = await request.json()
         amount = float(body.get("amount", 100))
         
-        # Генерация уникального ID платежа
+        # Формирование запроса к ЮKassa
         payment_id = str(uuid.uuid4())
-        
-        # Данные для ЮKassa
         data = {
             "amount": {
                 "value": f"{amount:.2f}",
@@ -43,9 +41,9 @@ async def create_payment(request: Request):
             }
         }
 
-        # Отправка запроса в ЮKassa
+        # Отправка в ЮKassa
         async with httpx.AsyncClient() as client:
-            response = await client.post(
+            resp = await client.post(
                 "https://api.yookassa.ru/v3/payments",
                 auth=(SHOP_ID, API_KEY),
                 headers={
@@ -53,21 +51,19 @@ async def create_payment(request: Request):
                     "Idempotence-Key": payment_id
                 },
                 json=data,
-                timeout=30
+                timeout=10
             )
 
         # Проверка ответа
-        if response.status_code in (200, 201):
-            payment_data = response.json()
-            if "confirmation" in payment_data and "confirmation_url" in payment_data["confirmation"]:
-                return {"payment_url": payment_data["confirmation"]["confirmation_url"]}
-            else:
+        if resp.status_code in (200, 201):
+            payment_data = resp.json()
+            if not payment_data.get("confirmation", {}).get("confirmation_url"):
                 raise ValueError("ЮKassa не вернула confirmation_url")
+            return {"payment_url": payment_data["confirmation"]["confirmation_url"]}
         else:
-            error_msg = f"Ошибка ЮKassa: {response.status_code} - {response.text}"
-            raise Exception(error_msg)
+            raise ValueError(f"Ошибка ЮKassa: {resp.status_code} - {resp.text}")
 
     except Exception as e:
         error_msg = f"Ошибка сервера: {str(e)}"
-        print(error_msg)  # Логирование в консоль
+        print(error_msg)
         return {"error": error_msg}, 500
