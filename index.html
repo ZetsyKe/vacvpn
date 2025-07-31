@@ -101,6 +101,8 @@
       border-radius: 8px;
       margin-bottom: 12px;
       cursor: pointer;
+      border: none;
+      width: 100%;
     }
     .button-outline {
       background: transparent;
@@ -112,6 +114,7 @@
       border-radius: 8px;
       margin-bottom: 16px;
       cursor: pointer;
+      width: 100%;
     }
     .tariff-grid {
       display: grid;
@@ -242,8 +245,8 @@
   <div class="card">
     <div class="balance" id="userBalance">150₽</div>
     <div class="balance-days" id="balanceDays">Хватит на ~16 дней</div>
-    <div class="button-yellow" onclick="showPaymentModal()">ПОПОЛНИТЬ БАЛАНС</div>
-    <div class="button-outline" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</div>
+    <button class="button-yellow" onclick="createPayment()">ПОПОЛНИТЬ БАЛАНС</button>
+    <button class="button-outline" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</button>
   </div>
 
   <div class="card" id="tariffBlock">
@@ -290,7 +293,7 @@
 
     // Установка данных пользователя
     const user = Telegram.WebApp.initDataUnsafe.user || {};
-    const userId = user.id || '12345';
+    const userId = user.id || 'unknown';
     document.getElementById('userName').textContent = user.first_name || 'Пользователь';
     document.getElementById('refLink').textContent = `https://t.me/vacvpnbot?start=ref_${userId}`;
 
@@ -332,49 +335,50 @@
       Telegram.WebApp.showAlert("Подписка успешно активирована!");
     }
 
-    // Функция оплаты
-async function showPaymentModal() {
-    try {
-        const amount = document.querySelector('.tariff-card.selected') 
-            ? parseInt(document.querySelector('.tariff-card.selected .tariff-price').textContent) 
-            : 150;
+    // Основная функция оплаты
+    async function createPayment() {
+      try {
+        Telegram.WebApp.MainButton.showProgress();
+        
+        // Определяем сумму платежа
+        const selectedTariff = document.querySelector('.tariff-card.selected');
+        const amount = selectedTariff 
+          ? parseInt(selectedTariff.querySelector('.tariff-price').textContent) 
+          : 150;
 
-        // Добавляем идентификатор пользователя
-        const user = Telegram.WebApp.initDataUnsafe.user || {};
-        const userId = user.id || 'unknown';
-
+        // Отправка запроса на бэкенд
         const response = await fetch("https://vacvpn.onrender.com/create-payment", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-Telegram-User-ID": userId
-            },
-            body: JSON.stringify({
-                amount: amount,
-                description: "Пополнение баланса VAC VPN"
-            })
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Telegram-User-ID": userId
+          },
+          body: JSON.stringify({
+            amount: amount,
+            description: "Пополнение баланса VAC VPN"
+          })
         });
 
         const data = await response.json();
         
         if (!response.ok) {
-            const errorMsg = data.error || "Неизвестная ошибка сервера";
-            console.error("Payment error:", errorMsg);
-            Telegram.WebApp.showAlert(`Ошибка: ${errorMsg}`);
-            return;
+          throw new Error(data.error || "Ошибка сервера");
         }
 
-        if (data.payment_url) {
-            Telegram.WebApp.openLink(data.payment_url);
-        } else {
-            throw new Error("Не получен payment_url");
+        if (!data.payment_url) {
+          throw new Error("Не получена ссылка на оплату");
         }
+
+        // Открываем страницу оплаты
+        Telegram.WebApp.openLink(data.payment_url);
         
-    } catch (error) {
-        console.error("Payment error:", error);
-        Telegram.WebApp.showAlert("Ошибка при создании платежа. Попробуйте позже.");
+      } catch (error) {
+        console.error("Ошибка платежа:", error);
+        Telegram.WebApp.showAlert(`Ошибка: ${error.message}`);
+      } finally {
+        Telegram.WebApp.MainButton.hideProgress();
+      }
     }
-  
 
     // Вспомогательные функции
     function scrollToTariffs() {
