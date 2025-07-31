@@ -5,8 +5,8 @@ import uuid
 import httpx
 from dotenv import load_dotenv
 
-# Загрузка переменных окружения
 load_dotenv('backend/key.env')
+
 SHOP_ID = os.getenv("SHOP_ID")
 API_KEY = os.getenv("API_KEY")
 
@@ -15,11 +15,14 @@ app = FastAPI()
 @app.post("/pay")
 async def create_payment(request: Request):
     try:
-        # Получаем данные из запроса
+        # Проверка наличия ключей
+        if not SHOP_ID or not API_KEY:
+            raise ValueError("Не настроены SHOP_ID или API_KEY")
+
         body = await request.json()
-        amount = float(body.get("amount", 100))  # Сумма по умолчанию 100 руб.
+        amount = float(body.get("amount", 100))
         
-        # Генерируем уникальный ID платежа
+        # Генерация уникального ID платежа
         payment_id = str(uuid.uuid4())
         
         # Данные для ЮKassa
@@ -30,30 +33,41 @@ async def create_payment(request: Request):
             },
             "confirmation": {
                 "type": "redirect",
-                "return_url": "https://t.me/vaaaac_bot"  # Куда вернуться после оплаты
+                "return_url": "https://t.me/vaaaac_bot"
             },
             "capture": True,
             "description": "Пополнение баланса VAC VPN",
             "metadata": {
-                "payment_id": payment_id
+                "payment_id": payment_id,
+                "user_id": body.get("user_id", "unknown")
             }
         }
-        
+
         # Отправка запроса в ЮKassa
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 "https://api.yookassa.ru/v3/payments",
                 auth=(SHOP_ID, API_KEY),
-                headers={"Content-Type": "application/json"},
-                json=data
+                headers={
+                    "Content-Type": "application/json",
+                    "Idempotence-Key": payment_id
+                },
+                json=data,
+                timeout=30
             )
-        
+
         # Проверка ответа
         if response.status_code in (200, 201):
-            payment_url = response.json()["confirmation"]["confirmation_url"]
-            return {"payment_url": payment_url}
+            payment_data = response.json()
+            if "confirmation" in payment_data and "confirmation_url" in payment_data["confirmation"]:
+                return {"payment_url": payment_data["confirmation"]["confirmation_url"]}
+            else:
+                raise ValueError("ЮKassa не вернула confirmation_url")
         else:
-            return {"error": response.text}, 500
-            
+            error_msg = f"Ошибка ЮKassa: {response.status_code} - {response.text}"
+            raise Exception(error_msg)
+
     except Exception as e:
-        return {"error": str(e)}, 500
+        error_msg = f"Ошибка сервера: {str(e)}"
+        print(error_msg)  # Логирование в консоль
+        return {"error": error_msg}, 500
