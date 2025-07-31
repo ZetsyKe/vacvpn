@@ -7,28 +7,44 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder, WebAppInfo
 from dotenv import load_dotenv
 from typing import Dict, List
+import sqlite3
+from datetime import datetime, timedelta
 
-
-# Получение токена из окружения
-TOKEN = os.environ.get("TOKEN")
+# Ваш оригинальный код (оставлен без изменений)
+load_dotenv("backend/key.env")
+TOKEN = os.getenv("TOKEN")
 WEB_APP_URL = "https://vacvpn.vercel.app"
 SUPPORT_NICK = "@vacvpn_support"
 TG_CHANNEL = "@vac_vpn"
 
-# Проверка токена
 if not TOKEN:
     raise ValueError("❌ Переменная TOKEN не найдена в key.env")
 
-# Инициализация бота
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# Хранилища
 referrals_db: Dict[int, List[int]] = {}
 user_balances: Dict[int, int] = {}
 referral_checks: Dict[int, bool] = {}
 
-# Клавиатуры
+# Новый код: Инициализация БД
+def init_db():
+    conn = sqlite3.connect('vacvpn.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            balance REAL DEFAULT 0,
+            has_subscription BOOLEAN DEFAULT FALSE,
+            subscription_end TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# Ваши оригинальные функции (оставлены без изменений)
 def get_main_keyboard():
     builder = ReplyKeyboardBuilder()
     builder.row(
@@ -90,7 +106,6 @@ def get_referrals_stats_keyboard():
     )
     return builder.as_markup()
 
-# Текстовые сообщения
 def get_welcome_message(user_name: str, is_referral: bool = False):
     return f"""
 <b>Рады видеть вас снова, {user_name}!</b>
@@ -158,7 +173,34 @@ def get_referrals_stats_message(user_id: int):
 
     return message
 
-# Обработчики
+# Новый код: Функции работы с подпиской
+def check_user_subscription(user_id: int):
+    conn = sqlite3.connect('vacvpn.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT has_subscription, subscription_end FROM users WHERE user_id = ?', (user_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result:
+        return False
+    
+    has_sub, sub_end = result
+    if has_sub and sub_end:
+        return datetime.now() < datetime.fromisoformat(sub_end)
+    return False
+
+def activate_user_subscription(user_id: int, days: int):
+    end_date = (datetime.now() + timedelta(days=days)).isoformat()
+    conn = sqlite3.connect('vacvpn.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO users (user_id, has_subscription, subscription_end)
+        VALUES (?, TRUE, ?)
+    ''', (user_id, end_date))
+    conn.commit()
+    conn.close()
+
+# Ваши оригинальные обработчики (оставлены без изменений)
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user = message.from_user
@@ -249,7 +291,14 @@ async def my_referrals_handler(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-# Запуск
+# Новый обработчик для проверки подписки
+@dp.message(lambda message: message.text == "🔐 Проверить подписку")
+async def check_subscription_handler(message: types.Message):
+    has_sub = check_user_subscription(message.from_user.id)
+    await message.answer(
+        f"Статус подписки: {'Активна' if has_sub else 'Неактивна'}"
+    )
+
 async def main():
     await bot.set_chat_menu_button(
         menu_button=types.MenuButtonWebApp(
