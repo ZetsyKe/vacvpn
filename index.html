@@ -302,6 +302,11 @@
       margin-bottom: 0;
       flex: 1;
     }
+    .add-funds-btn {
+      background: var(--primary);
+      color: var(--bg);
+      margin-bottom: 8px;
+    }
   </style>
 </head>
 <body>
@@ -323,15 +328,19 @@
 
   <div class="card">
     <div class="balance" id="userBalance">0₽</div>
-    <div class="balance-days" id="balanceDays">Хватит на ~16 дней</div>
+    <div class="balance-days" id="balanceDays">Хватит на ~0 дней</div>
     <div class="subscription-status" id="subscriptionStatus">
       <span>Статус подписки:</span>
       <span class="badge inactive-badge" id="subscriptionBadge">Неактивна</span>
     </div>
     
-    <div class="payment-methods">
-      <button class="button button-yellow" id="balancePayBtn" onclick="buyWithBalance()">ОПЛАТИТЬ БАЛАНСОМ</button>
-      <button class="button button-outline" id="paymentButton" onclick="createPayment()">ЮKASSA</button>
+    <button class="button button-yellow add-funds-btn" onclick="addFunds()">ПОПОЛНИТЬ БАЛАНС</button>
+    
+    <div id="paymentSection" style="display: none;">
+      <div class="payment-methods">
+        <button class="button button-yellow" id="balancePayBtn" onclick="buyWithBalance()">ОПЛАТИТЬ БАЛАНСОМ</button>
+        <button class="button button-outline" id="paymentButton" onclick="createPayment()">ЮKASSA</button>
+      </div>
     </div>
     
     <button class="button button-outline" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</button>
@@ -356,7 +365,6 @@
         <div class="tariff-description">Полный доступ на 1 год со скидкой 30%</div>
       </div>
     </div>
-    <button class="button button-yellow" id="subscribeBtn" style="display:none;" onclick="activateSubscription()">ПОДКЛЮЧИТЬ ПОДПИСКУ</button>
   </div>
 
   <div class="card">
@@ -385,14 +393,26 @@
     const balancePayBtn = document.getElementById('balancePayBtn');
     const loadingIndicator = document.getElementById('loadingIndicator');
     const errorMessage = document.getElementById('errorMessage');
-    const subscribeBtn = document.getElementById('subscribeBtn');
     const subscriptionBadge = document.getElementById('subscriptionBadge');
     const userBalanceElement = document.getElementById('userBalance');
+    const balanceDaysElement = document.getElementById('balanceDays');
+    const paymentSection = document.getElementById('paymentSection');
     
     // Данные пользователя
     const user = Telegram.WebApp.initDataUnsafe.user || {};
     const userId = user.id || 'unknown';
     const userName = user.first_name || 'Пользователь';
+    
+    // Текущий выбранный тариф
+    let selectedTariff = null;
+    const tariffPrices = {
+      '1month': 150,
+      '1year': 1300
+    };
+    const tariffPeriods = {
+      '1month': 30,
+      '1year': 365
+    };
     
     // Инициализация интерфейса
     document.getElementById('userName').textContent = userName;
@@ -432,13 +452,13 @@
 
     // Функции тарифов
     function selectTariff(id) {
+      selectedTariff = id;
       document.querySelectorAll('.tariff-card').forEach(card => {
         card.classList.remove('selected');
       });
       document.getElementById(`tariff${id}`).classList.add('selected');
-      document.getElementById('subscribeBtn').style.display = 'block';
-      balancePayBtn.style.display = 'block';
-      paymentButton.style.display = 'block';
+      paymentSection.style.display = 'block';
+      updateDaysEstimation();
     }
 
     // Загрузка данных пользователя
@@ -447,7 +467,11 @@
             // Загружаем баланс
             const balanceResponse = await fetch(`https://vacvpn.onrender.com/get-balance?user_id=${userId}`);
             const balanceData = await balanceResponse.json();
-            userBalanceElement.textContent = `${balanceData.balance}₽`;
+            const balance = balanceData.balance || 0;
+            userBalanceElement.textContent = `${balance}₽`;
+            
+            // Обновляем расчет дней
+            updateDaysEstimation();
 
             // Проверяем подписку
             const subResponse = await fetch(`https://vacvpn.onrender.com/check-subscription?user_id=${userId}`);
@@ -459,9 +483,7 @@
                 document.querySelectorAll('.tariff-card').forEach(card => {
                     card.classList.add('disabled');
                 });
-                subscribeBtn.style.display = 'none';
-                balancePayBtn.style.display = 'none';
-                paymentButton.style.display = 'none';
+                paymentSection.style.display = 'none';
             } else {
                 subscriptionBadge.textContent = 'Неактивна';
                 subscriptionBadge.className = 'badge inactive-badge';
@@ -471,17 +493,62 @@
         }
     }
 
+    // Расчет сколько дней хватит баланса
+    function updateDaysEstimation() {
+      const balance = parseFloat(userBalanceElement.textContent) || 0;
+      if (selectedTariff && balance > 0) {
+        const price = tariffPrices[selectedTariff];
+        const period = tariffPeriods[selectedTariff];
+        const days = Math.floor((balance / price) * period);
+        balanceDaysElement.textContent = `Хватит на ~${days} дней`;
+      } else {
+        balanceDaysElement.textContent = 'Хватит на ~0 дней';
+      }
+    }
+
+    // Пополнение баланса
+    async function addFunds() {
+      try {
+        loadingIndicator.style.display = 'block';
+        
+        const response = await fetch("https://vacvpn.onrender.com/create-payment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Telegram-User-ID": userId
+          },
+          body: JSON.stringify({
+            amount: null, // Сервер сам определит сумму
+            description: "Пополнение баланса VAC VPN"
+          })
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || `Ошибка сервера (код ${response.status})`);
+        }
+
+        if (!data.payment_url) {
+          throw new Error("Не удалось получить ссылку для оплаты");
+        }
+
+        Telegram.WebApp.openLink(data.payment_url);
+        
+      } catch (error) {
+        console.error('[Payment] Ошибка:', error);
+        showError(error.message);
+      } finally {
+        loadingIndicator.style.display = 'none';
+      }
+    }
+
     // Покупка через баланс
     async function buyWithBalance() {
-        const selected = document.querySelector('.tariff-card.selected');
-        if (!selected) {
+        if (!selectedTariff) {
             showError("Выберите тарифный план");
             return;
         }
-
-        const tariffId = selected.id.replace('tariff', '');
-        const tariffMap = {"1month": "month", "1year": "year"};
-        const tariff = tariffMap[tariffId];
 
         try {
             loadingIndicator.style.display = 'block';
@@ -494,7 +561,7 @@
                     "X-Telegram-User-ID": userId
                 },
                 body: JSON.stringify({
-                    tariff: tariff
+                    tariff: selectedTariff === '1month' ? 'month' : 'year'
                 })
             });
 
@@ -515,15 +582,10 @@
 
     // Покупка через ЮKassa
     async function createPayment() {
-        const selected = document.querySelector('.tariff-card.selected');
-        if (!selected) {
+        if (!selectedTariff) {
             showError("Выберите тарифный план");
             return;
         }
-
-        const tariffId = selected.id.replace('tariff', '');
-        const tariffMap = {"1month": "month", "1year": "year"};
-        const tariff = tariffMap[tariffId];
 
         try {
             loadingIndicator.style.display = 'block';
@@ -536,7 +598,7 @@
                     "X-Telegram-User-ID": userId
                 },
                 body: JSON.stringify({
-                    tariff: tariff
+                    tariff: selectedTariff === '1month' ? 'month' : 'year'
                 })
             });
 
