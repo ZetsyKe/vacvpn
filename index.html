@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VAC VPN</title>
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet" />
-  <<script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
       --primary: #B0CB1F;
@@ -284,122 +284,110 @@
   </div>
 
   <script>
+    // Инициализация Telegram WebApp
     Telegram.WebApp.ready();
     Telegram.WebApp.expand();
 
+    // Установка данных пользователя
     const user = Telegram.WebApp.initDataUnsafe.user || {};
-    const name = user.first_name || 'Пользователь';
-    const id = user.id || '12345';
-    document.getElementById('userName').textContent = name;
-    document.getElementById('refLink').textContent = "https://t.me/vacvpnbot?start=ref_" + id;
+    const userId = user.id || '12345';
+    document.getElementById('userName').textContent = user.first_name || 'Пользователь';
+    document.getElementById('refLink').textContent = `https://t.me/vacvpnbot?start=ref_${userId}`;
 
-    function toggleMenu(){
-      const m = document.getElementById('menuDropdown');
-      m.style.display = m.style.display === 'block' ? 'none' : 'block';
+    // Функции меню
+    function toggleMenu() {
+      const menu = document.getElementById('menuDropdown');
+      menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
     }
 
-    document.addEventListener('click', function(e) {
-      const menu = document.getElementById('menuDropdown');
-      const btn = document.querySelector('.menu-btn');
-      if (menu && btn && !menu.contains(e.target) && !btn.contains(e.target)) {
-        menu.style.display = 'none';
-      }
-    });
-
-    function showSupportChat(){
+    function showSupportChat() {
       Telegram.WebApp.openTelegramLink('https://t.me/vacvpn_support');
       toggleMenu();
     }
 
-    function showRules(){
-      Telegram.WebApp.showAlert('Правила использования');
+    function showRules() {
+      Telegram.WebApp.showAlert('Правила использования сервиса VAC VPN');
       toggleMenu();
     }
 
-    function logout(){
+    function logout() {
       Telegram.WebApp.close();
     }
 
-    function selectTariff(id){
-      document.querySelectorAll('.tariff-card').forEach(c => c.classList.remove('selected'));
-      document.getElementById('tariff' + id).classList.add('selected');
+    // Функции тарифов
+    function selectTariff(id) {
+      document.querySelectorAll('.tariff-card').forEach(card => {
+        card.classList.remove('selected');
+      });
+      document.getElementById(`tariff${id}`).classList.add('selected');
       document.getElementById('subscribeBtn').style.display = 'block';
-    }
-
-    function copyRef(){
-      const link = document.getElementById('refLink').textContent;
-      navigator.clipboard.writeText(link);
-      Telegram.WebApp.showAlert('Ссылка скопирована!');
-    }
-
-    function showHelp(){
-      Telegram.WebApp.showAlert('Раздел помощи');
-    }
-
-    async function showPaymentModal() {
-    try {
-        const selectedTariff = document.querySelector('.tariff-card.selected');
-        let amount = 150; // Значение по умолчанию
-        
-        if (selectedTariff) {
-            // Извлекаем цену из выбранного тарифа
-            const priceText = selectedTariff.querySelector('.tariff-price').textContent;
-            amount = parseInt(priceText.replace(/[^\d]/g, ''));
-        }
-
-        const response = await fetch("https://vacvpn.onrender.com/pay", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ amount })
-        });
-
-        if (!response.ok) throw new Error(await response.text());
-        
-        const data = await response.json();
-        Telegram.WebApp.openLink(data.payment_url);
-        
-    } catch (error) {
-        Telegram.WebApp.showAlert("Ошибка: " + error.message);
-        console.error(error);
-    }
-    
-    function scrollToTariffs() {
-      document.getElementById('tariffBlock').scrollIntoView({behavior:'smooth'});
     }
 
     function activateSubscription() {
       const selected = document.querySelector('.tariff-card.selected');
       if (!selected) {
-        Telegram.WebApp.showAlert("Выберите тариф");
+        Telegram.WebApp.showAlert("Пожалуйста, выберите тариф");
         return;
       }
-      Telegram.WebApp.showAlert("Подписка активирована!");
+      Telegram.WebApp.showAlert("Подписка успешно активирована!");
     }
-    async function createYooKassaPayment() {
+
+    // Функция оплаты
+    async function showPaymentModal() {
       try {
+        const amount = document.querySelector('.tariff-card.selected') 
+          ? parseInt(document.querySelector('.tariff-card.selected .tariff-price').textContent) 
+          : 150;
+
         const response = await fetch("https://vacvpn.onrender.com/create-payment", {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            amount: 150,
-            description: "Пополнение баланса VPN"
+            amount: amount,
+            description: "Пополнение баланса VAC VPN"
           })
         });
+
         const data = await response.json();
 
         if (data.payment_url) {
           Telegram.WebApp.openLink(data.payment_url);
         } else {
-          Telegram.WebApp.showAlert("Ошибка оплаты: " + (data.error || "Не удалось создать платёж"));
+          Telegram.WebApp.showAlert("Ошибка: " + (data.error || "Не удалось создать платеж"));
         }
       } catch (error) {
         Telegram.WebApp.showAlert("Ошибка соединения с сервером");
         console.error(error);
       }
     }
-  </script>
 
+    // Вспомогательные функции
+    function scrollToTariffs() {
+      document.getElementById('tariffBlock').scrollIntoView({
+        behavior: 'smooth'
+      });
+    }
+
+    function copyRef() {
+      const link = document.getElementById('refLink').textContent;
+      navigator.clipboard.writeText(link);
+      Telegram.WebApp.showAlert('Реферальная ссылка скопирована!');
+    }
+
+    function showHelp() {
+      Telegram.WebApp.showAlert('По всем вопросам обращайтесь в поддержку: @vacvpn_support');
+    }
+
+    // Закрытие меню при клике вне его
+    document.addEventListener('click', function(e) {
+      const menu = document.getElementById('menuDropdown');
+      const menuBtn = document.querySelector('.menu-btn');
+      if (menu && menuBtn && !menu.contains(e.target) && !menuBtn.contains(e.target)) {
+        menu.style.display = 'none';
+      }
+    });
+  </script>
 </body>
 </html>
