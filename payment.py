@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timedelta
 import sqlite3
 
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ load_dotenv('backend/key.env')
 SHOP_ID = os.getenv("SHOP_ID")
 API_KEY = os.getenv("API_KEY")
 
-# Функция для инициализации БД
+# Функция инициализации БД
 def init_db():
     conn = sqlite3.connect('vacvpn.db')
     cursor = conn.cursor()
@@ -29,7 +30,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Инициализируем БД при импорте модуля
+# Инициализируем БД при запуске
 init_db()
 
 async def create_payment(request: Request):
@@ -97,20 +98,27 @@ async def create_payment(request: Request):
             conn = sqlite3.connect('vacvpn.db')
             cursor = conn.cursor()
             
-            # Проверяем существование таблицы (на всякий случай)
+            # Создаем пользователя с балансом 0, если не существует
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id INTEGER PRIMARY KEY,
-                    balance REAL DEFAULT 0,
-                    has_subscription BOOLEAN DEFAULT FALSE,
-                    subscription_end TEXT
-                )
-            ''')
+                INSERT OR IGNORE INTO users (user_id, balance)
+                VALUES (?, 0)
+            ''', (user_id,))
             
+            # Обновляем подписку
             cursor.execute('''
-                INSERT OR REPLACE INTO users (user_id, has_subscription, subscription_end)
-                VALUES (?, TRUE, ?)
-            ''', (user_id, (datetime.now() + timedelta(days=days)).isoformat()))
+                UPDATE users 
+                SET has_subscription = TRUE, 
+                    subscription_end = ?
+                WHERE user_id = ?
+            ''', ((datetime.now() + timedelta(days=days)).isoformat(), user_id))
+            
+            # Обновляем баланс (добавляем сумму платежа)
+            cursor.execute('''
+                UPDATE users 
+                SET balance = balance + ?
+                WHERE user_id = ?
+            ''', (amount, user_id))
+            
             conn.commit()
             conn.close()
             
