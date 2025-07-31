@@ -128,6 +128,15 @@
     .button-outline:active {
       background: rgba(176, 203, 31, 0.1);
     }
+    .button-balance {
+      background: var(--primary);
+      color: var(--bg);
+      margin-bottom: 8px;
+    }
+    .button-balance:active {
+      opacity: 0.9;
+      transform: scale(0.98);
+    }
     .tariff-grid {
       display: grid;
       gap: 16px;
@@ -284,6 +293,15 @@
       background: #ff4444;
       color: white;
     }
+    .payment-methods {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .payment-methods .button {
+      margin-bottom: 0;
+      flex: 1;
+    }
   </style>
 </head>
 <body>
@@ -310,7 +328,12 @@
       <span>Статус подписки:</span>
       <span class="badge inactive-badge" id="subscriptionBadge">Неактивна</span>
     </div>
-    <button class="button button-yellow" id="paymentButton" onclick="createPayment()">ПОПОЛНИТЬ БАЛАНС</button>
+    
+    <div class="payment-methods">
+      <button class="button button-yellow" id="balancePayBtn" onclick="buyWithBalance()">ОПЛАТИТЬ БАЛАНСОМ</button>
+      <button class="button button-outline" id="paymentButton" onclick="createPayment()">ЮKASSA</button>
+    </div>
+    
     <button class="button button-outline" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</button>
     <div class="loading" id="loadingIndicator">Подождите, идет обработка...</div>
     <div class="error-message" id="errorMessage"></div>
@@ -359,10 +382,12 @@
 
     // Элементы интерфейса
     const paymentButton = document.getElementById('paymentButton');
+    const balancePayBtn = document.getElementById('balancePayBtn');
     const loadingIndicator = document.getElementById('loadingIndicator');
     const errorMessage = document.getElementById('errorMessage');
     const subscribeBtn = document.getElementById('subscribeBtn');
     const subscriptionBadge = document.getElementById('subscriptionBadge');
+    const userBalanceElement = document.getElementById('userBalance');
     
     // Данные пользователя
     const user = Telegram.WebApp.initDataUnsafe.user || {};
@@ -412,149 +437,121 @@
       });
       document.getElementById(`tariff${id}`).classList.add('selected');
       document.getElementById('subscribeBtn').style.display = 'block';
+      balancePayBtn.style.display = 'block';
+      paymentButton.style.display = 'block';
     }
 
-    // Проверка статуса подписки
-    async function checkSubscription() {
-      try {
-        const response = await fetch(`https://vacvpn.onrender.com/check-subscription?user_id=${userId}`);
-        const data = await response.json();
-        return data.has_subscription || false;
-      } catch (error) {
-        console.error("Ошибка проверки подписки:", error);
-        return false;
-      }
+    // Загрузка данных пользователя
+    async function loadUserData() {
+        try {
+            // Загружаем баланс
+            const balanceResponse = await fetch(`https://vacvpn.onrender.com/get-balance?user_id=${userId}`);
+            const balanceData = await balanceResponse.json();
+            userBalanceElement.textContent = `${balanceData.balance}₽`;
+
+            // Проверяем подписку
+            const subResponse = await fetch(`https://vacvpn.onrender.com/check-subscription?user_id=${userId}`);
+            const subData = await subResponse.json();
+            
+            if (subData.has_subscription) {
+                subscriptionBadge.textContent = 'Активна';
+                subscriptionBadge.className = 'badge active-badge';
+                document.querySelectorAll('.tariff-card').forEach(card => {
+                    card.classList.add('disabled');
+                });
+                subscribeBtn.style.display = 'none';
+                balancePayBtn.style.display = 'none';
+                paymentButton.style.display = 'none';
+            } else {
+                subscriptionBadge.textContent = 'Неактивна';
+                subscriptionBadge.className = 'badge inactive-badge';
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки данных:', error);
+        }
     }
 
-    // Обновление статуса подписки в интерфейсе
-    async function updateSubscriptionStatus() {
-      const hasActiveSub = await checkSubscription();
-      if (hasActiveSub) {
-        subscriptionBadge.textContent = 'Активна';
-        subscriptionBadge.className = 'badge active-badge';
-        document.querySelectorAll('.tariff-card').forEach(card => {
-          card.classList.add('disabled');
-        });
-        subscribeBtn.style.display = 'none';
-      } else {
-        subscriptionBadge.textContent = 'Неактивна';
-        subscriptionBadge.className = 'badge inactive-badge';
-      }
+    // Покупка через баланс
+    async function buyWithBalance() {
+        const selected = document.querySelector('.tariff-card.selected');
+        if (!selected) {
+            showError("Выберите тарифный план");
+            return;
+        }
+
+        const tariffId = selected.id.replace('tariff', '');
+        const tariffMap = {"1month": "month", "1year": "year"};
+        const tariff = tariffMap[tariffId];
+
+        try {
+            loadingIndicator.style.display = 'block';
+            balancePayBtn.disabled = true;
+
+            const response = await fetch("https://vacvpn.onrender.com/buy-with-balance", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Telegram-User-ID": userId
+                },
+                body: JSON.stringify({
+                    tariff: tariff
+                })
+            });
+
+            const data = await response.json();
+            if (data.status === "success") {
+                Telegram.WebApp.showAlert("Подписка успешно активирована!");
+                await loadUserData();
+            } else {
+                showError(data.error || "Ошибка оплаты");
+            }
+        } catch (error) {
+            showError("Ошибка соединения");
+        } finally {
+            loadingIndicator.style.display = 'none';
+            balancePayBtn.disabled = false;
+        }
     }
 
-    // Основная функция оплаты
+    // Покупка через ЮKassa
     async function createPayment() {
-      try {
-        // Сброс предыдущих ошибок
-        hideError();
-        
-        // Проверка активной подписки
-        const hasActiveSub = await checkSubscription();
-        if (hasActiveSub) {
-          showError("У вас уже есть активная подписка!");
-          return;
+        const selected = document.querySelector('.tariff-card.selected');
+        if (!selected) {
+            showError("Выберите тарифный план");
+            return;
         }
 
-        // Показать индикатор загрузки
-        paymentButton.disabled = true;
-        loadingIndicator.style.display = 'block';
-        
-        // Получить сумму платежа
-        const selectedTariff = document.querySelector('.tariff-card.selected');
-        const amount = selectedTariff 
-          ? parseInt(selectedTariff.querySelector('.tariff-price').textContent) 
-          : 150;
-        const tariff = selectedTariff?.id.includes('year') ? 'year' : 'month';
+        const tariffId = selected.id.replace('tariff', '');
+        const tariffMap = {"1month": "month", "1year": "year"};
+        const tariff = tariffMap[tariffId];
 
-        console.log(`[Payment] Начало процесса оплаты, сумма: ${amount} руб.`);
-        
-        // Отправить запрос на сервер
-        const response = await fetch("https://vacvpn.onrender.com/create-payment", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Telegram-User-ID": userId
-          },
-          body: JSON.stringify({
-            amount: amount,
-            tariff: tariff,
-            description: "Пополнение баланса VAC VPN"
-          })
-        });
+        try {
+            loadingIndicator.style.display = 'block';
+            paymentButton.disabled = true;
 
-        const data = await response.json();
-        console.log('[Payment] Ответ сервера:', data);
-        
-        // Обработка ошибок
-        if (!response.ok) {
-          const errorMsg = data.error || `Ошибка сервера (код ${response.status})`;
-          throw new Error(errorMsg);
+            const response = await fetch("https://vacvpn.onrender.com/create-payment", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Telegram-User-ID": userId
+                },
+                body: JSON.stringify({
+                    tariff: tariff
+                })
+            });
+
+            const data = await response.json();
+            if (data.payment_url) {
+                Telegram.WebApp.openLink(data.payment_url);
+            } else {
+                showError(data.error || "Ошибка оплаты");
+            }
+        } catch (error) {
+            showError("Ошибка соединения");
+        } finally {
+            loadingIndicator.style.display = 'none';
+            paymentButton.disabled = false;
         }
-
-        if (!data.payment_url) {
-          throw new Error("Не удалось получить ссылку для оплаты");
-        }
-
-        console.log('[Payment] Открытие страницы оплаты');
-        Telegram.WebApp.openLink(data.payment_url);
-        
-      } catch (error) {
-        console.error('[Payment] Ошибка:', error);
-        showError(error.message);
-      } finally {
-        paymentButton.disabled = false;
-        loadingIndicator.style.display = 'none';
-      }
-    }
-
-    // Функция активации подписки
-    async function activateSubscription() {
-      const selected = document.querySelector('.tariff-card.selected');
-      if (!selected) {
-        showError("Пожалуйста, выберите тарифный план");
-        return;
-      }
-
-      // Проверяем активную подписку
-      const hasActiveSub = await checkSubscription();
-      if (hasActiveSub) {
-        showError("У вас уже есть активная подписка!");
-        return;
-      }
-
-      // Определяем тариф
-      const tariffId = selected.id.replace('tariff', '');
-      const tariffMap = {"1month": "month", "1year": "year"};
-      const tariff = tariffMap[tariffId];
-
-      try {
-        loadingIndicator.style.display = 'block';
-        subscribeBtn.disabled = true;
-
-        const response = await fetch("https://vacvpn.onrender.com/create-payment", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Telegram-User-ID": userId
-          },
-          body: JSON.stringify({
-            tariff: tariff,
-            amount: tariff === "month" ? 150 : 1300
-          })
-        });
-
-        const data = await response.json();
-        if (data.payment_url) {
-          Telegram.WebApp.openLink(data.payment_url);
-        } else {
-          showError(data.error || "Ошибка оплаты");
-        }
-      } catch (error) {
-        showError("Ошибка соединения");
-      } finally {
-        loadingIndicator.style.display = 'none';
-        subscribeBtn.disabled = false;
-      }
     }
 
     // Вспомогательные функции
@@ -601,27 +598,8 @@
 
     // Инициализация при загрузке
     document.addEventListener('DOMContentLoaded', async () => {
-      await updateSubscriptionStatus();
-      console.log('Инициализация завершена');
+      await loadUserData();
     });
-    // Добавьте эту функцию
-async function loadBalance() {
-    try {
-        const response = await fetch(`https://vacvpn.onrender.com/get-balance?user_id=${userId}`);
-        const data = await response.json();
-        document.getElementById('userBalance').textContent = `${data.balance}₽`;
-    } catch (error) {
-        console.error("Ошибка загрузки баланса:", error);
-        document.getElementById('userBalance').textContent = "0₽";
-    }
-}
-
-// Вызовите в DOMContentLoaded
-document.addEventListener('DOMContentLoaded', async () => {
-    await loadBalance();
-    await updateSubscriptionStatus();
-    console.log('Инициализация завершена');
-});
   </script>
 </body>
 </html>
