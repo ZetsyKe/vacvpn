@@ -236,7 +236,7 @@
 <body>
 
   <div class="top-bar">
-    <img src="Airbrush-Image-Enhancer-1753455007914.png" alt="Logo" class="logo">
+    <img src="logo.png" alt="Logo" class="logo">
     <div class="top-bar-right">
       <div class="user-name" id="userName">Пользователь</div>
       <div class="menu-btn" onclick="toggleMenu()">≡</div>
@@ -299,7 +299,7 @@
     Telegram.WebApp.ready();
     Telegram.WebApp.expand();
 
-    // Данные пользователя
+    // Установка данных пользователя
     const user = Telegram.WebApp.initDataUnsafe.user || {};
     const userId = user.id || 'unknown';
     document.getElementById('userName').textContent = user.first_name || 'Пользователь';
@@ -377,7 +377,7 @@
         }
 
         if (!data.payment_url) {
-          throw new Error("Сервер не вернул ссылку на оплату");
+          throw new Error("Сервер не вернул ссылку на оплату. Проверьте логи бэкенда.");
         }
 
         // Открываем страницу оплаты
