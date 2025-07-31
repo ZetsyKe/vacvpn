@@ -4,8 +4,9 @@ from fastapi.responses import JSONResponse
 from payment import create_payment
 from dotenv import load_dotenv
 import logging
+import sqlite3
+import  datetime
 
-# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,33 @@ async def payment_endpoint(request: Request):
         error_msg = f"Ошибка обработки: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return JSONResponse({"error": error_msg}, status_code=500)
+
+@app.get("/check-subscription")
+async def check_subscription(user_id: int):
+    try:
+        conn = sqlite3.connect('vacvpn.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT has_subscription, subscription_end 
+            FROM users 
+            WHERE user_id = ?
+        ''', (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if not result:
+            return JSONResponse({"has_subscription": False})
+        
+        has_sub, sub_end = result
+        if has_sub and sub_end:
+            active = datetime.now() < datetime.fromisoformat(sub_end)
+            return JSONResponse({"has_subscription": active})
+        
+        return JSONResponse({"has_subscription": False})
+    
+    except Exception as e:
+        logger.error(f"Ошибка проверки подписки: {str(e)}")
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/")
 async def health_check():
