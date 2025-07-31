@@ -14,6 +14,24 @@ load_dotenv('backend/key.env')
 SHOP_ID = os.getenv("SHOP_ID")
 API_KEY = os.getenv("API_KEY")
 
+# Функция для инициализации БД
+def init_db():
+    conn = sqlite3.connect('vacvpn.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            balance REAL DEFAULT 0,
+            has_subscription BOOLEAN DEFAULT FALSE,
+            subscription_end TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# Инициализируем БД при импорте модуля
+init_db()
+
 async def create_payment(request: Request):
     try:
         logger.info("=== Начало обработки платежа ===")
@@ -73,11 +91,22 @@ async def create_payment(request: Request):
                 error_msg = "ЮKassa не вернула confirmation_url"
                 logger.error(error_msg)
                 return {"error": error_msg}, 500
-                
+            
             # Активируем подписку в БД
             days = 30 if tariff == "month" else 365
             conn = sqlite3.connect('vacvpn.db')
             cursor = conn.cursor()
+            
+            # Проверяем существование таблицы (на всякий случай)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    balance REAL DEFAULT 0,
+                    has_subscription BOOLEAN DEFAULT FALSE,
+                    subscription_end TEXT
+                )
+            ''')
+            
             cursor.execute('''
                 INSERT OR REPLACE INTO users (user_id, has_subscription, subscription_end)
                 VALUES (?, TRUE, ?)
