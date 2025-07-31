@@ -338,8 +338,7 @@
 
     async function showPaymentModal() {
       try {
-        const response = await fetch("https://vacvpn.onrender.com", {
-        const response = await fetch("https://vacvpn.onrender.com/create-payment", {
+        const response = await fetch("/create_payment", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -372,6 +371,30 @@
         return;
       }
       Telegram.WebApp.showAlert("Подписка активирована!");
+    }
+    async function createYooKassaPayment() {
+      try {
+        const response = await fetch("https://vacvpn.onrender.com/create-payment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            amount: 150,
+            description: "Пополнение баланса VPN"
+          })
+        });
+        const data = await response.json();
+
+        if (data.payment_url) {
+          Telegram.WebApp.openLink(data.payment_url);
+        } else {
+          Telegram.WebApp.showAlert("Ошибка оплаты: " + (data.error || "Не удалось создать платёж"));
+        }
+      } catch (error) {
+        Telegram.WebApp.showAlert("Ошибка соединения с сервером");
+        console.error(error);
+      }
     }
   </script>
 
