@@ -604,6 +604,24 @@
       await updateSubscriptionStatus();
       console.log('Инициализация завершена');
     });
+    // Добавьте эту функцию
+async function loadBalance() {
+    try {
+        const response = await fetch(`https://vacvpn.onrender.com/get-balance?user_id=${userId}`);
+        const data = await response.json();
+        document.getElementById('userBalance').textContent = `${data.balance}₽`;
+    } catch (error) {
+        console.error("Ошибка загрузки баланса:", error);
+        document.getElementById('userBalance').textContent = "0₽";
+    }
+}
+
+// Вызовите в DOMContentLoaded
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadBalance();
+    await updateSubscriptionStatus();
+    console.log('Инициализация завершена');
+});
   </script>
 </body>
 </html>
