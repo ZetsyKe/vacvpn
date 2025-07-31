@@ -3,3 +3,4 @@ uvicorn
 python-dotenv
 yookassa
 httpx
+psycopg2
