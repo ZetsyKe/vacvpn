@@ -22,17 +22,23 @@ app.add_middleware(
 load_dotenv("backend/key.env")
 
 @app.post("/create-payment")
-async def handle_payment(request: Request):
+async def payment_endpoint(request: Request):
     try:
         data = await request.json()
-        amount = data.get("amount", 100)
         
-        # Создаем платеж через функцию из payment.py
+        # Добавляем user_id из Telegram WebApp
+        user_id = request.headers.get("X-Telegram-User-ID", "unknown")
+        data["user_id"] = user_id
+        
         result = await create_payment(request)
         
         if "error" in result:
+            print(f"Payment error: {result}")  # Логирование ошибки
             return JSONResponse(result, status_code=500)
+            
         return JSONResponse(result)
         
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        error_msg = f"Endpoint error: {str(e)}"
+        print(error_msg)
+        return JSONResponse({"error": error_msg}, status_code=500)
