@@ -1,23 +1,19 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import Request
 import os
 import uuid
 import httpx
 from dotenv import load_dotenv
 import logging
+from datetime import datetime, timedelta
+import sqlite3
 
-# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv('backend/key.env')
-
 SHOP_ID = os.getenv("SHOP_ID")
 API_KEY = os.getenv("API_KEY")
 
-app = FastAPI()
-
-@app.post("/pay")
 async def create_payment(request: Request):
     try:
         logger.info("=== Начало обработки платежа ===")
@@ -31,8 +27,10 @@ async def create_payment(request: Request):
         logger.info(f"Получены данные: {body}")
         
         amount = float(body.get("amount", 100))
-        payment_id = str(uuid.uuid4())
+        tariff = body.get("tariff", "month")
+        user_id = body.get("user_id", "unknown")
         
+        payment_id = str(uuid.uuid4())
         data = {
             "amount": {
                 "value": f"{amount:.2f}",
@@ -43,10 +41,11 @@ async def create_payment(request: Request):
                 "return_url": "https://t.me/vaaaac_bot"
             },
             "capture": True,
-            "description": "Пополнение баланса VAC VPN",
+            "description": f"Подписка VAC VPN ({'месячная' if tariff == 'month' else 'годовая'})",
             "metadata": {
                 "payment_id": payment_id,
-                "user_id": body.get("user_id", "unknown")
+                "user_id": user_id,
+                "tariff": tariff
             }
         }
 
@@ -75,6 +74,17 @@ async def create_payment(request: Request):
                 logger.error(error_msg)
                 return {"error": error_msg}, 500
                 
+            # Активируем подписку в БД
+            days = 30 if tariff == "month" else 365
+            conn = sqlite3.connect('vacvpn.db')
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO users (user_id, has_subscription, subscription_end)
+                VALUES (?, TRUE, ?)
+            ''', (user_id, (datetime.now() + timedelta(days=days)).isoformat()))
+            conn.commit()
+            conn.close()
+            
             return {"payment_url": payment_data["confirmation"]["confirmation_url"]}
         else:
             error_msg = f"Ошибка ЮKassa: {resp.status_code} - {resp.text}"
