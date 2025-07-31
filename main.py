@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from payment import create_payment
-import os
 from dotenv import load_dotenv
 
 app = FastAPI()
@@ -33,6 +32,6 @@ async def payment_endpoint(request: Request):
         return JSONResponse(result)
         
     except Exception as e:
-        error_msg = f"Ошибка обработки запроса: {str(e)}"
+        error_msg = f"Ошибка обработки: {str(e)}"
         print(error_msg)
         return JSONResponse({"error": error_msg}, status_code=500)
