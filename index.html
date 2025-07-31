@@ -347,7 +347,7 @@
             amount = parseInt(priceText.replace(/[^\d]/g, ''));
         }
 
-        const response = await fetch("https://vacvpn.onrender.com/create-payment", {
+        const response = await fetch("https://vacvpn.onrender.com/pay", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ amount })
