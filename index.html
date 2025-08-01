@@ -297,7 +297,6 @@
   </style>
 </head>
 <body>
-
   <div class="top-bar">
     <img src="logo.png" alt="VAC VPN Logo" class="logo">
     <div class="top-bar-right">
@@ -313,9 +312,7 @@
     <a href="#" onclick="logout()">Выход</a>
   </div>
 
-  <div class="payment-status" id="paymentStatus">
-    Ожидание подтверждения платежа...
-  </div>
+  <div class="payment-status" id="paymentStatus"></div>
 
   <div class="card">
     <div class="balance" id="userBalance">0₽</div>
@@ -373,10 +370,9 @@
 
     // Константы
     const TARIFFS = {
-      'month': { price: 150, dailyRate: 5.0 },
-      'year': { price: 1300, dailyRate: 3.56 }
+      month: { price: 150, dailyRate: 5.0 },
+      year: { price: 1300, dailyRate: 3.56 }
     };
-    const REFERRAL_BONUS = 50;
 
     // Элементы интерфейса
     const paymentButton = document.getElementById('paymentButton');
@@ -439,12 +435,11 @@
     // Функция обновления баланса
     async function updateBalanceInfo() {
       try {
-        const response = await fetch(`https://vacvpn.onrender.com/user-info?user_id=${userId}`);
+        const response = await fetch(`/user-info?user_id=${userId}`);
         const data = await response.json();
         
         if (data.balance !== undefined) {
-          const dailyRate = data.daily_rate || TARIFFS.month.dailyRate;
-          const daysLeft = Math.floor(data.balance / dailyRate);
+          const daysLeft = Math.floor(data.balance / data.daily_rate);
           
           document.getElementById('userBalance').textContent = `${data.balance.toFixed(2)}₽`;
           document.getElementById('balanceDays').textContent = `Хватит на ~${daysLeft} дней`;
@@ -463,6 +458,21 @@
       }
     }
 
+    // Проверка реферальной ссылки
+    async function checkReferral() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const ref = urlParams.get('start');
+      
+      if (ref && ref.startsWith('ref_')) {
+        const referrerId = ref.replace('ref_', '');
+        if (referrerId && referrerId !== userId) {
+          await fetch(`/register-referral?referrer_id=${referrerId}&user_id=${userId}`, {
+            method: 'POST'
+          });
+        }
+      }
+    }
+
     // Основная функция оплаты
     async function createPayment() {
       try {
@@ -474,7 +484,7 @@
         const tariff = selectedTariff?.id.includes('year') ? 'year' : 'month';
         const amount = TARIFFS[tariff].price;
 
-        const response = await fetch("https://vacvpn.onrender.com/create-payment", {
+        const response = await fetch("/pay", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -482,36 +492,40 @@
           },
           body: JSON.stringify({
             amount: amount,
-            tariff: tariff,
-            description: "Пополнение баланса VAC VPN"
+            tariff: tariff
           })
         });
 
         const data = await response.json();
         
         if (!response.ok) {
-          throw new Error(data.error || "Ошибка сервера");
+          throw new Error(data.detail || "Ошибка сервера");
         }
 
-        if (data.payment_url && data.payment_id) {
-          // Сохраняем данные платежа
-          localStorage.setItem('current_payment', JSON.stringify({
-            id: data.payment_id,
-            amount: amount,
-            tariff: tariff
-          }));
-          
-          // Показываем статус
+        if (data.payment_url) {
           paymentStatus.style.display = 'block';
           paymentStatus.textContent = 'Перенаправление на страницу оплаты...';
           
-          // Открываем платежную страницу
           Telegram.WebApp.openLink(data.payment_url);
           
-          // Начинаем проверять статус платежа
-          checkPaymentStatus(data.payment_id);
-        } else {
-          throw new Error("Не удалось получить ссылку для оплаты");
+          // Проверка статуса платежа
+          const checkInterval = setInterval(async () => {
+            try {
+              const balanceResponse = await fetch(`/user-info?user_id=${userId}`);
+              const balanceData = await balanceResponse.json();
+              
+              if (balanceData.balance > 0) {
+                clearInterval(checkInterval);
+                paymentStatus.textContent = 'Платеж успешно зачислен!';
+                await updateBalanceInfo();
+                setTimeout(() => {
+                  paymentStatus.style.display = 'none';
+                }, 5000);
+              }
+            } catch (e) {
+              console.error('Ошибка проверки баланса:', e);
+            }
+          }, 5000);
         }
       } catch (error) {
         showError(error.message);
@@ -519,58 +533,6 @@
       } finally {
         paymentButton.disabled = false;
         loadingIndicator.style.display = 'none';
-      }
-    }
-
-    // Проверка статуса платежа
-    async function checkPaymentStatus(paymentId) {
-      let attempts = 0;
-      const maxAttempts = 30; // Проверяем 30 раз (5 минут)
-      
-      const checkInterval = setInterval(async () => {
-        try {
-          attempts++;
-          
-          const response = await fetch(`https://vacvpn.onrender.com/check-payment?payment_id=${paymentId}`);
-          const data = await response.json();
-          
-          if (data.status === 'succeeded') {
-            clearInterval(checkInterval);
-            paymentStatus.textContent = 'Платеж успешно зачислен!';
-            
-            // Обновляем баланс
-            await updateBalanceInfo();
-            
-            // Удаляем данные платежа
-            localStorage.removeItem('current_payment');
-            
-            // Прячем статус через 5 секунд
-            setTimeout(() => {
-              paymentStatus.style.display = 'none';
-            }, 5000);
-          } else if (attempts >= maxAttempts) {
-            clearInterval(checkInterval);
-            paymentStatus.textContent = 'Время проверки платежа истекло';
-            setTimeout(() => {
-              paymentStatus.style.display = 'none';
-            }, 5000);
-          } else {
-            paymentStatus.textContent = `Ожидание подтверждения платежа... (${attempts}/${maxAttempts})`;
-          }
-        } catch (error) {
-          console.error('Ошибка проверки платежа:', error);
-        }
-      }, 10000); // Проверяем каждые 10 секунд
-    }
-
-    // Проверка незавершенных платежей при загрузке
-    function checkPendingPayments() {
-      const pendingPayment = localStorage.getItem('current_payment');
-      if (pendingPayment) {
-        const paymentData = JSON.parse(pendingPayment);
-        paymentStatus.style.display = 'block';
-        paymentStatus.textContent = 'Проверка предыдущего платежа...';
-        checkPaymentStatus(paymentData.id);
       }
     }
 
@@ -589,7 +551,7 @@
         const tariffId = selected.id.replace('tariff', '');
         const amount = TARIFFS[tariffId === '1year' ? 'year' : 'month'].price;
         
-        const response = await fetch("https://vacvpn.onrender.com/create-payment", {
+        const response = await fetch("/pay", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -602,23 +564,30 @@
         });
 
         const data = await response.json();
-        if (data.payment_url && data.payment_id) {
-          // Сохраняем данные платежа
-          localStorage.setItem('current_payment', JSON.stringify({
-            id: data.payment_id,
-            amount: amount,
-            tariff: tariffId === '1year' ? 'year' : 'month'
-          }));
-          
-          // Показываем статус
+        if (data.payment_url) {
           paymentStatus.style.display = 'block';
           paymentStatus.textContent = 'Перенаправление на страницу оплаты...';
           
-          // Открываем платежную страницу
           Telegram.WebApp.openLink(data.payment_url);
           
-          // Начинаем проверять статус платежа
-          checkPaymentStatus(data.payment_id);
+          // Проверка статуса платежа
+          const checkInterval = setInterval(async () => {
+            try {
+              const balanceResponse = await fetch(`/user-info?user_id=${userId}`);
+              const balanceData = await balanceResponse.json();
+              
+              if (balanceData.balance > 0) {
+                clearInterval(checkInterval);
+                paymentStatus.textContent = 'Подписка активирована!';
+                await updateBalanceInfo();
+                setTimeout(() => {
+                  paymentStatus.style.display = 'none';
+                }, 5000);
+              }
+            } catch (e) {
+              console.error('Ошибка проверки баланса:', e);
+            }
+          }, 5000);
         } else {
           showError(data.error || "Ошибка оплаты");
         }
@@ -675,8 +644,7 @@
     // Инициализация при загрузке
     document.addEventListener('DOMContentLoaded', async () => {
       await updateBalanceInfo();
-      checkPendingPayments();
-      console.log('Инициализация завершена');
+      await checkReferral();
     });
   </script>
 </body>
