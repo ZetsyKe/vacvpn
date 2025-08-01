@@ -4,3 +4,4 @@ python-dotenv
 yookassa
 httpx
 psycopg2
+register_referral
