@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from payment import create_payment, get_user_info
+from payment import create_payment, get_user_info, register_referral
 from dotenv import load_dotenv
 import logging
 
@@ -14,7 +14,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://vacvpn.vercel.app", "https://web.telegram.org"],
-    allow_methods=["POST", "GET"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -56,18 +56,13 @@ async def user_balance_endpoint(user_id: str):
         logger.error(error_msg, exc_info=True)
         return JSONResponse({"error": error_msg}, status_code=500)
 
-@app.get("/check-subscription")
-async def check_subscription(user_id: str):
+@app.post("/add-referral")
+async def add_referral(referrer_id: str, user_id: str):
     try:
-        result = await get_user_info(user_id)
-        if "error" in result:
-            return JSONResponse(result, status_code=400)
-            
-        has_subscription = result["days_left"] > 0 if "days_left" in result else False
-        return JSONResponse({"has_subscription": has_subscription})
-        
+        result = await register_referral(referrer_id, user_id)
+        return JSONResponse(result)
     except Exception as e:
-        error_msg = f"Ошибка проверки подписки: {str(e)}"
+        error_msg = f"Ошибка добавления реферала: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return JSONResponse({"error": error_msg}, status_code=500)
 
