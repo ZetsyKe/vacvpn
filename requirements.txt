@@ -1,7 +1,4 @@
-fastapi
-uvicorn
-python-dotenv
-yookassa
-httpx
-psycopg2
-register_referral
+fastapi==0.95.2
+uvicorn==0.22.0
+python-dotenv==1.0.0
+httpx==0.24.1
