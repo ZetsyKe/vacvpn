@@ -297,6 +297,7 @@
   </style>
 </head>
 <body>
+
   <div class="top-bar">
     <img src="logo.png" alt="VAC VPN Logo" class="logo">
     <div class="top-bar-right">
@@ -369,10 +370,7 @@
     Telegram.WebApp.expand();
 
     // Константы
-    const TARIFFS = {
-      month: { price: 150, dailyRate: 5.0 },
-      year: { price: 1300, dailyRate: 3.56 }
-    };
+    const DAILY_RATE = 5.0; // 5 руб/день
 
     // Элементы интерфейса
     const paymentButton = document.getElementById('paymentButton');
@@ -439,7 +437,7 @@
         const data = await response.json();
         
         if (data.balance !== undefined) {
-          const daysLeft = Math.floor(data.balance / data.daily_rate);
+          const daysLeft = Math.floor(data.balance / DAILY_RATE);
           
           document.getElementById('userBalance').textContent = `${data.balance.toFixed(2)}₽`;
           document.getElementById('balanceDays').textContent = `Хватит на ~${daysLeft} дней`;
@@ -481,10 +479,12 @@
         loadingIndicator.style.display = 'block';
         
         const selectedTariff = document.querySelector('.tariff-card.selected');
+        const amount = selectedTariff 
+          ? parseInt(selectedTariff.querySelector('.tariff-price').textContent) 
+          : 150;
         const tariff = selectedTariff?.id.includes('year') ? 'year' : 'month';
-        const amount = TARIFFS[tariff].price;
 
-        const response = await fetch("/pay", {
+        const response = await fetch("/create-payment", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -502,30 +502,20 @@
           throw new Error(data.detail || "Ошибка сервера");
         }
 
-        if (data.payment_url) {
+        if (data.success) {
           paymentStatus.style.display = 'block';
           paymentStatus.textContent = 'Перенаправление на страницу оплаты...';
           
           Telegram.WebApp.openLink(data.payment_url);
           
-          // Проверка статуса платежа
-          const checkInterval = setInterval(async () => {
-            try {
-              const balanceResponse = await fetch(`/user-info?user_id=${userId}`);
-              const balanceData = await balanceResponse.json();
-              
-              if (balanceData.balance > 0) {
-                clearInterval(checkInterval);
-                paymentStatus.textContent = 'Платеж успешно зачислен!';
-                await updateBalanceInfo();
-                setTimeout(() => {
-                  paymentStatus.style.display = 'none';
-                }, 5000);
-              }
-            } catch (e) {
-              console.error('Ошибка проверки баланса:', e);
-            }
-          }, 5000);
+          // Обновляем баланс через 3 секунды
+          setTimeout(async () => {
+            await updateBalanceInfo();
+            paymentStatus.textContent = 'Баланс успешно пополнен!';
+            setTimeout(() => {
+              paymentStatus.style.display = 'none';
+            }, 3000);
+          }, 3000);
         }
       } catch (error) {
         showError(error.message);
@@ -549,9 +539,9 @@
         subscribeBtn.disabled = true;
 
         const tariffId = selected.id.replace('tariff', '');
-        const amount = TARIFFS[tariffId === '1year' ? 'year' : 'month'].price;
+        const amount = tariffId === '1year' ? 1300 : 150;
         
-        const response = await fetch("/pay", {
+        const response = await fetch("/create-payment", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -564,30 +554,20 @@
         });
 
         const data = await response.json();
-        if (data.payment_url) {
+        if (data.success) {
           paymentStatus.style.display = 'block';
           paymentStatus.textContent = 'Перенаправление на страницу оплаты...';
           
           Telegram.WebApp.openLink(data.payment_url);
           
-          // Проверка статуса платежа
-          const checkInterval = setInterval(async () => {
-            try {
-              const balanceResponse = await fetch(`/user-info?user_id=${userId}`);
-              const balanceData = await balanceResponse.json();
-              
-              if (balanceData.balance > 0) {
-                clearInterval(checkInterval);
-                paymentStatus.textContent = 'Подписка активирована!';
-                await updateBalanceInfo();
-                setTimeout(() => {
-                  paymentStatus.style.display = 'none';
-                }, 5000);
-              }
-            } catch (e) {
-              console.error('Ошибка проверки баланса:', e);
-            }
-          }, 5000);
+          // Обновляем баланс через 3 секунды
+          setTimeout(async () => {
+            await updateBalanceInfo();
+            paymentStatus.textContent = 'Подписка активирована!';
+            setTimeout(() => {
+              paymentStatus.style.display = 'none';
+            }, 3000);
+          }, 3000);
         } else {
           showError(data.error || "Ошибка оплаты");
         }
