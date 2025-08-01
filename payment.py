@@ -1,96 +1,89 @@
-from fastapi import Request
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 import os
 import uuid
 import httpx
 from dotenv import load_dotenv
 import logging
 from datetime import datetime, timedelta
-import sqlite3
+import json
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv('backend/key.env')
+
 SHOP_ID = os.getenv("SHOP_ID")
 API_KEY = os.getenv("API_KEY")
 
-def init_db():
-    """Инициализация базы данных"""
-    conn = sqlite3.connect('vacvpn.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            balance REAL DEFAULT 0,
-            has_subscription BOOLEAN DEFAULT FALSE,
-            subscription_end TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+# Имитация базы данных
+users_db = {}
+DAILY_RATE = 5.0  # 5 рублей в день
 
-init_db()
+app = FastAPI()
 
+def update_user_balance(user_id: str, amount: float):
+    """Обновляет баланс пользователя с ежедневным списанием"""
+    if user_id not in users_db:
+        users_db[user_id] = {
+            "balance": 0.0,
+            "last_charge_date": datetime.now().isoformat(),
+            "tariff": "month"
+        }
+    
+    user = users_db[user_id]
+    now = datetime.now()
+    last_charge = datetime.fromisoformat(user["last_charge_date"]) if isinstance(user["last_charge_date"], str) else user["last_charge_date"]
+    days_passed = (now - last_charge).days
+    
+    if days_passed > 0:
+        charge_amount = days_passed * DAILY_RATE
+        user["balance"] = max(0, user["balance"] - charge_amount)
+        user["last_charge_date"] = now.isoformat()
+        logger.info(f"Списано {charge_amount} руб. за {days_passed} дней. Баланс: {user['balance']} руб.")
+    
+    user["balance"] += amount
+    users_db[user_id] = user
+    return user
+
+@app.post("/pay")
 async def create_payment(request: Request):
-    """Создание платежа (через баланс или ЮKassa)"""
     try:
-        body = await request.json()
-        user_id = body.get("user_id")
-        tariff = body.get("tariff", "month")
-        use_balance = body.get("use_balance", False)
-
-        # Стоимость тарифов
-        tariff_prices = {"month": 150, "year": 1300}
-        amount = tariff_prices.get(tariff, 150)
-        days = 30 if tariff == "month" else 365
-
-        conn = sqlite3.connect('vacvpn.db')
-        cursor = conn.cursor()
-
-        # Проверяем активную подписку
-        cursor.execute('''
-            SELECT has_subscription, subscription_end 
-            FROM users WHERE user_id = ?
-        ''', (user_id,))
-        sub_data = cursor.fetchone()
+        logger.info("=== Начало обработки платежа ===")
         
-        if sub_data and sub_data[0] and datetime.now() < datetime.fromisoformat(sub_data[1]):
-            conn.close()
-            return {"error": "У вас уже есть активная подписка"}, 400
-
-        # Оплата через баланс
-        if use_balance:
-            cursor.execute('SELECT balance FROM users WHERE user_id = ?', (user_id,))
-            balance = cursor.fetchone()
-            current_balance = balance[0] if balance else 0
-
-            if current_balance < amount:
-                conn.close()
-                return {"error": "Недостаточно средств на балансе"}, 400
-            
-            # Списание средств и активация подписки
-            cursor.execute('''
-                UPDATE users 
-                SET balance = balance - ?,
-                    has_subscription = TRUE,
-                    subscription_end = ?
-                WHERE user_id = ?
-            ''', (amount, (datetime.now() + timedelta(days=days)).isoformat(), user_id))
-            
-            conn.commit()
-            conn.close()
-            return {"status": "success", "message": "Подписка активирована"}
-
-        # Оплата через ЮKassa
+        if not SHOP_ID or not API_KEY:
+            error_msg = "Не настроены SHOP_ID или API_KEY в .env файле"
+            logger.error(error_msg)
+            return {"error": error_msg}, 500
+        
+        body = await request.json()
+        logger.info(f"Получены данные: {body}")
+        
+        amount = float(body.get("amount", 100))
+        user_id = body.get("user_id", "unknown")
         payment_id = str(uuid.uuid4())
+        
+        # Создаем платеж в ЮKassa
         data = {
-            "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
-            "confirmation": {"type": "redirect", "return_url": "https://t.me/vaaaac_bot"},
-            "description": f"Подписка VAC VPN ({'месячная' if tariff == 'month' else 'годовая'})",
-            "metadata": {"user_id": user_id, "tariff": tariff}
+            "amount": {
+                "value": f"{amount:.2f}",
+                "currency": "RUB"
+            },
+            "confirmation": {
+                "type": "redirect",
+                "return_url": "https://t.me/vaaaac_bot"
+            },
+            "capture": True,
+            "description": "Пополнение баланса VAC VPN",
+            "metadata": {
+                "payment_id": payment_id,
+                "user_id": user_id
+            }
         }
 
+        logger.info(f"Отправка запроса в ЮKassa: {data}")
+        
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 "https://api.yookassa.ru/v3/payments",
@@ -103,34 +96,64 @@ async def create_payment(request: Request):
                 timeout=10
             )
 
+        logger.info(f"Ответ ЮKassa: {resp.status_code}, {resp.text}")
+        
         if resp.status_code in (200, 201):
             payment_data = resp.json()
-            if payment_data.get("confirmation", {}).get("confirmation_url"):
-                # Активируем подписку после оплаты
-                cursor.execute('''
-                    INSERT OR IGNORE INTO users (user_id, balance)
-                    VALUES (?, 0)
-                ''', (user_id,))
-                
-                cursor.execute('''
-                    UPDATE users 
-                    SET has_subscription = TRUE,
-                        subscription_end = ?
-                    WHERE user_id = ?
-                ''', ((datetime.now() + timedelta(days=days)).isoformat(), user_id))
-                
-                conn.commit()
-                conn.close()
-                return {"payment_url": payment_data["confirmation"]["confirmation_url"]}
-
-        error_msg = f"Ошибка ЮKassa: {resp.status_code} - {resp.text}"
-        logger.error(error_msg)
-        return {"error": error_msg}, 500
+            logger.info(f"Данные платежа: {payment_data}")
+            
+            if not payment_data.get("confirmation", {}).get("confirmation_url"):
+                error_msg = "ЮKassa не вернула confirmation_url"
+                logger.error(error_msg)
+                return {"error": error_msg}, 500
+            
+            # Зачисляем средства на баланс
+            user = update_user_balance(user_id, amount)
+            days_left = int(user["balance"] / DAILY_RATE)
+            
+            return {
+                "payment_url": payment_data["confirmation"]["confirmation_url"],
+                "new_balance": user["balance"],
+                "days_left": days_left
+            }
+        else:
+            error_msg = f"Ошибка ЮKassa: {resp.status_code} - {resp.text}"
+            logger.error(error_msg)
+            return {"error": error_msg}, 500
 
     except Exception as e:
         error_msg = f"Ошибка сервера: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return {"error": error_msg}, 500
-    finally:
-        if 'conn' in locals():
-            conn.close()
+
+@app.get("/user-info")
+async def get_user_info(user_id: str):
+    try:
+        if user_id not in users_db:
+            return {"error": "User not found"}, 404
+        
+        user = users_db[user_id]
+        now = datetime.now()
+        last_charge = datetime.fromisoformat(user["last_charge_date"]) if isinstance(user["last_charge_date"], str) else user["last_charge_date"]
+        days_passed = (now - last_charge).days
+        
+        if days_passed > 0:
+            charge_amount = days_passed * DAILY_RATE
+            user["balance"] = max(0, user["balance"] - charge_amount)
+            user["last_charge_date"] = now.isoformat()
+            users_db[user_id] = user
+            logger.info(f"Списано {charge_amount} руб. за {days_passed} дней")
+        
+        days_left = int(user["balance"] / DAILY_RATE)
+        
+        return {
+            "balance": user["balance"],
+            "days_left": days_left,
+            "last_charge_date": user["last_charge_date"],
+            "tariff": user.get("tariff", "month")
+        }
+        
+    except Exception as e:
+        error_msg = f"Ошибка сервера: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return {"error": error_msg}, 500
