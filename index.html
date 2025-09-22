@@ -284,6 +284,27 @@
       background: #ff4444;
       color: white;
     }
+    .payment-type-selector {
+      margin: 16px 0;
+    }
+    .payment-type-btn {
+      display: inline-block;
+      padding: 8px 16px;
+      margin-right: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .payment-type-btn.active {
+      background: var(--primary);
+      color: var(--bg);
+    }
+    .payment-type-btn.inactive {
+      background: transparent;
+      color: var(--primary);
+      border: 1px solid var(--primary);
+    }
   </style>
 </head>
 <body>
@@ -305,11 +326,17 @@
 
   <div class="card">
     <div class="balance" id="userBalance">0₽</div>
-    <div class="balance-days" id="balanceDays">Баланс не загружен</div>
+    <div class="balance-days" id="balanceDays">Подписка неактивна</div>
     <div class="subscription-status" id="subscriptionStatus">
       <span>Статус подписки:</span>
       <span class="badge inactive-badge" id="subscriptionBadge">Неактивна</span>
     </div>
+    
+    <div class="payment-type-selector">
+      <div class="payment-type-btn active" id="btnBalance" onclick="selectPaymentType('balance')">Пополнить баланс</div>
+      <div class="payment-type-btn inactive" id="btnSubscription" onclick="selectPaymentType('subscription')">Купить подписку</div>
+    </div>
+    
     <button class="button button-yellow" id="paymentButton" onclick="createPayment()">ПОПОЛНИТЬ БАЛАНС</button>
     <button class="button button-outline" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</button>
     <div class="loading" id="loadingIndicator">Подождите, идет обработка...</div>
@@ -330,7 +357,7 @@
         <div class="tariff-label">Годовой</div>
         <div class="tariff-price">1300₽<span class="tariff-period">/год</span></div>
         <div class="tariff-trial">Пробная версия на 1 неделю</div>
-        <div class="tariff-description">Полный доступ на 1 год со скидкой 30%</div>
+        <div class="tariff-description">Полный доступ на 1 год (365 дней) со скидкой 30%</div>
       </div>
     </div>
     <button class="button button-yellow" id="subscribeBtn" style="display:none;" onclick="activateSubscription()">ПОДКЛЮЧИТЬ ПОДПИСКУ</button>
@@ -369,6 +396,10 @@
     const userId = user.id || 'unknown';
     const userName = user.first_name || 'Пользователь';
     
+    // Текущий выбранный тип оплаты
+    let currentPaymentType = 'balance'; // 'balance' или 'subscription'
+    let currentTariff = null;
+    
     // Инициализация интерфейса
     document.getElementById('userName').textContent = userName;
     document.getElementById('refLink').textContent = `https://t.me/vacvpnbot?start=ref_${userId}`;
@@ -405,40 +436,65 @@
       );
     }
 
+    // Выбор типа оплаты
+    function selectPaymentType(type) {
+      currentPaymentType = type;
+      
+      // Обновляем кнопки
+      document.getElementById('btnBalance').className = 
+        type === 'balance' ? 'payment-type-btn active' : 'payment-type-btn inactive';
+      document.getElementById('btnSubscription').className = 
+        type === 'subscription' ? 'payment-type-btn active' : 'payment-type-btn inactive';
+      
+      // Обновляем текст кнопки оплаты
+      paymentButton.textContent = type === 'balance' 
+        ? 'ПОПОЛНИТЬ БАЛАНС' 
+        : 'КУПИТЬ ПОДПИСКУ';
+    }
+
     // Функции тарифов
     function selectTariff(id) {
       document.querySelectorAll('.tariff-card').forEach(card => {
         card.classList.remove('selected');
       });
       document.getElementById(`tariff${id}`).classList.add('selected');
-      document.getElementById('subscribeBtn').style.display = 'block';
+      currentTariff = id;
+      
+      // Показываем кнопку только для подписки
+      if (currentPaymentType === 'subscription') {
+        subscribeBtn.style.display = 'block';
+      }
     }
 
-    // Функция обновления баланса
-    async function updateBalanceInfo() {
+    // Загрузка данных пользователя
+    async function loadUserData() {
       try {
-        const response = await fetch(`https://vacvpn.onrender.com/user-balance?user_id=${userId}`);
+        const response = await fetch(`https://vacvpn.onrender.com/user-data?user_id=${userId}`);
         const data = await response.json();
         
         if (data.balance !== undefined) {
-          const daysLeft = data.days_left || 0;
-          
-          document.getElementById('userBalance').textContent = `${data.balance.toFixed(2)}₽`;
-          document.getElementById('balanceDays').textContent = `Хватит на ~${daysLeft} дней`;
-          
-          // Обновляем статус подписки
-          const hasActiveSub = daysLeft > 0;
-          subscriptionBadge.textContent = hasActiveSub ? 'Активна' : 'Неактивна';
-          subscriptionBadge.className = `badge ${hasActiveSub ? 'active-badge' : 'inactive-badge'}`;
-          
-          // Блокируем тарифы если есть активная подписка
-          document.querySelectorAll('.tariff-card').forEach(card => {
-            card.classList.toggle('disabled', hasActiveSub);
-          });
-          subscribeBtn.style.display = hasActiveSub ? 'none' : 'block';
+          document.getElementById('userBalance').textContent = `${data.balance}₽`;
         }
+        
+        if (data.days_remaining !== undefined) {
+          if (data.days_remaining > 0) {
+            document.getElementById('balanceDays').textContent = `Хватит на ~${data.days_remaining} дней`;
+          } else {
+            document.getElementById('balanceDays').textContent = 'Подписка неактивна';
+          }
+        }
+        
+        if (data.has_subscription) {
+          subscriptionBadge.textContent = 'Активна';
+          subscriptionBadge.className = 'badge active-badge';
+          document.querySelectorAll('.tariff-card').forEach(card => {
+            card.classList.add('disabled');
+          });
+          subscribeBtn.style.display = 'none';
+        }
+        
       } catch (error) {
-        console.error("Ошибка обновления баланса:", error);
+        console.error("Ошибка загрузки данных:", error);
       }
     }
 
@@ -448,18 +504,46 @@
         // Сброс предыдущих ошибок
         hideError();
         
+        // Проверка активной подписки (если покупаем подписку)
+        if (currentPaymentType === 'subscription') {
+          const hasActiveSub = await checkSubscription();
+          if (hasActiveSub) {
+            showError("У вас уже есть активная подписка!");
+            return;
+          }
+          
+          if (!currentTariff) {
+            showError("Пожалуйста, выберите тарифный план");
+            return;
+          }
+        }
+
         // Показать индикатор загрузки
         paymentButton.disabled = true;
         loadingIndicator.style.display = 'block';
         
-        // Получить сумму платежа
-        const selectedTariff = document.querySelector('.tariff-card.selected');
-        const amount = selectedTariff 
-          ? parseInt(selectedTariff.querySelector('.tariff-price').textContent) 
-          : 150;
-        const tariff = selectedTariff?.id.includes('year') ? 'year' : 'month';
-
-        console.log(`[Payment] Начало процесса оплаты, сумма: ${amount} руб.`);
+        // Определяем параметры платежа
+        let amount, tariff, days;
+        
+        if (currentPaymentType === 'balance') {
+          // Пополнение баланса - всегда месячный тариф
+          amount = 150;
+          tariff = 'month';
+          days = 30;
+        } else {
+          // Покупка подписки
+          if (currentTariff === '1year') {
+            amount = 1300;
+            tariff = 'year';
+            days = 365;
+          } else {
+            amount = 150;
+            tariff = 'month';
+            days = 30;
+          }
+        }
+        
+        console.log(`[Payment] Тип: ${currentPaymentType}, Сумма: ${amount} руб., Тариф: ${tariff}, Дней: ${days}`);
         
         // Отправить запрос на сервер
         const response = await fetch("https://vacvpn.onrender.com/create-payment", {
@@ -471,7 +555,11 @@
           body: JSON.stringify({
             amount: amount,
             tariff: tariff,
-            description: "Пополнение баланса VAC VPN"
+            days: days,
+            payment_type: currentPaymentType,
+            description: currentPaymentType === 'balance' 
+              ? "Пополнение баланса VAC VPN" 
+              : `Оплата подписки VAC VPN (${tariff})`
           })
         });
 
@@ -489,64 +577,80 @@
         }
 
         console.log('[Payment] Открытие страницы оплаты');
+        
+        // Открываем страницу оплаты
         Telegram.WebApp.openLink(data.payment_url);
         
-        // Обновляем баланс после небольшой задержки
-        setTimeout(async () => {
-          await updateBalanceInfo();
-        }, 3000);
+        // Начинаем проверку статуса оплаты
+        checkPaymentStatus(data.payment_id);
         
       } catch (error) {
         console.error('[Payment] Ошибка:', error);
         showError(error.message);
+        paymentButton.disabled = false;
+        loadingIndicator.style.display = 'none';
+      }
+    }
+
+    // Проверка статуса оплаты
+    async function checkPaymentStatus(paymentId) {
+      try {
+        console.log(`[Payment] Начинаем проверку статуса платежа: ${paymentId}`);
+        
+        // Проверяем статус каждые 5 секунд в течение 2 минут
+        for (let i = 0; i < 24; i++) {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          const response = await fetch(`https://vacvpn.onrender.com/payment-status?payment_id=${paymentId}&user_id=${userId}`);
+          const data = await response.json();
+          
+          console.log(`[Payment] Статус проверки ${i+1}:`, data.status);
+          
+          if (data.status === 'success') {
+            // Платеж успешен
+            Telegram.WebApp.showAlert('Оплата прошла успешно! Баланс пополнен.');
+            await loadUserData(); // Обновляем данные пользователя
+            break;
+          } else if (data.status === 'failed') {
+            // Платеж не прошел
+            Telegram.WebApp.showAlert('Оплата не прошла. Попробуйте еще раз.');
+            break;
+          }
+          
+          // Если прошло 2 минуты, прекращаем проверку
+          if (i === 23) {
+            console.log('[Payment] Проверка статуса завершена (таймаут)');
+          }
+        }
+      } catch (error) {
+        console.error('[Payment] Ошибка проверки статуса:', error);
       } finally {
         paymentButton.disabled = false;
         loadingIndicator.style.display = 'none';
       }
     }
 
-    // Функция активации подписки
+    // Функция активации подписки (альтернативный путь)
     async function activateSubscription() {
-      const selected = document.querySelector('.tariff-card.selected');
-      if (!selected) {
+      if (!currentTariff) {
         showError("Пожалуйста, выберите тарифный план");
         return;
       }
 
+      // Устанавливаем тип оплаты как подписка и вызываем основную функцию
+      selectPaymentType('subscription');
+      createPayment();
+    }
+
+    // Проверка статуса подписки
+    async function checkSubscription() {
       try {
-        loadingIndicator.style.display = 'block';
-        subscribeBtn.disabled = true;
-
-        const tariffId = selected.id.replace('tariff', '');
-        const amount = tariffId === '1year' ? 1300 : 150;
-        
-        const response = await fetch("https://vacvpn.onrender.com/create-payment", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Telegram-User-ID": userId
-          },
-          body: JSON.stringify({
-            amount: amount,
-            tariff: tariffId === '1year' ? 'year' : 'month'
-          })
-        });
-
+        const response = await fetch(`https://vacvpn.onrender.com/check-subscription?user_id=${userId}`);
         const data = await response.json();
-        if (data.payment_url) {
-          Telegram.WebApp.openLink(data.payment_url);
-          // Обновляем баланс после оплаты
-          setTimeout(async () => {
-            await updateBalanceInfo();
-          }, 3000);
-        } else {
-          showError(data.error || "Ошибка оплаты");
-        }
+        return data.has_subscription || false;
       } catch (error) {
-        showError("Ошибка соединения");
-      } finally {
-        loadingIndicator.style.display = 'none';
-        subscribeBtn.disabled = false;
+        console.error("Ошибка проверки подписки:", error);
+        return false;
       }
     }
 
@@ -594,7 +698,7 @@
 
     // Инициализация при загрузке
     document.addEventListener('DOMContentLoaded', async () => {
-      await updateBalanceInfo();
+      await loadUserData();
       console.log('Инициализация завершена');
     });
   </script>
