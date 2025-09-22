@@ -291,6 +291,30 @@
       margin-bottom: 16px;
       font-size: 14px;
     }
+    .vpn-config-section {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    .protocol-selector {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    .protocol-btn {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid var(--primary);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--primary);
+      cursor: pointer;
+      text-align: center;
+    }
+    .protocol-btn.active {
+      background: var(--primary);
+      color: var(--bg);
+    }
   </style>
 </head>
 <body>
@@ -327,6 +351,26 @@
     <button class="button button-outline" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</button>
     <div class="loading" id="loadingIndicator">Подождите, идет обработка...</div>
     <div class="error-message" id="errorMessage"></div>
+  </div>
+
+  <!-- Новая секция для VPN конфигурации -->
+  <div class="card">
+    <div class="subscription-status">
+      <span>Доступ к VPN:</span>
+      <span class="badge inactive-badge" id="vpnStatus">Неактивен</span>
+    </div>
+    
+    <div class="vpn-config-section">
+      <div class="protocol-selector">
+        <div class="protocol-btn active" onclick="selectProtocol('wireguard')">WireGuard</div>
+        <div class="protocol-btn" onclick="selectProtocol('openvpn')">OpenVPN</div>
+      </div>
+      
+      <button class="button button-yellow" id="vpnButton" onclick="getVPNConfig()">ПОЛУЧИТЬ КОНФИГУРАЦИЮ VPN</button>
+      <button class="button button-outline" id="renewVpnButton" onclick="renewVPNConfig()" style="display: none;">ОБНОВИТЬ КОНФИГ</button>
+      <div class="loading" id="vpnLoading" style="display: none;">Генерация конфигурации...</div>
+      <div class="error-message" id="vpnErrorMessage"></div>
+    </div>
   </div>
 
   <div class="card" id="tariffBlock">
@@ -382,8 +426,9 @@
     const userId = user.id || 'unknown';
     const userName = user.first_name || 'Пользователь';
     
-    // Текущий выбранный тариф
+    // Текущий выбранный тариф и протокол
     let currentTariff = null;
+    let currentProtocol = 'wireguard';
     let userData = {};
     
     // Инициализация интерфейса
@@ -406,7 +451,8 @@
         'Правила использования VAC VPN:\n\n' +
         '1. Запрещено использование для незаконной деятельности\n' +
         '2. Нельзя передавать аккаунт третьим лицам\n' +
-        '3. Возврат средств возможен в течение 3 дней'
+        '3. Возврат средств возможен в течение 3 дней\n' +
+        '4. Конфигурации VPN действительны в течение 30 дней'
       );
       toggleMenu();
     }
@@ -422,11 +468,19 @@
       );
     }
 
+    // Выбор протокола VPN
+    function selectProtocol(protocol) {
+      currentProtocol = protocol;
+      document.querySelectorAll('.protocol-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      event.target.classList.add('active');
+    }
+
     // Функции тарифов
     function selectTariff(id) {
-      // Если у пользователя есть активная подписка, показываем информацию о текущем тарифе
       if (userData.has_subscription) {
-        showError("У вас уже есть активная подписка. Дождитесь ее окончания или обратитесь в поддержку.");
+        showError("У вас уже есть активная подписка. Дождитесь ее окончания.");
         return;
       }
       
@@ -436,7 +490,6 @@
       document.getElementById(`tariff${id}`).classList.add('selected');
       currentTariff = id;
       
-      // Всегда показываем кнопку обновления тарифа при выборе
       updateTariffBtn.style.display = 'block';
       updateTariffBtn.textContent = userData.balance > 0 ? 'ОБНОВИТЬ ТАРИФ' : 'ОПЛАТИТЬ ТАРИФ';
     }
@@ -452,7 +505,11 @@
         }
         
         // Обновляем информацию о подписке
-        if (userData.has_subscription) {
+        const vpnStatus = document.getElementById('vpnStatus');
+        const vpnButton = document.getElementById('vpnButton');
+        const renewVpnButton = document.getElementById('renewVpnButton');
+        
+        if (userData.has_subscription && userData.days_remaining > 0) {
           subscriptionBadge.textContent = 'Активна';
           subscriptionBadge.className = 'badge active-badge';
           
@@ -462,10 +519,16 @@
           document.getElementById('currentTariffDays').textContent = userData.days_remaining || 0;
           
           // Обновляем информацию о днях
-          if (userData.days_remaining > 0) {
-            document.getElementById('balanceDays').textContent = `Хватит на ${userData.days_remaining} дней`;
-          } else {
-            document.getElementById('balanceDays').textContent = 'Подписка неактивна';
+          document.getElementById('balanceDays').textContent = `Хватит на ${userData.days_remaining} дней`;
+          
+          // Обновляем статус VPN
+          vpnStatus.textContent = 'Доступен';
+          vpnStatus.className = 'badge active-badge';
+          vpnButton.disabled = false;
+          
+          // Показываем кнопку обновления конфига если он уже был выдан
+          if (userData.vpn_config_issued) {
+            renewVpnButton.style.display = 'block';
           }
           
           // Блокируем выбор тарифов при активной подписке
@@ -486,6 +549,12 @@
             document.getElementById('balanceDays').textContent = 'Подписка неактивна';
           }
           
+          // Обновляем статус VPN
+          vpnStatus.textContent = 'Недоступен';
+          vpnStatus.className = 'badge inactive-badge';
+          vpnButton.disabled = true;
+          renewVpnButton.style.display = 'none';
+          
           // Разблокируем выбор тарифов
           document.querySelectorAll('.tariff-card').forEach(card => {
             card.classList.remove('disabled');
@@ -500,21 +569,16 @@
     // Основная функция оплаты/пополнения
     async function createPayment() {
       try {
-        // Сброс предыдущих ошибок
         hideError();
-        
-        // Показать индикатор загрузки
         paymentButton.disabled = true;
         loadingIndicator.style.display = 'block';
         
-        // Определяем параметры платежа
-        const amount = 150; // Базовая сумма пополнения
-        const tariff = 'month'; // При пополнении баланса всегда месячный
+        const amount = 150;
+        const tariff = 'month';
         const days = 30;
         
         console.log(`[Payment] Пополнение баланса, сумма: ${amount} руб.`);
         
-        // Отправить запрос на сервер
         const response = await fetch("https://vacvpn.onrender.com/create-payment", {
           method: "POST",
           headers: {
@@ -531,9 +595,7 @@
         });
 
         const data = await response.json();
-        console.log('[Payment] Ответ сервера:', data);
         
-        // Обработка ошибок
         if (!response.ok) {
           const errorMsg = data.error || `Ошибка сервера (код ${response.status})`;
           throw new Error(errorMsg);
@@ -544,11 +606,7 @@
         }
 
         console.log('[Payment] Открытие страницы оплаты');
-        
-        // Открываем страницу оплаты
         Telegram.WebApp.openLink(data.payment_url);
-        
-        // Начинаем проверку статуса оплаты
         checkPaymentStatus(data.payment_id);
         
       } catch (error) {
@@ -567,14 +625,10 @@
           return;
         }
 
-        // Сброс предыдущих ошибок
         hideError();
-        
-        // Показать индикатор загрузки
         updateTariffBtn.disabled = true;
         loadingIndicator.style.display = 'block';
         
-        // Определяем параметры тарифа
         let amount, tariff, days;
         
         if (currentTariff === '1year') {
@@ -609,7 +663,7 @@
           
           if (response.ok && data.success) {
             Telegram.WebApp.showAlert(`Тариф успешно активирован! Доступ на ${days} дней.`);
-            await loadUserData(); // Обновляем данные
+            await loadUserData();
             updateTariffBtn.style.display = 'none';
             document.querySelectorAll('.tariff-card').forEach(card => {
               card.classList.remove('selected');
@@ -660,12 +714,89 @@
       }
     }
 
+    // Функция получения VPN конфигурации
+    async function getVPNConfig() {
+      try {
+        const vpnButton = document.getElementById('vpnButton');
+        const vpnLoading = document.getElementById('vpnLoading');
+        const vpnErrorMessage = document.getElementById('vpnErrorMessage');
+        
+        // Проверяем активна ли подписка
+        if (!userData.has_subscription || userData.days_remaining <= 0) {
+          showVPNError("Для получения доступа к VPN необходима активная подписка");
+          return;
+        }
+
+        vpnButton.disabled = true;
+        vpnLoading.style.display = 'block';
+        hideVPNError();
+        
+        const response = await fetch("https://vacvpn.onrender.com/get-vpn-config", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Telegram-User-ID": userId
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            protocol: currentProtocol
+          })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+          // Отправляем конфиг пользователю через бота
+          await sendConfigToUser(data.config, currentProtocol);
+          Telegram.WebApp.showAlert('Конфигурация VPN отправлена в чат с ботом! Проверьте сообщения от @vacvpnbot');
+          
+          // Показываем кнопку обновления конфига
+          document.getElementById('renewVpnButton').style.display = 'block';
+          
+        } else {
+          throw new Error(data.error || "Ошибка получения конфигурации");
+        }
+        
+      } catch (error) {
+        console.error('[VPN] Ошибка:', error);
+        showVPNError(error.message);
+      } finally {
+        document.getElementById('vpnButton').disabled = false;
+        document.getElementById('vpnLoading').style.display = 'none';
+      }
+    }
+
+    // Функция обновления VPN конфигурации
+    async function renewVPNConfig() {
+      if (confirm('Вы уверены, что хотите обновить конфигурацию VPN? Старая конфигурация перестанет работать.')) {
+        await getVPNConfig();
+      }
+    }
+
+    // Функция для отправки конфигурации через бота
+    async function sendConfigToUser(config, protocol) {
+      const fileExtension = protocol === 'wireguard' ? 'conf' : 'ovpn';
+      const fileName = `vacvpn_${userId}_${Date.now()}.${fileExtension}`;
+      
+      await fetch("https://vacvpn.onrender.com/send-vpn-config", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          config: config,
+          file_name: fileName,
+          protocol: protocol
+        })
+      });
+    }
+
     // Проверка статуса оплаты
     async function checkPaymentStatus(paymentId) {
       try {
         console.log(`[Payment] Начинаем проверку статуса платежа: ${paymentId}`);
         
-        // Проверяем статус каждые 5 секунд в течение 2 минут
         for (let i = 0; i < 24; i++) {
           await new Promise(resolve => setTimeout(resolve, 5000));
           
@@ -675,11 +806,9 @@
           console.log(`[Payment] Статус проверки ${i+1}:`, data.status);
           
           if (data.status === 'success') {
-            // Платеж успешен
             Telegram.WebApp.showAlert('Оплата прошла успешно!');
-            await loadUserData(); // Обновляем данные пользователя
+            await loadUserData();
             
-            // Если это была оплата тарифа, скрываем кнопку
             if (data.payment_type === 'tariff') {
               updateTariffBtn.style.display = 'none';
               document.querySelectorAll('.tariff-card').forEach(card => {
@@ -688,7 +817,6 @@
             }
             break;
           } else if (data.status === 'failed') {
-            // Платеж не прошел
             Telegram.WebApp.showAlert('Оплата не прошла. Попробуйте еще раз.');
             break;
           }
@@ -733,6 +861,17 @@
 
     function hideError() {
       errorMessage.style.display = 'none';
+    }
+
+    function showVPNError(message) {
+      const vpnError = document.getElementById('vpnErrorMessage');
+      vpnError.textContent = message;
+      vpnError.style.display = 'block';
+      setTimeout(() => { vpnError.style.display = 'none'; }, 5000);
+    }
+
+    function hideVPNError() {
+      document.getElementById('vpnErrorMessage').style.display = 'none';
     }
 
     // Закрытие меню при клике вне его
