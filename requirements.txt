@@ -3,6 +3,3 @@ uvicorn==0.24.0
 httpx==0.25.2
 python-dotenv==1.0.0
 pydantic==2.5.0
-firebase-admin==6.5.0
-google-cloud-firestore==2.13.0
-google-auth==2.25.2
