@@ -1,20 +1,54 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import uuid
 import httpx
-from dotenv import load_dotenv
 from datetime import datetime, timedelta
-import sqlite3
+import firebase_admin
+from firebase_admin import credentials, firestore
 from pydantic import BaseModel
 import logging
+import json
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Загрузка переменных окружения
-load_dotenv('backend/key.env')
+# Инициализация Firebase
+def init_firebase():
+    try:
+        # Получаем credentials из переменных окружения
+        firebase_config = {
+            "type": os.getenv("FIREBASE_TYPE"),
+            "project_id": os.getenv("FIREBASE_PROJECT_ID"),
+            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
+            "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace('\\n', '\n'),
+            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
+            "client_id": os.getenv("FIREBASE_CLIENT_ID"),
+            "auth_uri": os.getenv("FIREBASE_AUTH_URI", "https://accounts.google.com/o/oauth2/auth"),
+            "token_uri": os.getenv("FIREBASE_TOKEN_URI", "https://oauth2.googleapis.com/token"),
+            "auth_provider_x509_cert_url": os.getenv("FIREBASE_AUTH_PROVIDER_CERT_URL", "https://www.googleapis.com/oauth2/v1/certs"),
+            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL")
+        }
+        
+        cred = credentials.Certificate(firebase_config)
+        firebase_admin.initialize_app(cred)
+        logger.info("Firebase initialized successfully")
+        return firestore.client()
+    except Exception as e:
+        logger.error(f"Error initializing Firebase: {e}")
+        # Альтернативный способ - через файл (если есть)
+        try:
+            cred = credentials.Certificate('firebase-key.json')
+            firebase_admin.initialize_app(cred)
+            logger.info("Firebase initialized from file")
+            return firestore.client()
+        except:
+            logger.error("Could not initialize Firebase")
+            return None
+
+# Инициализация Firebase
+db = init_firebase()
 
 app = FastAPI(title="VAC VPN API")
 
@@ -33,7 +67,7 @@ class PaymentRequest(BaseModel):
     amount: float
     tariff: str = "month"
     description: str = ""
-    payment_type: str = "tariff"  # tariff или balance
+    payment_type: str = "tariff"
 
 class UserCreateRequest(BaseModel):
     user_id: str
@@ -46,178 +80,151 @@ class ActivateTariffRequest(BaseModel):
     tariff: str
     amount: float
 
-# Инициализация БД
-def init_db():
-    conn = sqlite3.connect('vacvpn.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id TEXT PRIMARY KEY,
-            username TEXT,
-            first_name TEXT,
-            last_name TEXT,
-            balance REAL DEFAULT 0,
-            has_subscription BOOLEAN DEFAULT FALSE,
-            subscription_end TEXT,
-            tariff_type TEXT DEFAULT 'none',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS payments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            payment_id TEXT UNIQUE,
-            yookassa_id TEXT,
-            user_id TEXT,
-            amount REAL,
-            tariff TEXT,
-            status TEXT DEFAULT 'pending',
-            payment_type TEXT DEFAULT 'tariff',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            confirmed_at TEXT
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS referrals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            referrer_id TEXT,
-            referred_id TEXT,
-            bonus_paid BOOLEAN DEFAULT FALSE,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
-
-init_db()
-
-# Функции работы с БД
-def get_db_connection():
-    return sqlite3.connect('vacvpn.db')
-
+# Функции работы с Firebase
 def get_user(user_id: str):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
-    columns = [column[0] for column in cursor.description]
-    user = cursor.fetchone()
-    conn.close()
-    return dict(zip(columns, user)) if user else None
+    if not db:
+        return None
+    try:
+        doc = db.collection('users').document(user_id).get()
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        logger.error(f"Error getting user: {e}")
+        return None
 
 def create_user(user_data: UserCreateRequest):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT OR IGNORE INTO users (user_id, username, first_name, last_name, created_at)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (user_data.user_id, user_data.username, user_data.first_name, 
-          user_data.last_name, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
+    if not db:
+        return
+    try:
+        user_ref = db.collection('users').document(user_data.user_id)
+        if not user_ref.get().exists:
+            user_ref.set({
+                'user_id': user_data.user_id,
+                'username': user_data.username,
+                'first_name': user_data.first_name,
+                'last_name': user_data.last_name,
+                'balance': 0.0,
+                'has_subscription': False,
+                'subscription_end': None,
+                'tariff_type': 'none',
+                'created_at': firestore.SERVER_TIMESTAMP
+            })
+    except Exception as e:
+        logger.error(f"Error creating user: {e}")
 
 def update_user_balance(user_id: str, amount: float):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('UPDATE users SET balance = balance + ? WHERE user_id = ?', (amount, user_id))
-    conn.commit()
-    conn.close()
+    if not db:
+        return
+    try:
+        user_ref = db.collection('users').document(user_id)
+        user = user_ref.get()
+        if user.exists:
+            current_balance = user.to_dict().get('balance', 0)
+            user_ref.update({'balance': current_balance + amount})
+    except Exception as e:
+        logger.error(f"Error updating balance: {e}")
 
 def activate_subscription(user_id: str, tariff: str, days: int):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    now = datetime.now()
-    new_end = now + timedelta(days=days)
-    
-    cursor.execute('''
-        UPDATE users 
-        SET has_subscription = TRUE, subscription_end = ?, tariff_type = ?
-        WHERE user_id = ?
-    ''', (new_end.isoformat(), tariff, user_id))
-    
-    conn.commit()
-    conn.close()
-    return new_end
+    if not db:
+        return
+    try:
+        now = datetime.now()
+        new_end = now + timedelta(days=days)
+        
+        db.collection('users').document(user_id).update({
+            'has_subscription': True,
+            'subscription_end': new_end.isoformat(),
+            'tariff_type': tariff
+        })
+        return new_end
+    except Exception as e:
+        logger.error(f"Error activating subscription: {e}")
+        return None
 
 def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_type: str = "tariff"):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO payments (payment_id, user_id, amount, tariff, payment_type, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (payment_id, user_id, amount, tariff, payment_type, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
+    if not db:
+        return
+    try:
+        db.collection('payments').document(payment_id).set({
+            'payment_id': payment_id,
+            'user_id': user_id,
+            'amount': amount,
+            'tariff': tariff,
+            'status': 'pending',
+            'payment_type': payment_type,
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'yookassa_id': None,
+            'confirmed_at': None
+        })
+    except Exception as e:
+        logger.error(f"Error saving payment: {e}")
 
 def update_payment_status(payment_id: str, status: str, yookassa_id: str = None):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    if status == 'succeeded':
-        cursor.execute('''
-            UPDATE payments 
-            SET status = ?, yookassa_id = ?, confirmed_at = ?
-            WHERE payment_id = ?
-        ''', (status, yookassa_id, datetime.now().isoformat(), payment_id))
-    else:
-        cursor.execute('''
-            UPDATE payments SET status = ?, yookassa_id = ? 
-            WHERE payment_id = ?
-        ''', (status, yookassa_id, payment_id))
-    
-    conn.commit()
-    conn.close()
+    if not db:
+        return
+    try:
+        update_data = {
+            'status': status,
+            'yookassa_id': yookassa_id
+        }
+        if status == 'succeeded':
+            update_data['confirmed_at'] = firestore.SERVER_TIMESTAMP
+        
+        db.collection('payments').document(payment_id).update(update_data)
+    except Exception as e:
+        logger.error(f"Error updating payment status: {e}")
 
 def get_payment(payment_id: str):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM payments WHERE payment_id = ?', (payment_id,))
-    columns = [column[0] for column in cursor.description]
-    payment = cursor.fetchone()
-    conn.close()
-    return dict(zip(columns, payment)) if payment else None
+    if not db:
+        return None
+    try:
+        doc = db.collection('payments').document(payment_id).get()
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        logger.error(f"Error getting payment: {e}")
+        return None
 
 def add_referral(referrer_id: str, referred_id: str):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT OR IGNORE INTO referrals (referrer_id, referred_id, created_at)
-        VALUES (?, ?, ?)
-    ''', (referrer_id, referred_id, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
+    if not db:
+        return
+    try:
+        referral_id = f"{referrer_id}_{referred_id}"
+        db.collection('referrals').document(referral_id).set({
+            'referrer_id': referrer_id,
+            'referred_id': referred_id,
+            'bonus_paid': False,
+            'created_at': firestore.SERVER_TIMESTAMP
+        })
+    except Exception as e:
+        logger.error(f"Error adding referral: {e}")
 
 def get_referrals(referrer_id: str):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM referrals WHERE referrer_id = ?', (referrer_id,))
-    columns = [column[0] for column in cursor.description]
-    referrals = cursor.fetchall()
-    referrals_dict = [dict(zip(columns, row)) for row in referrals]
-    conn.close()
-    return referrals_dict
+    if not db:
+        return []
+    try:
+        referrals = db.collection('referrals').where('referrer_id', '==', referrer_id).stream()
+        return [ref.to_dict() for ref in referrals]
+    except Exception as e:
+        logger.error(f"Error getting referrals: {e}")
+        return []
 
 def mark_referral_bonus_paid(referred_id: str):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE referrals SET bonus_paid = TRUE WHERE referred_id = ?
-    ''', (referred_id,))
-    conn.commit()
-    conn.close()
+    if not db:
+        return
+    try:
+        referrals = db.collection('referrals').where('referred_id', '==', referred_id).stream()
+        for ref in referrals:
+            ref.reference.update({'bonus_paid': True})
+    except Exception as e:
+        logger.error(f"Error marking referral bonus paid: {e}")
 
 # Эндпоинты API
 @app.get("/")
 async def root():
-    return {"message": "VAC VPN API is running"}
+    return {"message": "VAC VPN API is running", "firebase_status": "connected" if db else "disconnected"}
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "firebase": "connected" if db else "disconnected"}
 
 @app.post("/create-payment")
 async def create_payment(request: PaymentRequest):
@@ -230,6 +237,9 @@ async def create_payment(request: PaymentRequest):
         if not SHOP_ID or not API_KEY:
             logger.error("Payment gateway not configured")
             return {"error": "Payment gateway not configured"}
+        
+        if not db:
+            return {"error": "Database not connected"}
         
         # Определяем параметры тарифа
         tariff_config = {
@@ -316,6 +326,9 @@ async def create_payment(request: PaymentRequest):
 @app.get("/payment-status")
 async def check_payment(payment_id: str, user_id: str):
     try:
+        if not db:
+            return {"error": "Database not connected"}
+            
         payment = get_payment(payment_id)
         if not payment:
             return {"error": "Payment not found"}
@@ -332,7 +345,7 @@ async def check_payment(payment_id: str, user_id: str):
             }
         
         # Проверяем статус в ЮKassa
-        yookassa_id = payment['yookassa_id']
+        yookassa_id = payment.get('yookassa_id')
         if yookassa_id:
             SHOP_ID = os.getenv("SHOP_ID")
             API_KEY = os.getenv("API_KEY")
@@ -366,12 +379,12 @@ async def check_payment(payment_id: str, user_id: str):
                             # Начисляем реферальный бонус
                             referrals = get_referrals(user_id)
                             for ref in referrals:
-                                if not ref['bonus_paid']:  # Если бонус еще не выплачен
-                                    update_user_balance(ref['referrer_id'], 50)  # Начисляем 50₽ рефереру
+                                if not ref.get('bonus_paid', False):
+                                    update_user_balance(ref['referrer_id'], 50)
                                     mark_referral_bonus_paid(user_id)
                                     logger.info(f"Referral bonus paid to {ref['referrer_id']} for user {user_id}")
                         
-                        # Начисляем баланс (для пополнения или тарифа)
+                        # Начисляем баланс
                         update_user_balance(user_id, amount)
                         logger.info(f"Payment succeeded for user {user_id}, amount: {amount}")
                     
@@ -397,6 +410,9 @@ async def check_payment(payment_id: str, user_id: str):
 @app.get("/user-data")
 async def get_user_info(user_id: str):
     try:
+        if not db:
+            return {"error": "Database not connected"}
+            
         user = get_user(user_id)
         if not user:
             return {
@@ -409,8 +425,8 @@ async def get_user_info(user_id: str):
             }
         
         # Проверяем статус подписки
-        has_subscription = user['has_subscription']
-        subscription_end = user['subscription_end']
+        has_subscription = user.get('has_subscription', False)
+        subscription_end = user.get('subscription_end')
         days_remaining = 0
         
         if has_subscription and subscription_end:
@@ -421,11 +437,9 @@ async def get_user_info(user_id: str):
                 
                 if days_remaining == 0:
                     # Подписка истекла
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
-                    cursor.execute('UPDATE users SET has_subscription = FALSE WHERE user_id = ?', (user_id,))
-                    conn.commit()
-                    conn.close()
+                    db.collection('users').document(user_id).update({
+                        'has_subscription': False
+                    })
                     has_subscription = False
             except Exception as e:
                 logger.error(f"Error parsing subscription end date: {e}")
@@ -433,10 +447,10 @@ async def get_user_info(user_id: str):
         
         return {
             "user_id": user_id,
-            "balance": user['balance'] or 0,
+            "balance": user.get('balance', 0),
             "has_subscription": has_subscription,
             "subscription_end": subscription_end,
-            "tariff_type": user['tariff_type'] or "none",
+            "tariff_type": user.get('tariff_type', 'none'),
             "days_remaining": days_remaining
         }
         
@@ -447,6 +461,8 @@ async def get_user_info(user_id: str):
 @app.post("/create-user")
 async def create_user_endpoint(request: UserCreateRequest):
     try:
+        if not db:
+            return {"error": "Database not connected"}
         create_user(request)
         logger.info(f"User created: {request.user_id}")
         return {"success": True, "user_id": request.user_id}
@@ -457,6 +473,8 @@ async def create_user_endpoint(request: UserCreateRequest):
 @app.post("/add-referral")
 async def add_referral_endpoint(referrer_id: str, referred_id: str):
     try:
+        if not db:
+            return {"error": "Database not connected"}
         if referrer_id == referred_id:
             return {"error": "Cannot refer yourself"}
         
@@ -470,25 +488,25 @@ async def add_referral_endpoint(referrer_id: str, referred_id: str):
 @app.post("/activate-tariff")
 async def activate_tariff(request: ActivateTariffRequest):
     try:
+        if not db:
+            return {"error": "Database not connected"}
+            
         user = get_user(request.user_id)
         if not user:
             return {"error": "User not found"}
         
-        if user['balance'] < request.amount:
+        if user.get('balance', 0) < request.amount:
             return {"error": "Insufficient balance"}
         
         # Списываем сумму с баланса
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('UPDATE users SET balance = balance - ? WHERE user_id = ?', 
-                      (request.amount, request.user_id))
+        new_balance = user.get('balance', 0) - request.amount
+        db.collection('users').document(request.user_id).update({
+            'balance': new_balance
+        })
         
         # Активируем подписку
         tariff_days = 30 if request.tariff == "month" else 365
         activate_subscription(request.user_id, request.tariff, tariff_days)
-        
-        conn.commit()
-        conn.close()
         
         logger.info(f"Tariff activated for user {request.user_id}, days: {tariff_days}")
         return {"success": True, "days_added": tariff_days}
