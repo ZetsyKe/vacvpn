@@ -3,11 +3,9 @@ import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import firebase_admin
-from firebase_admin import credentials, db
-import json
 from datetime import datetime, timedelta
 import uuid
+import json
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -25,23 +23,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Загрузка переменных окружения
-API_BASE_URL = os.getenv("RENDER_EXTERNAL_URL", "")
-
-# Инициализация Firebase
-try:
-    firebase_cred = os.getenv("FIREBASE_CREDENTIALS")
-    if firebase_cred:
-        cred_dict = json.loads(firebase_cred)
-        cred = credentials.Certificate(cred_dict)
-        firebase_admin.initialize_app(cred, {
-            'databaseURL': 'https://vacvpn-75yegf-default-rtdb.firebaseio.com/'
-        })
-        logger.info("✅ Firebase Realtime Database инициализирован")
-    else:
-        logger.warning("❌ FIREBASE_CREDENTIALS not found")
-except Exception as e:
-    logger.error(f"❌ Firebase initialization error: {e}")
+# Простое хранилище в памяти (для демо)
+users_db = {}
+payments_db = {}
 
 # Модели данных
 class PaymentRequest(BaseModel):
@@ -57,140 +41,80 @@ class UserCreateRequest(BaseModel):
     first_name: str = ""
     last_name: str = ""
 
-# Функции работы с Firebase
+# Функции работы с данными
 def get_user(user_id: str):
-    try:
-        ref = db.reference(f'users/{user_id}')
-        user_data = ref.get()
-        return user_data
-    except Exception as e:
-        logger.error(f"❌ Error getting user from Firebase: {e}")
-        return None
+    return users_db.get(user_id)
 
-def create_user_in_firebase(user_data: UserCreateRequest):
-    try:
-        ref = db.reference(f'users/{user_data.user_id}')
-        
-        existing_user = ref.get()
-        if not existing_user:
-            user_data_dict = {
-                'user_id': str(user_data.user_id),
-                'username': user_data.username,
-                'first_name': user_data.first_name,
-                'last_name': user_data.last_name,
-                'balance': 0.0,
-                'has_subscription': False,
-                'subscription_end': None,
-                'tariff_type': 'none',
-                'created_at': datetime.now().isoformat(),
-                'updated_at': datetime.now().isoformat()
-            }
-            ref.set(user_data_dict)
-            logger.info(f"✅ User created in Firebase: {user_data.user_id}")
-        else:
-            logger.info(f"ℹ️ User already exists in Firebase: {user_data.user_id}")
-            
-        return True
-    except Exception as e:
-        logger.error(f"❌ Error creating user in Firebase: {e}")
-        return False
-
-def update_user_balance(user_id: str, amount: float):
-    try:
-        ref = db.reference(f'users/{user_id}')
-        user_data = ref.get()
-        
-        if user_data:
-            current_balance = user_data.get('balance', 0)
-            new_balance = current_balance + amount
-            
-            ref.update({
-                'balance': new_balance,
-                'updated_at': datetime.now().isoformat()
-            })
-            logger.info(f"✅ Баланс обновлен: {user_id} {current_balance} -> {new_balance}")
-            return True
-        else:
-            create_user_in_firebase(UserCreateRequest(
-                user_id=user_id,
-                username="",
-                first_name="",
-                last_name=""
-            ))
-            return update_user_balance(user_id, amount)
-    except Exception as e:
-        logger.error(f"❌ Error updating user balance in Firebase: {e}")
-        return False
-
-def activate_subscription(user_id: str, tariff: str, days: int):
-    try:
-        ref = db.reference(f'users/{user_id}')
-        user_data = ref.get()
-        
-        if not user_data:
-            create_user_in_firebase(UserCreateRequest(
-                user_id=user_id,
-                username="",
-                first_name="",
-                last_name=""
-            ))
-            user_data = {}
-        
-        now = datetime.now()
-        new_end = now + timedelta(days=days)
-        
-        ref.update({
-            'has_subscription': True,
-            'subscription_end': new_end.isoformat(),
-            'tariff_type': tariff,
-            'updated_at': datetime.now().isoformat()
-        })
-        
-        logger.info(f"✅ Подписка активирована: {user_id} на {days} дней")
-        return new_end
-    except Exception as e:
-        logger.error(f"❌ Error activating subscription in Firebase: {e}")
-        return None
-
-def save_payment(payment_data: dict):
-    try:
-        payment_id = payment_data['payment_id']
-        ref = db.reference(f'payments/{payment_id}')
-        payment_data['created_at'] = datetime.now().isoformat()
-        ref.set(payment_data)
-        return True
-    except Exception as e:
-        logger.error(f"❌ Error saving payment to Firebase: {e}")
-        return False
-
-def update_payment_status(payment_id: str, status: str, yookassa_id: str = None):
-    try:
-        ref = db.reference(f'payments/{payment_id}')
-        update_data = {
-            'status': status,
+def create_user_in_db(user_data: UserCreateRequest):
+    if user_data.user_id not in users_db:
+        users_db[user_data.user_id] = {
+            'user_id': str(user_data.user_id),
+            'username': user_data.username,
+            'first_name': user_data.first_name,
+            'last_name': user_data.last_name,
+            'balance': 0.0,
+            'has_subscription': False,
+            'subscription_end': None,
+            'tariff_type': 'none',
+            'created_at': datetime.now().isoformat(),
             'updated_at': datetime.now().isoformat()
         }
+        logger.info(f"✅ User created: {user_data.user_id}")
+    return True
+
+def update_user_balance(user_id: str, amount: float):
+    if user_id in users_db:
+        current_balance = users_db[user_id].get('balance', 0)
+        new_balance = current_balance + amount
+        users_db[user_id]['balance'] = new_balance
+        users_db[user_id]['updated_at'] = datetime.now().isoformat()
+        logger.info(f"✅ Баланс обновлен: {user_id} {current_balance} -> {new_balance}")
+        return True
+    return False
+
+def activate_subscription(user_id: str, tariff: str, days: int):
+    if user_id not in users_db:
+        create_user_in_db(UserCreateRequest(
+            user_id=user_id,
+            username="",
+            first_name="",
+            last_name=""
+        ))
+    
+    now = datetime.now()
+    new_end = now + timedelta(days=days)
+    
+    users_db[user_id].update({
+        'has_subscription': True,
+        'subscription_end': new_end.isoformat(),
+        'tariff_type': tariff,
+        'updated_at': datetime.now().isoformat()
+    })
+    
+    logger.info(f"✅ Подписка активирована: {user_id} на {days} дней")
+    return new_end
+
+def save_payment(payment_data: dict):
+    payment_id = payment_data['payment_id']
+    payment_data['created_at'] = datetime.now().isoformat()
+    payments_db[payment_id] = payment_data
+    return True
+
+def update_payment_status(payment_id: str, status: str, yookassa_id: str = None):
+    if payment_id in payments_db:
+        payments_db[payment_id]['status'] = status
+        payments_db[payment_id]['updated_at'] = datetime.now().isoformat()
         
         if yookassa_id:
-            update_data['yookassa_id'] = yookassa_id
+            payments_db[payment_id]['yookassa_id'] = yookassa_id
             
         if status == 'succeeded':
-            update_data['confirmed_at'] = datetime.now().isoformat()
-            
-        ref.update(update_data)
+            payments_db[payment_id]['confirmed_at'] = datetime.now().isoformat()
         return True
-    except Exception as e:
-        logger.error(f"❌ Error updating payment status in Firebase: {e}")
-        return False
+    return False
 
 def get_payment(payment_id: str):
-    try:
-        ref = db.reference(f'payments/{payment_id}')
-        payment = ref.get()
-        return payment
-    except Exception as e:
-        logger.error(f"❌ Error getting payment from Firebase: {e}")
-        return None
+    return payments_db.get(payment_id)
 
 # Эндпоинты FastAPI
 @app.get("/")
@@ -198,7 +122,7 @@ async def health_check():
     return {
         "status": "ok", 
         "message": "VAC VPN API is running", 
-        "api_base_url": API_BASE_URL,
+        "users_count": len(users_db),
         "timestamp": datetime.now().isoformat()
     }
 
@@ -208,7 +132,7 @@ async def get_user_info_endpoint(user_id: str):
         user = get_user(user_id)
         
         if not user:
-            create_user_in_firebase(UserCreateRequest(
+            create_user_in_db(UserCreateRequest(
                 user_id=user_id,
                 username="",
                 first_name="",
@@ -236,11 +160,8 @@ async def get_user_info_endpoint(user_id: str):
                 if end_date > datetime.now():
                     days_remaining = (end_date - datetime.now()).days
                 else:
-                    ref = db.reference(f'users/{user_id}')
-                    ref.update({
-                        'has_subscription': False,
-                        'updated_at': datetime.now().isoformat()
-                    })
+                    users_db[user_id]['has_subscription'] = False
+                    users_db[user_id]['updated_at'] = datetime.now().isoformat()
                     has_subscription = False
             except:
                 has_subscription = False
@@ -268,7 +189,7 @@ async def get_user_info_endpoint(user_id: str):
 @app.post("/create-user")
 async def create_user_endpoint(request: UserCreateRequest):
     try:
-        success = create_user_in_firebase(request)
+        success = create_user_in_db(request)
         return {"success": True, "user_id": request.user_id}
     except Exception as e:
         logger.error(f"❌ Error in create-user: {e}")
