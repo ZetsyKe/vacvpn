@@ -1,4 +1,4 @@
-import osimport os
+import os
 import asyncio
 import httpx
 from aiogram import Bot, Dispatcher, types
@@ -36,7 +36,7 @@ bot = Bot(
 )
 dp = Dispatcher()
 
-# Инициализация БД (только для отслеживания рефералов)
+# Инициализация БД для рефералов (локальная SQLite)
 def init_db():
     conn = sqlite3.connect('vacvpn.db')
     cursor = conn.cursor()
@@ -45,7 +45,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             referrer_id INTEGER,
             referred_id INTEGER,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            bonus_paid BOOLEAN DEFAULT FALSE
         )
     ''')
     conn.commit()
@@ -87,23 +88,6 @@ async def create_user(user_data: dict):
     url = f"{API_BASE_URL}/create-user"
     return await make_api_request(url, "POST", json_data=user_data)
 
-async def create_payment(user_id: int, tariff: str, amount: float):
-    """Создает платеж через API"""
-    url = f"{API_BASE_URL}/create-payment"
-    json_data = {
-        "user_id": str(user_id),
-        "tariff": tariff,
-        "amount": amount,
-        "description": f"Подписка VAC VPN ({'месячная' if tariff == 'month' else 'годовая'})"
-    }
-    return await make_api_request(url, "POST", json_data=json_data)
-
-async def check_payment_status(payment_id: str, user_id: str):
-    """Проверяет статус платежа через API"""
-    url = f"{API_BASE_URL}/payment-status"
-    params = {"payment_id": payment_id, "user_id": user_id}
-    return await make_api_request(url, "GET", params=params)
-
 # Функции для работы с рефералами (локальная БД)
 def add_referral(referrer_id: int, referred_id: int):
     """Добавляет запись о реферале"""
@@ -132,8 +116,33 @@ def get_referral_stats(user_id: int):
     cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ?', (user_id,))
     total = cursor.fetchone()[0]
     
+    # Приглашенные с оплаченными бонусами
+    cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ? AND bonus_paid = ?', (user_id, True))
+    with_bonus = cursor.fetchone()[0]
+    
     conn.close()
-    return total
+    return total, with_bonus
+
+def get_unpaid_referrals(user_id: int):
+    """Получает список рефералов без выплаченных бонусов"""
+    conn = sqlite3.connect('vacvpn.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT referred_id FROM referrals WHERE referrer_id = ? AND bonus_paid = ?', (user_id, False))
+    referrals = cursor.fetchall()
+    
+    conn.close()
+    return [ref[0] for ref in referrals]
+
+def mark_bonus_paid(referrer_id: int, referred_id: int):
+    """Отмечает бонус как выплаченный"""
+    conn = sqlite3.connect('vacvpn.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('UPDATE referrals SET bonus_paid = ? WHERE referrer_id = ? AND referred_id = ?',
+                  (True, referrer_id, referred_id))
+    conn.commit()
+    conn.close()
 
 # Клавиатуры
 def get_main_keyboard():
@@ -144,7 +153,7 @@ def get_main_keyboard():
     )
     builder.row(
         types.KeyboardButton(text="🛠️ Техподдержка"),
-        types.KeyboardButton(text="💰 Купить подписку")
+        types.KeyboardButton(text="🌐 Веб-кабинет")
     )
     return builder.as_markup(resize_keyboard=True)
 
@@ -158,17 +167,6 @@ def get_cabinet_keyboard():
     )
     builder.row(
         types.InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_cabinet"),
-        types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")
-    )
-    return builder.as_markup()
-
-def get_tariff_keyboard():
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        types.InlineKeyboardButton(text="📅 Месяц - 299₽", callback_data="tariff_month"),
-        types.InlineKeyboardButton(text="📅 Год - 2990₽", callback_data="tariff_year")
-    )
-    builder.row(
         types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")
     )
     return builder.as_markup()
@@ -200,20 +198,6 @@ def get_support_keyboard():
     )
     return builder.as_markup()
 
-def get_payment_keyboard(payment_url: str, payment_id: str):
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        types.InlineKeyboardButton(text="💳 Оплатить подписку", url=payment_url)
-    )
-    builder.row(
-        types.InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_payment_{payment_id}"),
-        types.InlineKeyboardButton(text="📊 Статус оплаты", callback_data=f"payment_status_{payment_id}")
-    )
-    builder.row(
-        types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")
-    )
-    return builder.as_markup()
-
 # Текстовые сообщения
 def get_welcome_message(user_name: str, is_referral: bool = False):
     message = f"""
@@ -226,6 +210,9 @@ def get_welcome_message(user_name: str, is_referral: bool = False):
 • 🌐 Обход блокировок
 • 🚀 Высокая скорость
 • 📱 Работа на всех устройствах
+
+💳 <b>Оплата подписки:</b>
+Для покупки подписки перейдите в веб-кабинет через меню бота.
 
 👫 <b>Пригласите друга и получите бонус!</b>
 """
@@ -261,7 +248,7 @@ async def get_cabinet_message(user_id: int):
 🎯 Тариф: <b>{tariff_type}</b>
 ⏰ Срок действия: <b>{subscription_info}</b>
 
-💡 Для управления подпиской используйте веб-кабинет.
+💡 Для покупки подписки используйте веб-кабинет.
 """
     else:
         error_msg = user_data.get('error', 'Неизвестная ошибка') if user_data else 'Ошибка соединения'
@@ -274,7 +261,7 @@ async def get_cabinet_message(user_id: int):
 """
 
 def get_ref_message(user_id: int):
-    total_referrals = get_referral_stats(user_id)
+    total_referrals, with_bonus = get_referral_stats(user_id)
     
     return f"""
 <b>Реферальная программа VAC VPN</b>
@@ -284,6 +271,7 @@ def get_ref_message(user_id: int):
 
 📊 <b>Ваша статистика:</b>
 • Всего приглашено: <b>{total_referrals} чел.</b>
+• С начисленным бонусом: <b>{with_bonus} чел.</b>
 • Бонус за приглашение: <b>50₽</b> на баланс
 
 💡 Бонус начисляется после того как приглашенный друг активирует подписку!
@@ -330,7 +318,7 @@ async def cmd_start(message: types.Message):
                 try:
                     await bot.send_message(
                         chat_id=referrer_id,
-                        text=f"🎉 У вас новый реферал!\nПользователь @{user.username or 'без username'} присоединился по вашей ссылке."
+                        text=f"🎉 У вас новый реферал!\nПользователь @{user.username or 'без username'} присоединился по вашей ссылке.\nБонус 50₽ будет начислен после оплаты подписки."
                     )
                 except Exception as e:
                     logger.info(f"Не удалось уведомить реферера {referrer_id}: {e}")
@@ -370,20 +358,20 @@ async def referral_handler(message: types.Message):
 async def support_handler(message: types.Message):
     await cmd_support(message)
 
-@dp.message(lambda message: message.text == "💰 Купить подписку")
-async def buy_subscription_handler(message: types.Message):
+@dp.message(lambda message: message.text == "🌐 Веб-кабинет")
+async def web_app_handler(message: types.Message):
+    user = message.from_user
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(
+            text="📲 Открыть веб-кабинет",
+            web_app=WebAppInfo(url=WEB_APP_URL)
+        )
+    )
     await message.answer(
-        "📦 <b>Выберите тариф подписки:</b>\n\n"
-        "📅 <b>Месячная</b> - 299₽\n"
-        "• Доступ на 30 дней\n"
-        "• Поддержка 3 устройств\n"
-        "• Полная скорость\n\n"
-        "📅 <b>Годовая</b> - 2990₽\n"
-        "• Доступ на 365 дней\n"
-        "• Поддержка 5 устройств\n"
-        "• Приоритетная поддержка\n"
-        "• Экономия 15%",
-        reply_markup=get_tariff_keyboard()
+        f"🌐 <b>Веб-кабинет VAC VPN</b>\n\n"
+        f"Для покупки подписки и управления аккаунтом откройте веб-кабинет:",
+        reply_markup=builder.as_markup()
     )
 
 # Обработчики callback-кнопок
@@ -411,121 +399,6 @@ async def refresh_refs_handler(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     await callback.message.edit_text(get_ref_message(user_id), reply_markup=get_ref_keyboard(user_id))
     await callback.answer("✅ Статистика обновлена")
-
-@dp.callback_query(lambda c: c.data.startswith("tariff_"))
-async def tariff_handler(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    tariff = callback.data.replace("tariff_", "")
-    
-    tariff_config = {
-        "month": {"amount": 299, "name": "месячная"},
-        "year": {"amount": 2990, "name": "годовая"}
-    }
-    
-    tariff_info = tariff_config.get(tariff)
-    if not tariff_info:
-        await callback.answer("❌ Ошибка выбора тарифа")
-        return
-    
-    # Создаем платеж через API
-    payment_result = await create_payment(user_id, tariff, tariff_info["amount"])
-    
-    if payment_result and 'error' not in payment_result:
-        payment_url = payment_result.get('payment_url')
-        payment_id = payment_result.get('payment_id')
-        
-        await callback.message.edit_text(
-            text=f"""
-<b>Оплата {tariff_info['name']} подписки</b>
-
-💳 Сумма: <b>{tariff_info['amount']}₽</b>
-📝 Описание: {tariff_info['name']} подписка VAC VPN
-
-1. Нажмите «Оплатить подписку»
-2. Проведите платеж через ЮKassa
-3. Вернитесь в бот и нажмите «Проверить оплату»
-
-⏳ Обычно оплата проходит за 1-2 минуты.
-""",
-            reply_markup=get_payment_keyboard(payment_url, payment_id)
-        )
-    else:
-        error_msg = payment_result.get('error', 'Неизвестная ошибка') if payment_result else 'Ошибка соединения'
-        await callback.message.edit_text(
-            text=f"❌ Ошибка создания платежа:\n{error_msg}\n\nПопробуйте позже или обратитесь в поддержку.",
-            reply_markup=InlineKeyboardBuilder().add(
-                types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")
-            ).as_markup()
-        )
-    
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data.startswith("check_payment_"))
-async def check_payment_handler(callback: types.CallbackQuery):
-    payment_id = callback.data.replace("check_payment_", "")
-    user_id = callback.from_user.id
-    
-    # Проверяем статус платежа через API
-    payment_status = await check_payment_status(payment_id, str(user_id))
-    
-    if payment_status and 'error' not in payment_status:
-        status = payment_status.get('status', 'pending')
-        
-        if status == 'succeeded':
-            await callback.message.edit_text(
-                text="""
-✅ <b>Оплата прошла успешно!</b>
-
-🎉 Ваша подписка активирована!
-💰 Баланс пополнен на сумму оплаты.
-
-Теперь вы можете использовать VPN-сервис.
-Для управления подпиской перейдите в личный кабинет.
-""",
-                reply_markup=InlineKeyboardBuilder().add(
-                    types.InlineKeyboardButton(text="🔐 Личный кабинет", callback_data="refresh_cabinet")
-                ).as_markup()
-            )
-            
-        elif status == 'pending':
-            await callback.answer("⏳ Платеж обрабатывается. Попробуйте через минуту.", show_alert=True)
-        else:
-            await callback.answer("❌ Платеж не найден или отменен.", show_alert=True)
-    else:
-        error_msg = payment_status.get('error', 'Неизвестная ошибка') if payment_status else 'Ошибка соединения'
-        await callback.answer(f"❌ Ошибка проверки платежа: {error_msg}", show_alert=True)
-    
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data.startswith("payment_status_"))
-async def payment_status_handler(callback: types.CallbackQuery):
-    payment_id = callback.data.replace("payment_status_", "")
-    user_id = callback.from_user.id
-    
-    payment_status = await check_payment_status(payment_id, str(user_id))
-    
-    if payment_status and 'error' not in payment_status:
-        status = payment_status.get('status', 'pending')
-        amount = payment_status.get('amount', 0)
-        tariff = payment_status.get('tariff', 'unknown')
-        
-        status_texts = {
-            'succeeded': '✅ Успешно оплачен',
-            'pending': '⏳ Ожидает оплаты', 
-            'canceled': '❌ Отменен',
-            'waiting_for_capture': '⏳ Ожидает подтверждения'
-        }
-        
-        status_text = status_texts.get(status, '❓ Неизвестный статус')
-        
-        await callback.answer(
-            f"Статус платежа: {status_text}\n"
-            f"Сумма: {amount}₽\n"
-            f"Тариф: {tariff}",
-            show_alert=True
-        )
-    else:
-        await callback.answer("❌ Не удалось получить статус платежа", show_alert=True)
 
 # Запуск бота
 async def main():
