@@ -1,18 +1,27 @@
+import os
+import asyncio
+import httpx
+from aiogram import Bot, Dispatcher, types
+from aiogram.enums import ParseMode
+from aiogram.filters import Command
+from aiogram.client.default import DefaultBotProperties
+from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder, WebAppInfo
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-import os
 import uuid
-import httpx
-from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 import firebase_admin
 from firebase_admin import credentials, db as firebase_db
 import json
+import sqlite3
+import logging
 
-# Загрузка переменных окружения
-load_dotenv('backend/key.env')
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# Инициализация FastAPI
 app = FastAPI(title="VAC VPN API")
 
 # CORS
@@ -24,9 +33,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Инициализация Firebase Realtime Database
+# Загрузка переменных окружения
+TOKEN = os.getenv("TOKEN")
+WEB_APP_URL = "https://vacvpn.vercel.app"
+SUPPORT_NICK = "@vacvpn_support"
+TG_CHANNEL = "@vac_vpn"
+API_BASE_URL = os.getenv("API_BASE_URL", "")
+BOT_USERNAME = "vaaaac_bot"
+
+# Автоматически определяем API_BASE_URL на Render
+if not API_BASE_URL:
+    RENDER_SERVICE_NAME = os.getenv("RENDER_SERVICE_NAME", "vacvpn-backend")
+    API_BASE_URL = f"https://{RENDER_SERVICE_NAME}.onrender.com"
+
+# Инициализация Firebase
 try:
-    # Получаем credentials из переменных окружения
     firebase_cred = os.getenv("FIREBASE_CREDENTIALS")
     if firebase_cred:
         cred_dict = json.loads(firebase_cred)
@@ -34,11 +55,20 @@ try:
         firebase_admin.initialize_app(cred, {
             'databaseURL': 'https://vacvpn-75yegf-default-rtdb.firebaseio.com/'
         })
-        print("✅ Firebase Realtime Database инициализирован")
+        logger.info("✅ Firebase Realtime Database инициализирован")
     else:
-        raise Exception("FIREBASE_CREDENTIALS not found")
+        logger.warning("FIREBASE_CREDENTIALS not found")
 except Exception as e:
-    print(f"❌ Firebase initialization error: {e}")
+    logger.error(f"❌ Firebase initialization error: {e}")
+
+# Инициализация бота
+if TOKEN:
+    bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    dp = Dispatcher()
+else:
+    logger.error("❌ TOKEN not found")
+    bot = None
+    dp = None
 
 # Модели данных
 class PaymentRequest(BaseModel):
@@ -54,23 +84,99 @@ class UserCreateRequest(BaseModel):
     first_name: str = ""
     last_name: str = ""
 
-# Функции работы с Firebase Realtime Database
+# Инициализация БД для рефералов
+def init_db():
+    conn = sqlite3.connect('vacvpn.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS referrals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_id INTEGER,
+            referred_id INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            bonus_paid BOOLEAN DEFAULT FALSE
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# Функции для работы с API
+async def make_api_request(url: str, method: str = "GET", json_data: dict = None, params: dict = None):
+    try:
+        timeout_config = httpx.Timeout(30.0, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout_config) as client:
+            if method.upper() == "GET":
+                response = await client.get(url, params=params)
+            elif method.upper() == "POST":
+                response = await client.post(url, json=json_data)
+            else:
+                raise ValueError(f"Unsupported method: {method}")
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"API returned status {response.status_code}")
+                return {"error": f"API error: {response.status_code}"}
+                
+    except Exception as e:
+        logger.error(f"API request error: {e}")
+        return {"error": f"Connection error: {str(e)}"}
+
+async def get_user_info(user_id: int):
+    url = f"{API_BASE_URL}/user-data"
+    params = {"user_id": str(user_id)}
+    return await make_api_request(url, "GET", params=params)
+
+async def create_user(user_data: dict):
+    url = f"{API_BASE_URL}/create-user"
+    return await make_api_request(url, "POST", json_data=user_data)
+
+# Функции для работы с рефералами
+def add_referral(referrer_id: int, referred_id: int):
+    conn = sqlite3.connect('vacvpn.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT id FROM referrals WHERE referrer_id = ? AND referred_id = ?', 
+                  (referrer_id, referred_id))
+    existing = cursor.fetchone()
+    
+    if not existing:
+        cursor.execute('INSERT INTO referrals (referrer_id, referred_id, created_at) VALUES (?, ?, ?)',
+                      (referrer_id, referred_id, datetime.now().isoformat()))
+        conn.commit()
+        logger.info(f"Реферал добавлен: {referrer_id} -> {referred_id}")
+    
+    conn.close()
+
+def get_referral_stats(user_id: int):
+    conn = sqlite3.connect('vacvpn.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ?', (user_id,))
+    total = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ? AND bonus_paid = ?', (user_id, True))
+    with_bonus = cursor.fetchone()[0]
+    
+    conn.close()
+    return total, with_bonus
+
+# Функции работы с Firebase
 def get_user(user_id: str):
-    """Получает пользователя из Firebase"""
     try:
         ref = firebase_db.reference(f'users/{user_id}')
         user_data = ref.get()
         return user_data
     except Exception as e:
-        print(f"Error getting user from Firebase: {e}")
+        logger.error(f"Error getting user from Firebase: {e}")
         return None
 
-def create_user(user_data: UserCreateRequest):
-    """Создает пользователя в Firebase"""
+def create_user_in_firebase(user_data: UserCreateRequest):
     try:
         ref = firebase_db.reference(f'users/{user_data.user_id}')
         
-        # Проверяем, существует ли уже пользователь
         existing_user = ref.get()
         if not existing_user:
             user_data_dict = {
@@ -86,17 +192,16 @@ def create_user(user_data: UserCreateRequest):
                 'updated_at': datetime.now().isoformat()
             }
             ref.set(user_data_dict)
-            print(f"✅ User created in Firebase: {user_data.user_id}")
+            logger.info(f"✅ User created in Firebase: {user_data.user_id}")
         else:
-            print(f"ℹ️ User already exists in Firebase: {user_data.user_id}")
+            logger.info(f"ℹ️ User already exists in Firebase: {user_data.user_id}")
             
         return True
     except Exception as e:
-        print(f"❌ Error creating user in Firebase: {e}")
+        logger.error(f"❌ Error creating user in Firebase: {e}")
         return True
 
 def update_user_balance(user_id: str, amount: float):
-    """Обновляет баланс пользователя в Firebase"""
     try:
         ref = firebase_db.reference(f'users/{user_id}')
         user_data = ref.get()
@@ -109,11 +214,10 @@ def update_user_balance(user_id: str, amount: float):
                 'balance': new_balance,
                 'updated_at': datetime.now().isoformat()
             })
-            print(f"✅ Баланс обновлен: {user_id} {current_balance} -> {new_balance}")
+            logger.info(f"✅ Баланс обновлен: {user_id} {current_balance} -> {new_balance}")
             return True
         else:
-            # Если пользователя нет - создаем его
-            create_user(UserCreateRequest(
+            create_user_in_firebase(UserCreateRequest(
                 user_id=user_id,
                 username="",
                 first_name="",
@@ -121,18 +225,16 @@ def update_user_balance(user_id: str, amount: float):
             ))
             return update_user_balance(user_id, amount)
     except Exception as e:
-        print(f"❌ Error updating user balance in Firebase: {e}")
+        logger.error(f"❌ Error updating user balance in Firebase: {e}")
         return False
 
 def activate_subscription(user_id: str, tariff: str, days: int):
-    """Активирует подписку пользователя в Firebase"""
     try:
         ref = firebase_db.reference(f'users/{user_id}')
         user_data = ref.get()
         
         if not user_data:
-            # Создаем пользователя если не существует
-            create_user(UserCreateRequest(
+            create_user_in_firebase(UserCreateRequest(
                 user_id=user_id,
                 username="",
                 first_name="",
@@ -142,7 +244,6 @@ def activate_subscription(user_id: str, tariff: str, days: int):
         
         now = datetime.now()
         
-        # Если уже есть активная подписка, продлеваем ее
         if user_data.get('has_subscription') and user_data.get('subscription_end'):
             current_end_str = user_data['subscription_end']
             try:
@@ -163,14 +264,13 @@ def activate_subscription(user_id: str, tariff: str, days: int):
             'updated_at': datetime.now().isoformat()
         })
         
-        print(f"✅ Подписка активирована: {user_id} на {days} дней")
+        logger.info(f"✅ Подписка активирована: {user_id} на {days} дней")
         return new_end
     except Exception as e:
-        print(f"❌ Error activating subscription in Firebase: {e}")
+        logger.error(f"❌ Error activating subscription in Firebase: {e}")
         return None
 
 def save_payment(payment_data: dict):
-    """Сохраняет платеж в Firebase"""
     try:
         payment_id = payment_data['payment_id']
         ref = firebase_db.reference(f'payments/{payment_id}')
@@ -178,11 +278,10 @@ def save_payment(payment_data: dict):
         ref.set(payment_data)
         return True
     except Exception as e:
-        print(f"❌ Error saving payment to Firebase: {e}")
+        logger.error(f"❌ Error saving payment to Firebase: {e}")
         return False
 
 def update_payment_status(payment_id: str, status: str, yookassa_id: str = None):
-    """Обновляет статус платежа в Firebase"""
     try:
         ref = firebase_db.reference(f'payments/{payment_id}')
         update_data = {
@@ -199,281 +298,134 @@ def update_payment_status(payment_id: str, status: str, yookassa_id: str = None)
         ref.update(update_data)
         return True
     except Exception as e:
-        print(f"❌ Error updating payment status in Firebase: {e}")
+        logger.error(f"❌ Error updating payment status in Firebase: {e}")
         return False
 
 def get_payment(payment_id: str):
-    """Получает платеж из Firebase"""
     try:
         ref = firebase_db.reference(f'payments/{payment_id}')
         payment = ref.get()
         return payment
     except Exception as e:
-        print(f"❌ Error getting payment from Firebase: {e}")
+        logger.error(f"❌ Error getting payment from Firebase: {e}")
         return None
 
-def save_referral_bonus(referrer_id: str, referred_id: str, amount: int = 50):
-    """Сохраняет реферальный бонус в Firebase"""
-    try:
-        bonus_id = str(uuid.uuid4())
-        ref = firebase_db.reference(f'referral_bonuses/{bonus_id}')
-        bonus_data = {
-            'referrer_id': referrer_id,
-            'referred_id': referred_id,
-            'bonus_amount': amount,
-            'paid': True,
-            'created_at': datetime.now().isoformat(),
-            'paid_at': datetime.now().isoformat()
-        }
-        ref.set(bonus_data)
-        return True
-    except Exception as e:
-        print(f"❌ Error saving referral bonus to Firebase: {e}")
-        return False
+# Клавиатуры для бота
+def get_main_keyboard():
+    builder = ReplyKeyboardBuilder()
+    builder.row(
+        types.KeyboardButton(text="🔐 Личный кабинет"),
+        types.KeyboardButton(text="👥 Рефералка")
+    )
+    builder.row(
+        types.KeyboardButton(text="🛠️ Техподдержка"),
+        types.KeyboardButton(text="🌐 Веб-кабинет")
+    )
+    return builder.as_markup(resize_keyboard=True)
 
-# Эндпоинты API
-@app.post("/create-payment")
-async def create_payment(request: PaymentRequest):
-    try:
-        SHOP_ID = os.getenv("SHOP_ID")
-        API_KEY = os.getenv("API_KEY")
-        
-        if not SHOP_ID or not API_KEY:
-            return {"error": "Payment gateway not configured"}
-        
-        print(f"🔄 Creating payment for user {request.user_id}, amount: {request.amount}, tariff: {request.tariff}")
-        
-        # Для тестовых платежей используем специальные настройки
-        is_test_payment = request.amount <= 2.00  # Тестовые суммы
-        
-        # Определяем параметры тарифа
-        tariff_config = {
-            "month": {"days": 30, "description": "Месячная подписка VAC VPN"},
-            "year": {"days": 365, "description": "Годовая подписка VAC VPN"}
-        }
-        
-        tariff_info = tariff_config.get(request.tariff, tariff_config["month"])
-        
-        # Создаем уникальный ID платежа
-        payment_id = str(uuid.uuid4())
-        
-        # Сохраняем платеж в Firebase
-        payment_data = {
-            "payment_id": payment_id,
-            "user_id": request.user_id,
-            "amount": request.amount,
-            "tariff": request.tariff,
-            "payment_type": request.payment_type,
-            "status": "pending",
-            "description": request.description,
-            "is_test": is_test_payment
-        }
-        save_payment(payment_data)
-        
-        # Если это тестовый платеж - сразу возвращаем успех
-        if is_test_payment:
-            print(f"✅ Test payment auto-confirmed: {payment_id}")
-            
-            # Активируем подписку для тестового платежа
-            if request.payment_type == 'tariff':
-                tariff_days = 30 if request.tariff == "month" else 365
-                activate_subscription(request.user_id, request.tariff, tariff_days)
-                
-                # Начисляем реферальные бонусы
-                await process_referral_bonuses(request.user_id)
-            else:
-                # Пополнение баланса
-                update_user_balance(request.user_id, request.amount)
-            
-            # Обновляем статус платежа
-            update_payment_status(payment_id, 'succeeded', 'test_payment')
-            
-            return {
-                "success": True,
-                "payment_id": payment_id,
-                "payment_url": "https://t.me/vaaaac_bot",
-                "amount": request.amount,
-                "status": "succeeded"
-            }
-        
-        # Данные для ЮKassa (для реальных платежей)
-        yookassa_data = {
-            "amount": {
-                "value": f"{request.amount:.2f}", 
-                "currency": "RUB"
-            },
-            "confirmation": {
-                "type": "redirect", 
-                "return_url": "https://t.me/vaaaac_bot"
-            },
-            "capture": True,
-            "description": tariff_info["description"],
-            "metadata": {
-                "payment_id": payment_id,
-                "user_id": request.user_id,
-                "tariff": request.tariff,
-                "payment_type": request.payment_type
-            }
-        }
-        
-        print(f"📤 Sending request to YooKassa: {yookassa_data}")
-        
-        # Создаем платеж в ЮKassa
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.yookassa.ru/v3/payments",
-                auth=(SHOP_ID, API_KEY),
-                headers={
-                    "Content-Type": "application/json",
-                    "Idempotence-Key": payment_id
-                },
-                json=yookassa_data,
-                timeout=30.0
-            )
-        
-        print(f"📥 YooKassa response status: {response.status_code}")
-        
-        if response.status_code in [200, 201]:
-            payment_data = response.json()
-            
-            # Обновляем платеж с ID из ЮKassa
-            update_payment_status(payment_id, "pending", payment_data.get("id"))
-            
-            return {
-                "success": True,
-                "payment_id": payment_id,
-                "payment_url": payment_data["confirmation"]["confirmation_url"],
-                "amount": request.amount,
-                "status": "pending"
-            }
-        else:
-            error_msg = f"Payment gateway error: {response.status_code}"
-            print(f"❌ {error_msg}")
-            return {"error": error_msg}
-            
-    except Exception as e:
-        error_msg = f"Server error: {str(e)}"
-        print(f"❌ {error_msg}")
-        return {"error": error_msg}
+def get_cabinet_keyboard():
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(
+            text="📲 Открыть веб-кабинет",
+            web_app=WebAppInfo(url=WEB_APP_URL)
+        )
+    )
+    builder.row(
+        types.InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_cabinet"),
+        types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")
+    )
+    return builder.as_markup()
 
-@app.get("/check-payment")
-async def check_payment(payment_id: str, user_id: str):
-    try:
-        print(f"🔄 Checking payment: {payment_id} for user: {user_id}")
-        
-        payment = get_payment(payment_id)
-        if not payment:
-            return {"error": "Payment not found"}
-        
-        # Если это тестовый платеж или уже подтвержден
-        if payment.get('is_test') or payment.get('status') == 'succeeded':
-            return {
-                "success": True,
-                "status": "succeeded",
-                "payment_id": payment_id,
-                "amount": payment.get('amount'),
-                "payment_type": payment.get('payment_type', 'tariff')
-            }
-        
-        # Проверяем статус в ЮKassa для реальных платежей
-        yookassa_id = payment.get('yookassa_id')
-        if yookassa_id:
-            SHOP_ID = os.getenv("SHOP_ID")
-            API_KEY = os.getenv("API_KEY")
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"https://api.yookassa.ru/v3/payments/{yookassa_id}",
-                    auth=(SHOP_ID, API_KEY),
-                    timeout=10.0
-                )
-                
-                if response.status_code == 200:
-                    yookassa_data = response.json()
-                    status = yookassa_data.get('status')
-                    
-                    print(f"📊 YooKassa payment status: {status}")
-                    
-                    # Обновляем статус платежа
-                    update_payment_status(payment_id, status, yookassa_id)
-                    
-                    # Если платеж успешен - обрабатываем его
-                    if status == 'succeeded':
-                        user_id = payment.get('user_id')
-                        tariff = payment.get('tariff')
-                        amount = payment.get('amount')
-                        payment_type = payment.get('payment_type', 'tariff')
-                        
-                        if payment_type == 'tariff':
-                            # Активируем подписку
-                            tariff_days = 30 if tariff == "month" else 365
-                            activate_subscription(user_id, tariff, tariff_days)
-                            
-                            # Начисляем реферальные бонусы
-                            await process_referral_bonuses(user_id)
-                        else:
-                            # Пополнение баланса
-                            update_user_balance(user_id, amount)
-                        
-                        return {
-                            "success": True,
-                            "status": "succeeded",
-                            "payment_id": payment_id,
-                            "amount": amount,
-                            "payment_type": payment_type
-                        }
-                    
-                    return {
-                        "success": True,
-                        "status": status,
-                        "payment_id": payment_id,
-                        "amount": payment.get('amount')
-                    }
-        
-        return {
-            "success": True,
-            "status": payment.get('status', 'pending'),
-            "payment_id": payment_id
-        }
-        
-    except Exception as e:
-        error_msg = f"Error checking payment: {str(e)}"
-        print(f"❌ {error_msg}")
-        return {"error": error_msg}
+def get_ref_keyboard(user_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(
+            text="🤜🤛 Поделиться ссылкой",
+            url=f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}?start=ref_{user_id}"
+        )
+    )
+    builder.row(
+        types.InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_refs"),
+        types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")
+    )
+    return builder.as_markup()
 
-async def process_referral_bonuses(user_id: str):
-    """Обрабатывает реферальные бонусы после успешной оплаты"""
-    try:
-        # Для рефералов используем локальную SQLite (она в боте)
-        # Здесь просто логируем
-        print(f"🔍 Checking referrals for user: {user_id}")
+# Обработчики бота (если бот активен)
+if bot and dp:
+    @dp.message(Command("start"))
+    async def cmd_start(message: types.Message):
+        user = message.from_user
+        args = message.text.split()
+        is_referral = False
+
+        await create_user({
+            "user_id": str(user.id),
+            "username": user.username or "",
+            "first_name": user.first_name or "",
+            "last_name": user.last_name or ""
+        })
+
+        if len(args) > 1 and args[1].startswith('ref_'):
+            try:
+                referrer_id = int(args[1][4:])
+                referred_id = user.id
+
+                if referred_id != referrer_id:
+                    add_referral(referrer_id, referred_id)
+                    is_referral = True
+                    
+                    try:
+                        await bot.send_message(
+                            chat_id=referrer_id,
+                            text=f"🎉 У вас новый реферал!\nПользователь @{user.username or 'без username'} присоединился по вашей ссылке.\nБонус 50₽ будет начислен после оплаты подписки."
+                        )
+                    except Exception as e:
+                        logger.info(f"Не удалось уведомить реферера {referrer_id}: {e}")
+            except ValueError:
+                logger.warning(f"Неверный формат реферальной ссылки: {args[1]}")
+
+        welcome_message = f"""
+<b>Добро пожаловать в VAC VPN, {user.first_name}!</b>
+
+🚀 Получите безопасный и быстрый доступ к интернету с нашей VPN-службой.
+        """
         
-        # В реальной реализации здесь будет запрос к API бота
-        # или общая база данных для рефералов
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error processing referral bonuses: {e}")
-        return False
+        if is_referral:
+            welcome_message += "\n🎉 Вы зарегистрировались по реферальной ссылке! Бонус будет начислен после активации подписки."
+
+        await message.answer(
+            text=welcome_message,
+            reply_markup=get_main_keyboard()
+        )
+
+    # Запуск бота в отдельной задаче
+    async def run_bot():
+        logger.info("🤖 Бот VAC VPN запускается...")
+        try:
+            await dp.start_polling(bot)
+        except Exception as e:
+            logger.error(f"❌ Ошибка запуска бота: {e}")
+
+# Эндпоинты FastAPI
+@app.get("/")
+async def health_check():
+    return {"status": "ok", "message": "VAC VPN API is running", "api_base_url": API_BASE_URL}
 
 @app.get("/user-data")
-async def get_user_info(user_id: str):
+async def get_user_info_endpoint(user_id: str):
     try:
         user = get_user(user_id)
         
-        # ЕСЛИ ПОЛЬЗОВАТЕЛЯ НЕТ - СОЗДАЕМ ЕГО СРАЗУ
         if not user:
-            print(f"🆕 User {user_id} not found, creating...")
-            create_user(UserCreateRequest(
+            create_user_in_firebase(UserCreateRequest(
                 user_id=user_id,
                 username="",
                 first_name="",
                 last_name=""
             ))
-            user = get_user(user_id)  # Пытаемся получить снова
+            user = get_user(user_id)
         
-        # Если все равно нет - возвращаем базовые данные
         if not user:
             return {
                 "user_id": user_id,
@@ -484,7 +436,6 @@ async def get_user_info(user_id: str):
                 "days_remaining": 0
             }
         
-        # Проверяем статус подписки
         has_subscription = user.get('has_subscription', False)
         subscription_end = user.get('subscription_end')
         days_remaining = 0
@@ -495,7 +446,6 @@ async def get_user_info(user_id: str):
                 if end_date > datetime.now():
                     days_remaining = (end_date - datetime.now()).days
                 else:
-                    # Подписка истекла
                     ref = firebase_db.reference(f'users/{user_id}')
                     ref.update({
                         'has_subscription': False,
@@ -503,7 +453,6 @@ async def get_user_info(user_id: str):
                     })
                     has_subscription = False
             except:
-                # Если ошибка парсинга даты
                 has_subscription = False
         
         return {
@@ -516,8 +465,7 @@ async def get_user_info(user_id: str):
         }
         
     except Exception as e:
-        print(f"❌ Error in get_user_info: {e}")
-        # ВСЕГДА возвращаем успешный ответ
+        logger.error(f"❌ Error in get_user_info: {e}")
         return {
             "user_id": user_id,
             "balance": 0,
@@ -530,119 +478,116 @@ async def get_user_info(user_id: str):
 @app.post("/create-user")
 async def create_user_endpoint(request: UserCreateRequest):
     try:
-        # ВСЕГДА возвращаем успех
-        success = create_user(request)
+        success = create_user_in_firebase(request)
         return {"success": True, "user_id": request.user_id}
     except Exception as e:
-        print(f"❌ Error in create-user: {e}")
+        logger.error(f"❌ Error in create-user: {e}")
         return {"success": True, "user_id": request.user_id}
 
-@app.get("/check-subscription")
-async def check_subscription(user_id: str):
-    user_info = await get_user_info(user_id)
-    
-    return {
-        "active": user_info.get("has_subscription", False),
-        "subscription_end": user_info.get("subscription_end"),
-        "days_remaining": user_info.get("days_remaining", 0)
-    }
-
-@app.post("/activate-tariff")
-async def activate_tariff(request: Request):
+@app.post("/create-payment")
+async def create_payment(request: PaymentRequest):
     try:
-        data = await request.json()
-        user_id = data.get('user_id')
-        tariff = data.get('tariff')
-        amount = data.get('amount')
+        SHOP_ID = os.getenv("SHOP_ID")
+        API_KEY = os.getenv("API_KEY")
         
-        if not all([user_id, tariff, amount]):
-            return {"error": "Missing required parameters"}
+        if not SHOP_ID or not API_KEY:
+            return {"error": "Payment gateway not configured"}
         
-        # Проверяем баланс пользователя
-        user = get_user(user_id)
-        if not user:
-            # Создаем пользователя если не существует
-            create_user(UserCreateRequest(user_id=user_id, username="", first_name="", last_name=""))
-            user = get_user(user_id)
+        logger.info(f"🔄 Creating payment for user {request.user_id}, amount: {request.amount}, tariff: {request.tariff}")
         
-        if user.get('balance', 0) < amount:
-            return {"error": "Insufficient balance"}
+        is_test_payment = request.amount <= 2.00
         
-        # Активируем подписку
-        tariff_days = 30 if tariff == "month" else 365
-        new_end = activate_subscription(user_id, tariff, tariff_days)
+        tariff_config = {
+            "month": {"days": 30, "description": "Месячная подписка VAC VPN"},
+            "year": {"days": 365, "description": "Годовая подписка VAC VPN"}
+        }
         
-        if new_end:
-            # Списываем средства с баланса
-            ref = firebase_db.reference(f'users/{user_id}')
-            ref.update({
-                'balance': user.get('balance', 0) - amount,
-                'updated_at': datetime.now().isoformat()
-            })
+        tariff_info = tariff_config.get(request.tariff, tariff_config["month"])
+        
+        payment_id = str(uuid.uuid4())
+        
+        payment_data = {
+            "payment_id": payment_id,
+            "user_id": request.user_id,
+            "amount": request.amount,
+            "tariff": request.tariff,
+            "payment_type": request.payment_type,
+            "status": "pending",
+            "description": request.description,
+            "is_test": is_test_payment
+        }
+        save_payment(payment_data)
+        
+        if is_test_payment:
+            logger.info(f"✅ Test payment auto-confirmed: {payment_id}")
             
-            # Обрабатываем реферальные бонусы
-            await process_referral_bonuses(user_id)
+            if request.payment_type == 'tariff':
+                tariff_days = 30 if request.tariff == "month" else 365
+                activate_subscription(request.user_id, request.tariff, tariff_days)
+            else:
+                update_user_balance(request.user_id, request.amount)
+            
+            update_payment_status(payment_id, 'succeeded', 'test_payment')
             
             return {
                 "success": True,
-                "message": f"Тариф активирован на {tariff_days} дней",
-                "subscription_end": new_end.isoformat()
+                "payment_id": payment_id,
+                "payment_url": "https://t.me/vaaaac_bot",
+                "amount": request.amount,
+                "status": "succeeded"
             }
-        else:
-            return {"error": "Failed to activate subscription"}
+        
+        # Для реальных платежей здесь будет код ЮKassa
+        return {
+            "success": False,
+            "error": "Real payments temporarily disabled"
+        }
             
     except Exception as e:
-        return {"error": f"Error activating tariff: {str(e)}"}
+        error_msg = f"Server error: {str(e)}"
+        logger.error(f"❌ {error_msg}")
+        return {"error": error_msg}
 
-# Webhook для ЮKassa
-@app.post("/yookassa-webhook")
-async def yookassa_webhook(request: Request):
+@app.get("/check-payment")
+async def check_payment(payment_id: str, user_id: str):
     try:
-        data = await request.json()
+        logger.info(f"🔄 Checking payment: {payment_id} for user: {user_id}")
         
-        payment_id = data.get('object', {}).get('id')
-        status = data.get('object', {}).get('status')
+        payment = get_payment(payment_id)
+        if not payment:
+            return {"error": "Payment not found"}
         
-        print(f"🔄 Webhook received: {status} for payment {payment_id}")
+        if payment.get('is_test') or payment.get('status') == 'succeeded':
+            return {
+                "success": True,
+                "status": "succeeded",
+                "payment_id": payment_id,
+                "amount": payment.get('amount'),
+                "payment_type": payment.get('payment_type', 'tariff')
+            }
         
-        if status == 'succeeded':
-            # Находим наш payment_id по ID ЮKassa
-            ref = firebase_db.reference('payments')
-            payments = ref.order_by_child('yookassa_id').equal_to(payment_id).get()
-            
-            for payment_id_key, payment in payments.items():
-                user_id = payment.get('user_id')
-                tariff = payment.get('tariff')
-                amount = payment.get('amount')
-                payment_type = payment.get('payment_type', 'tariff')
-                
-                if payment_type == 'tariff':
-                    # Активируем подписку
-                    tariff_days = 30 if tariff == "month" else 365
-                    activate_subscription(user_id, tariff, tariff_days)
-                    
-                    # Обрабатываем реферальные бонусы
-                    await process_referral_bonuses(user_id)
-                else:
-                    # Пополнение баланса
-                    update_user_balance(user_id, amount)
-                
-                # Обновляем статус платежа
-                update_payment_status(payment_id_key, 'succeeded', payment_id)
-                
-                print(f"✅ Webhook processed successfully for user {user_id}")
+        return {
+            "success": True,
+            "status": payment.get('status', 'pending'),
+            "payment_id": payment_id
+        }
         
-        return {"status": "ok"}
-    
     except Exception as e:
-        print(f"❌ Webhook error: {e}")
-        return {"status": "error"}
+        error_msg = f"Error checking payment: {str(e)}"
+        logger.error(f"❌ {error_msg}")
+        return {"error": error_msg}
 
-# Health check endpoint
-@app.get("/")
-async def health_check():
-    return {"status": "ok", "message": "VAC VPN API is running"}
+# Запуск приложения
+@app.on_event("startup")
+async def startup_event():
+    logger.info("🚀 Starting VAC VPN API...")
+    logger.info(f"🌐 API Base URL: {API_BASE_URL}")
+    
+    # Запускаем бота в фоновом режиме, если есть токен
+    if TOKEN and bot:
+        asyncio.create_task(run_bot())
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
