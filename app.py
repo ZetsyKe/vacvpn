@@ -66,6 +66,12 @@ class ActivateTariffRequest(BaseModel):
 class ConfirmPaymentRequest(BaseModel):
     payment_id: str
 
+class InitUserRequest(BaseModel):
+    user_id: str
+    username: str = ""
+    first_name: str = ""
+    last_name: str = ""
+
 # Функции работы с Firebase
 def get_user(user_id: str):
     if not db: return None
@@ -92,6 +98,7 @@ def create_user(user_data: UserCreateRequest):
                 'tariff_type': 'none',
                 'created_at': firestore.SERVER_TIMESTAMP
             })
+            logger.info(f"User created: {user_data.user_id}")
     except Exception as e:
         logger.error(f"Error creating user: {e}")
 
@@ -206,6 +213,36 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat(), "firebase": "connected" if db else "disconnected"}
+
+@app.post("/init-user")
+async def init_user(request: InitUserRequest):
+    """Автоматическое создание пользователя при заходе на сайт"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        # Создаем пользователя если не существует
+        user_ref = db.collection('users').document(request.user_id)
+        if not user_ref.get().exists:
+            user_ref.set({
+                'user_id': request.user_id,
+                'username': request.username,
+                'first_name': request.first_name,
+                'last_name': request.last_name,
+                'balance': 0.0,
+                'has_subscription': False,
+                'subscription_end': None,
+                'tariff_type': 'none',
+                'created_at': firestore.SERVER_TIMESTAMP
+            })
+            logger.info(f"User auto-created: {request.user_id}")
+            return {"success": True, "message": "User created", "user_id": request.user_id}
+        else:
+            return {"success": True, "message": "User already exists", "user_id": request.user_id}
+            
+    except Exception as e:
+        logger.error(f"Error initializing user: {e}")
+        return {"error": str(e)}
 
 @app.post("/create-user")
 async def create_user_endpoint(request: UserCreateRequest):
