@@ -128,6 +128,13 @@
     .button-outline:active {
       background: rgba(176, 203, 31, 0.1);
     }
+    .button-test {
+      background: transparent;
+      color: #ff4444;
+      border: 2px solid #ff4444;
+      margin-bottom: 16px;
+      font-size: 12px;
+    }
     .tariff-grid {
       display: grid;
       gap: 16px;
@@ -319,6 +326,7 @@
     </div>
     <button class="button button-yellow" id="paymentButton" onclick="createPayment()">ПОПОЛНИТЬ БАЛАНС</button>
     <button class="button button-outline" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</button>
+    <button class="button button-test" onclick="manualConfirmPayment()">ПОДТВЕРДИТЬ ПЛАТЕЖ (ТЕСТ)</button>
     <div class="loading" id="loadingIndicator">Подождите, идет обработка...</div>
     <div class="error-message" id="errorMessage"></div>
     <div class="success-message" id="successMessage"></div>
@@ -380,8 +388,11 @@
     const userId = user.id || 'unknown';
     const userName = user.first_name || 'Пользователь';
     
-    // URL API - замените на ваш домен Render
+    // URL API
     const API_BASE_URL = "https://vacvpn.onrender.com";
+    
+    // Переменные для хранения данных
+    let currentPaymentId = null;
     
     // Инициализация интерфейса
     document.getElementById('userName').textContent = userName;
@@ -431,7 +442,6 @@
     // Загрузка данных пользователя
     async function loadUserData() {
       try {
-        console.log('Loading user data for:', userId);
         const response = await fetch(`${API_BASE_URL}/user-data?user_id=${userId}`);
         
         if (!response.ok) {
@@ -439,7 +449,6 @@
         }
         
         const userData = await response.json();
-        console.log('User data loaded:', userData);
         
         if (userData.error) {
           throw new Error(userData.error);
@@ -476,17 +485,12 @@
     // Основная функция оплаты
     async function createPayment() {
       try {
-        // Сброс предыдущих ошибок
         hideError();
         hideSuccess();
         
-        // Показать индикатор загрузки
         paymentButton.disabled = true;
         loadingIndicator.style.display = 'block';
         
-        console.log(`[Payment] Начало процесса оплаты для пользователя: ${userId}`);
-        
-        // Отправить запрос на сервер
         const response = await fetch(`${API_BASE_URL}/create-payment`, {
           method: "POST",
           headers: {
@@ -494,7 +498,7 @@
           },
           body: JSON.stringify({
             user_id: userId.toString(),
-            amount: 100, // Сумма пополнения баланса
+            amount: 100,
             payment_type: "balance",
             description: "Пополнение баланса VAC VPN"
           })
@@ -505,9 +509,7 @@
         }
 
         const data = await response.json();
-        console.log('[Payment] Ответ сервера:', data);
         
-        // Обработка ошибок
         if (data.error) {
           throw new Error(data.error);
         }
@@ -516,70 +518,21 @@
           throw new Error("Не удалось получить ссылку для оплаты");
         }
 
-        console.log('[Payment] Открытие страницы оплаты');
+        // Сохраняем ID платежа для ручного подтверждения
+        currentPaymentId = data.payment_id;
+        
         Telegram.WebApp.openLink(data.payment_url);
         
         // Запускаем проверку статуса платежа
-// Замените функцию checkPaymentStatus на эту:
-async function checkPaymentStatus(paymentId) {
-    console.log(`[Payment] Проверка статуса платежа: ${paymentId}`);
-    
-    try {
-        const response = await fetch(`${API_BASE_URL}/payment-status?payment_id=${paymentId}&user_id=${userId}`);
+        checkPaymentStatus(data.payment_id);
         
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        console.log('[Payment] Статус платежа:', data);
-        
-        if (data.status === 'succeeded') {
-            showSuccess('Оплата прошла успешно! Баланс пополнен.');
-            await loadUserData();
-        } else if (data.status === 'pending') {
-            // Для тестовых платежей ждем 3 секунды и подтверждаем вручную
-            if (data.amount <= 2) { // Тестовые платежи обычно маленькие
-                setTimeout(async () => {
-                    await manualTestConfirm(paymentId);
-                }, 3000);
-            } else {
-                // Продолжаем проверять каждые 5 секунд
-                setTimeout(() => checkPaymentStatus(paymentId), 5000);
-            }
-        } else if (data.status === 'canceled') {
-            showError('Платеж отменен');
-        }
-    } catch (error) {
-        console.error('[Payment] Ошибка проверки статуса:', error);
-        // Продолжаем проверять даже при ошибке
-        setTimeout(() => checkPaymentStatus(paymentId), 5000);
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        paymentButton.disabled = false;
+        loadingIndicator.style.display = 'none';
+      }
     }
-}
-
-// Функция для автоматического подтверждения тестовых платежей
-async function manualTestConfirm(paymentId) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/confirm-payment`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                payment_id: paymentId
-            })
-        });
-
-        const data = await response.json();
-        
-        if (data.success) {
-            showSuccess('Тестовый платеж подтвержден!');
-            await loadUserData();
-        }
-    } catch (error) {
-        console.error('Ошибка подтверждения тестового платежа:', error);
-    }
-}
 
     // Функция активации подписки
     async function activateSubscription() {
@@ -594,13 +547,10 @@ async function manualTestConfirm(paymentId) {
         subscribeBtn.disabled = true;
         hideError();
 
-        // Определяем тариф
         const tariffId = selected.id.replace('tariff', '');
         const tariffMap = {"1month": "month", "1year": "year"};
         const tariff = tariffMap[tariffId];
         const amount = tariff === "month" ? 150 : 1300;
-
-        console.log(`[Subscription] Активация подписки: ${tariff}, сумма: ${amount}`);
 
         const response = await fetch(`${API_BASE_URL}/create-payment`, {
           method: "POST",
@@ -620,21 +570,19 @@ async function manualTestConfirm(paymentId) {
         }
 
         const data = await response.json();
-        console.log('[Subscription] Ответ сервера:', data);
         
         if (data.error) {
           throw new Error(data.error);
         }
 
         if (data.payment_url) {
+          currentPaymentId = data.payment_id;
           Telegram.WebApp.openLink(data.payment_url);
-          // Запускаем проверку статуса платежа
           checkPaymentStatus(data.payment_id);
         } else {
           showError(data.error || "Ошибка оплаты");
         }
       } catch (error) {
-        console.error('[Subscription] Ошибка:', error);
         showError(error.message);
       } finally {
         loadingIndicator.style.display = 'none';
@@ -644,8 +592,6 @@ async function manualTestConfirm(paymentId) {
 
     // Проверка статуса платежа
     async function checkPaymentStatus(paymentId) {
-      console.log(`[Payment] Проверка статуса платежа: ${paymentId}`);
-      
       try {
         const response = await fetch(`${API_BASE_URL}/payment-status?payment_id=${paymentId}&user_id=${userId}`);
         
@@ -654,22 +600,65 @@ async function manualTestConfirm(paymentId) {
         }
         
         const data = await response.json();
-        console.log('[Payment] Статус платежа:', data);
         
         if (data.status === 'succeeded') {
-          showSuccess('Оплата прошла успешно!');
-          // Обновляем данные пользователя
+          showSuccess('Оплата прошла успешно! Баланс пополнен.');
           await loadUserData();
         } else if (data.status === 'pending') {
-          // Продолжаем проверять каждые 5 секунд
-          setTimeout(() => checkPaymentStatus(paymentId), 5000);
+          // Для тестовых платежей автоматически подтверждаем через 5 секунд
+          if (data.amount <= 2) {
+            setTimeout(async () => {
+              await manualConfirmPaymentById(paymentId);
+            }, 5000);
+          } else {
+            setTimeout(() => checkPaymentStatus(paymentId), 5000);
+          }
         } else if (data.status === 'canceled') {
           showError('Платеж отменен');
         }
       } catch (error) {
-        console.error('[Payment] Ошибка проверки статуса:', error);
-        // Продолжаем проверять даже при ошибке
         setTimeout(() => checkPaymentStatus(paymentId), 5000);
+      }
+    }
+
+    // Ручное подтверждение платежа
+    async function manualConfirmPayment() {
+      let paymentId = currentPaymentId;
+      
+      if (!paymentId) {
+        paymentId = prompt("Введите ID платежа для подтверждения:");
+        if (!paymentId) return;
+      }
+      
+      await manualConfirmPaymentById(paymentId);
+    }
+
+    async function manualConfirmPaymentById(paymentId) {
+      try {
+        loadingIndicator.style.display = 'block';
+        
+        const response = await fetch(`${API_BASE_URL}/confirm-payment`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            payment_id: paymentId
+          })
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+          showSuccess('Платеж подтвержден! Баланс пополнен.');
+          await loadUserData();
+        } else {
+          showError(data.error || "Ошибка подтверждения");
+        }
+      } catch (error) {
+        showError("Ошибка соединения");
+      } finally {
+        loadingIndicator.style.display = 'none';
       }
     }
 
@@ -687,7 +676,6 @@ async function manualTestConfirm(paymentId) {
           Telegram.WebApp.showAlert('Ссылка скопирована в буфер обмена!');
         })
         .catch(err => {
-          console.error('Ошибка копирования:', err);
           Telegram.WebApp.showAlert('Не удалось скопировать ссылку');
         });
     }
@@ -728,7 +716,6 @@ async function manualTestConfirm(paymentId) {
     // Инициализация при загрузке
     document.addEventListener('DOMContentLoaded', async () => {
       await loadUserData();
-      console.log('Инициализация завершена');
     });
   </script>
 </body>
