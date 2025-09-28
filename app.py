@@ -5,7 +5,6 @@ import uuid
 import httpx
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
-import sqlite3
 from pydantic import BaseModel
 import firebase_admin
 from firebase_admin import credentials, db as firebase_db
@@ -445,34 +444,13 @@ async def check_payment(payment_id: str, user_id: str):
 async def process_referral_bonuses(user_id: str):
     """Обрабатывает реферальные бонусы после успешной оплаты"""
     try:
-        # Импортируем здесь, чтобы избежать циклического импорта
-        import sqlite3
+        # Для рефералов используем локальную SQLite (она в боте)
+        # Здесь просто логируем
+        print(f"🔍 Checking referrals for user: {user_id}")
         
-        # Проверяем локальную БД на наличие реферала
-        conn = sqlite3.connect('vacvpn.db')
-        cursor = conn.cursor()
-        cursor.execute('SELECT referrer_id FROM referrals WHERE referred_id = ? AND bonus_paid = ?', (int(user_id), False))
-        referral = cursor.fetchone()
+        # В реальной реализации здесь будет запрос к API бота
+        # или общая база данных для рефералов
         
-        if referral:
-            referrer_id = str(referral[0])
-            
-            print(f"🎉 Начисляем реферальный бонус: {referrer_id} за пользователя {user_id}")
-            
-            # Начисляем бонус рефереру
-            update_user_balance(referrer_id, 50)
-            
-            # Сохраняем в Firebase для истории
-            save_referral_bonus(referrer_id, user_id, 50)
-            
-            # Отмечаем бонус как выплаченный в локальной БД
-            cursor.execute('UPDATE referrals SET bonus_paid = ? WHERE referred_id = ? AND referrer_id = ?', 
-                         (True, int(user_id), int(referrer_id)))
-            conn.commit()
-            
-            print(f"✅ Реферальный бонус 50₽ начислен пользователю {referrer_id}")
-        
-        conn.close()
         return True
         
     except Exception as e:
