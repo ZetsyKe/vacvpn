@@ -38,13 +38,12 @@ TOKEN = os.getenv("TOKEN")
 WEB_APP_URL = "https://vacvpn.vercel.app"
 SUPPORT_NICK = "@vacvpn_support"
 TG_CHANNEL = "@vac_vpn"
-API_BASE_URL = os.getenv("API_BASE_URL", "")
-BOT_USERNAME = "vaaaac_bot"
+API_BASE_URL = os.getenv("RENDER_EXTERNAL_URL", "")
 
-# Автоматически определяем API_BASE_URL на Render
 if not API_BASE_URL:
-    RENDER_SERVICE_NAME = os.getenv("RENDER_SERVICE_NAME", "vacvpn-backend")
-    API_BASE_URL = f"https://{RENDER_SERVICE_NAME}.onrender.com"
+    API_BASE_URL = "https://vacvpn-backend.onrender.com"
+
+BOT_USERNAME = "vaaaac_bot"
 
 # Инициализация Firebase
 try:
@@ -57,7 +56,7 @@ try:
         })
         logger.info("✅ Firebase Realtime Database инициализирован")
     else:
-        logger.warning("FIREBASE_CREDENTIALS not found")
+        logger.warning("❌ FIREBASE_CREDENTIALS not found")
 except Exception as e:
     logger.error(f"❌ Firebase initialization error: {e}")
 
@@ -86,82 +85,62 @@ class UserCreateRequest(BaseModel):
 
 # Инициализация БД для рефералов
 def init_db():
-    conn = sqlite3.connect('vacvpn.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS referrals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            referrer_id INTEGER,
-            referred_id INTEGER,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            bonus_paid BOOLEAN DEFAULT FALSE
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect('vacvpn.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS referrals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_id INTEGER,
+                referred_id INTEGER,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                bonus_paid BOOLEAN DEFAULT FALSE
+            )
+        ''')
+        conn.commit()
+        conn.close()
+        logger.info("✅ SQLite database initialized")
+    except Exception as e:
+        logger.error(f"❌ Error initializing database: {e}")
 
 init_db()
 
-# Функции для работы с API
-async def make_api_request(url: str, method: str = "GET", json_data: dict = None, params: dict = None):
-    try:
-        timeout_config = httpx.Timeout(30.0, connect=10.0)
-        async with httpx.AsyncClient(timeout=timeout_config) as client:
-            if method.upper() == "GET":
-                response = await client.get(url, params=params)
-            elif method.upper() == "POST":
-                response = await client.post(url, json=json_data)
-            else:
-                raise ValueError(f"Unsupported method: {method}")
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"API returned status {response.status_code}")
-                return {"error": f"API error: {response.status_code}"}
-                
-    except Exception as e:
-        logger.error(f"API request error: {e}")
-        return {"error": f"Connection error: {str(e)}"}
-
-async def get_user_info(user_id: int):
-    url = f"{API_BASE_URL}/user-data"
-    params = {"user_id": str(user_id)}
-    return await make_api_request(url, "GET", params=params)
-
-async def create_user(user_data: dict):
-    url = f"{API_BASE_URL}/create-user"
-    return await make_api_request(url, "POST", json_data=user_data)
-
 # Функции для работы с рефералами
 def add_referral(referrer_id: int, referred_id: int):
-    conn = sqlite3.connect('vacvpn.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT id FROM referrals WHERE referrer_id = ? AND referred_id = ?', 
-                  (referrer_id, referred_id))
-    existing = cursor.fetchone()
-    
-    if not existing:
-        cursor.execute('INSERT INTO referrals (referrer_id, referred_id, created_at) VALUES (?, ?, ?)',
-                      (referrer_id, referred_id, datetime.now().isoformat()))
-        conn.commit()
-        logger.info(f"Реферал добавлен: {referrer_id} -> {referred_id}")
-    
-    conn.close()
+    try:
+        conn = sqlite3.connect('vacvpn.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT id FROM referrals WHERE referrer_id = ? AND referred_id = ?', 
+                      (referrer_id, referred_id))
+        existing = cursor.fetchone()
+        
+        if not existing:
+            cursor.execute('INSERT INTO referrals (referrer_id, referred_id, created_at) VALUES (?, ?, ?)',
+                          (referrer_id, referred_id, datetime.now().isoformat()))
+            conn.commit()
+            logger.info(f"✅ Реферал добавлен: {referrer_id} -> {referred_id}")
+        
+        conn.close()
+    except Exception as e:
+        logger.error(f"❌ Error adding referral: {e}")
 
 def get_referral_stats(user_id: int):
-    conn = sqlite3.connect('vacvpn.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ?', (user_id,))
-    total = cursor.fetchone()[0]
-    
-    cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ? AND bonus_paid = ?', (user_id, True))
-    with_bonus = cursor.fetchone()[0]
-    
-    conn.close()
-    return total, with_bonus
+    try:
+        conn = sqlite3.connect('vacvpn.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ?', (user_id,))
+        total = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ? AND bonus_paid = ?', (user_id, True))
+        with_bonus = cursor.fetchone()[0]
+        
+        conn.close()
+        return total, with_bonus
+    except Exception as e:
+        logger.error(f"❌ Error getting referral stats: {e}")
+        return 0, 0
 
 # Функции работы с Firebase
 def get_user(user_id: str):
@@ -170,7 +149,7 @@ def get_user(user_id: str):
         user_data = ref.get()
         return user_data
     except Exception as e:
-        logger.error(f"Error getting user from Firebase: {e}")
+        logger.error(f"❌ Error getting user from Firebase: {e}")
         return None
 
 def create_user_in_firebase(user_data: UserCreateRequest):
@@ -199,7 +178,7 @@ def create_user_in_firebase(user_data: UserCreateRequest):
         return True
     except Exception as e:
         logger.error(f"❌ Error creating user in Firebase: {e}")
-        return True
+        return False
 
 def update_user_balance(user_id: str, amount: float):
     try:
@@ -359,12 +338,13 @@ if bot and dp:
         args = message.text.split()
         is_referral = False
 
-        await create_user({
-            "user_id": str(user.id),
-            "username": user.username or "",
-            "first_name": user.first_name or "",
-            "last_name": user.last_name or ""
-        })
+        # Создаем пользователя в Firebase
+        create_user_in_firebase(UserCreateRequest(
+            user_id=str(user.id),
+            username=user.username or "",
+            first_name=user.first_name or "",
+            last_name=user.last_name or ""
+        ))
 
         if len(args) > 1 and args[1].startswith('ref_'):
             try:
@@ -399,6 +379,32 @@ if bot and dp:
             reply_markup=get_main_keyboard()
         )
 
+    @dp.message(Command("cabinet"))
+    async def cmd_cabinet(message: types.Message):
+        user_id = message.from_user.id
+        try:
+            user_data = get_user(str(user_id))
+            if user_data:
+                balance = user_data.get('balance', 0)
+                has_subscription = user_data.get('has_subscription', False)
+                status = "✅ Активна" if has_subscription else "❌ Неактивна"
+                
+                message_text = f"""
+<b>Личный кабинет VAC VPN</b>
+
+💰 Баланс: <b>{balance}₽</b>
+📅 Статус подписки: <b>{status}</b>
+
+💡 Для покупки подписки используйте веб-кабинет.
+"""
+            else:
+                message_text = "❌ Не удалось загрузить данные. Попробуйте позже."
+                
+            await message.answer(message_text, reply_markup=get_cabinet_keyboard())
+        except Exception as e:
+            logger.error(f"Error in cabinet command: {e}")
+            await message.answer("❌ Ошибка загрузки данных.", reply_markup=get_cabinet_keyboard())
+
     # Запуск бота в отдельной задаче
     async def run_bot():
         logger.info("🤖 Бот VAC VPN запускается...")
@@ -410,7 +416,12 @@ if bot and dp:
 # Эндпоинты FastAPI
 @app.get("/")
 async def health_check():
-    return {"status": "ok", "message": "VAC VPN API is running", "api_base_url": API_BASE_URL}
+    return {
+        "status": "ok", 
+        "message": "VAC VPN API is running", 
+        "api_base_url": API_BASE_URL,
+        "timestamp": datetime.now().isoformat()
+    }
 
 @app.get("/user-data")
 async def get_user_info_endpoint(user_id: str):
@@ -482,7 +493,7 @@ async def create_user_endpoint(request: UserCreateRequest):
         return {"success": True, "user_id": request.user_id}
     except Exception as e:
         logger.error(f"❌ Error in create-user: {e}")
-        return {"success": True, "user_id": request.user_id}
+        return {"success": False, "error": str(e)}
 
 @app.post("/create-payment")
 async def create_payment(request: PaymentRequest):
@@ -496,13 +507,6 @@ async def create_payment(request: PaymentRequest):
         logger.info(f"🔄 Creating payment for user {request.user_id}, amount: {request.amount}, tariff: {request.tariff}")
         
         is_test_payment = request.amount <= 2.00
-        
-        tariff_config = {
-            "month": {"days": 30, "description": "Месячная подписка VAC VPN"},
-            "year": {"days": 365, "description": "Годовая подписка VAC VPN"}
-        }
-        
-        tariff_info = tariff_config.get(request.tariff, tariff_config["month"])
         
         payment_id = str(uuid.uuid4())
         
@@ -537,7 +541,7 @@ async def create_payment(request: PaymentRequest):
                 "status": "succeeded"
             }
         
-        # Для реальных платежей здесь будет код ЮKassa
+        # Для реальных платежей
         return {
             "success": False,
             "error": "Real payments temporarily disabled"
@@ -589,5 +593,5 @@ async def startup_event():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
