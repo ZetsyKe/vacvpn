@@ -4,4 +4,4 @@ httpx==0.25.2
 python-dotenv==1.0.0
 aiogram==3.3.0
 pydantic==2.5.0
-
+firebase-admin==6.5.0
