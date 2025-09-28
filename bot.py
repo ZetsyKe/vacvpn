@@ -54,7 +54,7 @@ def init_db():
 
 init_db()
 
-# Улучшенные функции для работы с API
+# Функции для работы с API
 async def make_api_request(url: str, method: str = "GET", json_data: dict = None, params: dict = None):
     """Упрощенная функция для запросов к API"""
     try:
@@ -94,7 +94,6 @@ def add_referral(referrer_id: int, referred_id: int):
     conn = sqlite3.connect('vacvpn.db')
     cursor = conn.cursor()
     
-    # Проверяем, нет ли уже такой записи
     cursor.execute('SELECT id FROM referrals WHERE referrer_id = ? AND referred_id = ?', 
                   (referrer_id, referred_id))
     existing = cursor.fetchone()
@@ -112,37 +111,14 @@ def get_referral_stats(user_id: int):
     conn = sqlite3.connect('vacvpn.db')
     cursor = conn.cursor()
     
-    # Всего приглашено
     cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ?', (user_id,))
     total = cursor.fetchone()[0]
     
-    # Приглашенные с оплаченными бонусами
     cursor.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id = ? AND bonus_paid = ?', (user_id, True))
     with_bonus = cursor.fetchone()[0]
     
     conn.close()
     return total, with_bonus
-
-def get_unpaid_referrals(user_id: int):
-    """Получает список рефералов без выплаченных бонусов"""
-    conn = sqlite3.connect('vacvpn.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT referred_id FROM referrals WHERE referrer_id = ? AND bonus_paid = ?', (user_id, False))
-    referrals = cursor.fetchall()
-    
-    conn.close()
-    return [ref[0] for ref in referrals]
-
-def mark_bonus_paid(referrer_id: int, referred_id: int):
-    """Отмечает бонус как выплаченный"""
-    conn = sqlite3.connect('vacvpn.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('UPDATE referrals SET bonus_paid = ? WHERE referrer_id = ? AND referred_id = ?',
-                  (True, referrer_id, referred_id))
-    conn.commit()
-    conn.close()
 
 # Клавиатуры
 def get_main_keyboard():
@@ -225,22 +201,25 @@ async def get_cabinet_message(user_id: int):
     """Получает информацию о кабинете через API"""
     user_data = await get_user_info(user_id)
     
-    if user_data and 'error' not in user_data:
-        balance = user_data.get('balance', 0)
-        has_subscription = user_data.get('has_subscription', False)
-        subscription_end = user_data.get('subscription_end')
-        days_remaining = user_data.get('days_remaining', 0)
-        tariff_type = user_data.get('tariff_type', 'нет')
-        
-        status_text = "✅ Активна" if has_subscription else "❌ Неактивна"
-        
-        if has_subscription and subscription_end:
+    # Всегда показываем кабинет, даже если есть ошибка
+    balance = user_data.get('balance', 0)
+    has_subscription = user_data.get('has_subscription', False)
+    subscription_end = user_data.get('subscription_end')
+    days_remaining = user_data.get('days_remaining', 0)
+    tariff_type = user_data.get('tariff_type', 'нет')
+    
+    status_text = "✅ Активна" if has_subscription else "❌ Неактивна"
+    
+    if has_subscription and subscription_end:
+        try:
             end_date = datetime.fromisoformat(subscription_end.replace('Z', '+00:00'))
             subscription_info = f"до {end_date.strftime('%d.%m.%Y')} ({days_remaining} дней)"
-        else:
-            subscription_info = "нет активной подписки"
-        
-        return f"""
+        except:
+            subscription_info = "ошибка даты"
+    else:
+        subscription_info = "нет активной подписки"
+    
+    return f"""
 <b>Личный кабинет VAC VPN</b>
 
 💰 Баланс: <b>{balance}₽</b>
@@ -249,15 +228,6 @@ async def get_cabinet_message(user_id: int):
 ⏰ Срок действия: <b>{subscription_info}</b>
 
 💡 Для покупки подписки используйте веб-кабинет.
-"""
-    else:
-        error_msg = user_data.get('error', 'Неизвестная ошибка') if user_data else 'Ошибка соединения'
-        return f"""
-<b>Личный кабинет VAC VPN</b>
-
-❌ Не удалось загрузить данные: {error_msg}
-
-Попробуйте обновить данные или обратитесь в поддержку.
 """
 
 def get_ref_message(user_id: int):
@@ -377,12 +347,9 @@ async def web_app_handler(message: types.Message):
 # Обработчики callback-кнопок
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu_handler(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "Главное меню VAC VPN",
-        reply_markup=None
-    )
+    await callback.message.delete()
     await callback.message.answer(
-        "Выберите действие:",
+        "Главное меню VAC VPN",
         reply_markup=get_main_keyboard()
     )
     await callback.answer()
@@ -391,14 +358,25 @@ async def back_to_menu_handler(callback: types.CallbackQuery):
 async def refresh_cabinet_handler(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     cabinet_text = await get_cabinet_message(user_id)
-    await callback.message.edit_text(cabinet_text, reply_markup=get_cabinet_keyboard())
-    await callback.answer("✅ Данные обновлены")
+    
+    try:
+        await callback.message.edit_text(cabinet_text, reply_markup=get_cabinet_keyboard())
+        await callback.answer("✅ Данные обновлены")
+    except Exception as e:
+        await callback.message.answer(cabinet_text, reply_markup=get_cabinet_keyboard())
+        await callback.answer("✅ Данные обновлены")
 
 @dp.callback_query(lambda c: c.data == "refresh_refs")
 async def refresh_refs_handler(callback: types.CallbackQuery):
     user_id = callback.from_user.id
-    await callback.message.edit_text(get_ref_message(user_id), reply_markup=get_ref_keyboard(user_id))
-    await callback.answer("✅ Статистика обновлена")
+    new_ref_message = get_ref_message(user_id)
+    
+    try:
+        await callback.message.edit_text(new_ref_message, reply_markup=get_ref_keyboard(user_id))
+        await callback.answer("✅ Статистика обновлена")
+    except Exception as e:
+        await callback.message.answer(new_ref_message, reply_markup=get_ref_keyboard(user_id))
+        await callback.answer("✅ Статистика обновлены")
 
 # Запуск бота
 async def main():
