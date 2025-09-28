@@ -520,16 +520,66 @@
         Telegram.WebApp.openLink(data.payment_url);
         
         // Запускаем проверку статуса платежа
-        checkPaymentStatus(data.payment_id);
+// Замените функцию checkPaymentStatus на эту:
+async function checkPaymentStatus(paymentId) {
+    console.log(`[Payment] Проверка статуса платежа: ${paymentId}`);
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/payment-status?payment_id=${paymentId}&user_id=${userId}`);
         
-      } catch (error) {
-        console.error('[Payment] Ошибка:', error);
-        showError(error.message);
-      } finally {
-        paymentButton.disabled = false;
-        loadingIndicator.style.display = 'none';
-      }
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('[Payment] Статус платежа:', data);
+        
+        if (data.status === 'succeeded') {
+            showSuccess('Оплата прошла успешно! Баланс пополнен.');
+            await loadUserData();
+        } else if (data.status === 'pending') {
+            // Для тестовых платежей ждем 3 секунды и подтверждаем вручную
+            if (data.amount <= 2) { // Тестовые платежи обычно маленькие
+                setTimeout(async () => {
+                    await manualTestConfirm(paymentId);
+                }, 3000);
+            } else {
+                // Продолжаем проверять каждые 5 секунд
+                setTimeout(() => checkPaymentStatus(paymentId), 5000);
+            }
+        } else if (data.status === 'canceled') {
+            showError('Платеж отменен');
+        }
+    } catch (error) {
+        console.error('[Payment] Ошибка проверки статуса:', error);
+        // Продолжаем проверять даже при ошибке
+        setTimeout(() => checkPaymentStatus(paymentId), 5000);
     }
+}
+
+// Функция для автоматического подтверждения тестовых платежей
+async function manualTestConfirm(paymentId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/confirm-payment`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                payment_id: paymentId
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+            showSuccess('Тестовый платеж подтвержден!');
+            await loadUserData();
+        }
+    } catch (error) {
+        console.error('Ошибка подтверждения тестового платежа:', error);
+    }
+}
 
     // Функция активации подписки
     async function activateSubscription() {
