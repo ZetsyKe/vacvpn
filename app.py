@@ -8,6 +8,8 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from pydantic import BaseModel
 import logging
+import secrets
+import string
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -63,9 +65,6 @@ class ActivateTariffRequest(BaseModel):
     user_id: str
     tariff: str
 
-class ConfirmPaymentRequest(BaseModel):
-    payment_id: str
-
 class InitUserRequest(BaseModel):
     user_id: str
     username: str = ""
@@ -96,6 +95,7 @@ def create_user(user_data: UserCreateRequest):
                 'has_subscription': False,
                 'subscription_end': None,
                 'tariff_type': 'none',
+                'vpn_key': None,
                 'created_at': firestore.SERVER_TIMESTAMP
             })
             logger.info(f"User created: {user_data.user_id}")
@@ -114,22 +114,31 @@ def update_user_balance(user_id: str, amount: float):
     except Exception as e:
         logger.error(f"Error updating balance: {e}")
 
+def generate_vpn_key():
+    """Генерирует уникальный VPN ключ"""
+    alphabet = string.ascii_letters + string.digits
+    return 'vpn_' + ''.join(secrets.choice(alphabet) for _ in range(16))
+
 def activate_subscription(user_id: str, tariff: str, days: int):
     if not db: return
     try:
         now = datetime.now()
         new_end = now + timedelta(days=days)
         
+        # Генерируем VPN ключ
+        vpn_key = generate_vpn_key()
+        
         db.collection('users').document(user_id).update({
             'has_subscription': True,
             'subscription_end': new_end.isoformat(),
-            'tariff_type': tariff
+            'tariff_type': tariff,
+            'vpn_key': vpn_key
         })
-        logger.info(f"Subscription activated for user {user_id}: {days} days")
-        return new_end
+        logger.info(f"Subscription activated for user {user_id}: {days} days, VPN key: {vpn_key}")
+        return new_end, vpn_key
     except Exception as e:
         logger.error(f"Error activating subscription: {e}")
-        return None
+        return None, None
 
 def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_type: str = "tariff"):
     if not db: return
@@ -233,6 +242,7 @@ async def init_user(request: InitUserRequest):
                 'has_subscription': False,
                 'subscription_end': None,
                 'tariff_type': 'none',
+                'vpn_key': None,
                 'created_at': firestore.SERVER_TIMESTAMP
             })
             logger.info(f"User auto-created: {request.user_id}")
@@ -242,16 +252,6 @@ async def init_user(request: InitUserRequest):
             
     except Exception as e:
         logger.error(f"Error initializing user: {e}")
-        return {"error": str(e)}
-
-@app.post("/create-user")
-async def create_user_endpoint(request: UserCreateRequest):
-    try:
-        if not db:
-            return {"error": "Database not connected"}
-        create_user(request)
-        return {"success": True, "user_id": request.user_id}
-    except Exception as e:
         return {"error": str(e)}
 
 @app.get("/user-data")
@@ -268,11 +268,13 @@ async def get_user_info(user_id: str):
                 "has_subscription": False,
                 "subscription_end": None,
                 "tariff_type": "none",
-                "days_remaining": 0
+                "days_remaining": 0,
+                "vpn_key": None
             }
         
         has_subscription = user.get('has_subscription', False)
         subscription_end = user.get('subscription_end')
+        vpn_key = user.get('vpn_key')
         days_remaining = 0
         
         if has_subscription and subscription_end:
@@ -289,7 +291,8 @@ async def get_user_info(user_id: str):
             "has_subscription": has_subscription,
             "subscription_end": subscription_end,
             "tariff_type": user.get('tariff_type', 'none'),
-            "days_remaining": days_remaining
+            "days_remaining": days_remaining,
+            "vpn_key": vpn_key
         }
         
     except Exception as e:
@@ -382,7 +385,8 @@ async def check_payment(payment_id: str, user_id: str):
                 "success": True,
                 "status": "succeeded",
                 "payment_id": payment_id,
-                "amount": payment['amount']
+                "amount": payment['amount'],
+                "vpn_key": get_user(user_id).get('vpn_key') if get_user(user_id) else None
             }
         
         yookassa_id = payment.get('yookassa_id')
@@ -407,19 +411,31 @@ async def check_payment(payment_id: str, user_id: str):
                         user_id = payment['user_id']
                         amount = payment['amount']
                         payment_type = payment['payment_type']
+                        tariff = payment['tariff']
                         
                         if payment_type == 'tariff':
-                            tariff_days = 30 if payment['tariff'] == "month" else 365
-                            activate_subscription(user_id, payment['tariff'], tariff_days)
-                        
-                        update_user_balance(user_id, amount)
+                            # Активируем подписку и генерируем VPN ключ
+                            tariff_days = 30 if tariff == "month" else 365
+                            new_end, vpn_key = activate_subscription(user_id, tariff, tariff_days)
+                            
+                            # Начисляем реферальный бонус
+                            referrals = get_referrals(user_id)
+                            for ref in referrals:
+                                if not ref.get('bonus_paid', False):
+                                    update_user_balance(ref['referrer_id'], 50)
+                                    mark_referral_bonus_paid(user_id)
+                        else:
+                            # Просто пополняем баланс
+                            update_user_balance(user_id, amount)
+                            vpn_key = get_user(user_id).get('vpn_key') if get_user(user_id) else None
                     
-                    return {
-                        "success": True,
-                        "status": status,
-                        "payment_id": payment_id,
-                        "amount": amount
-                    }
+                        return {
+                            "success": True,
+                            "status": status,
+                            "payment_id": payment_id,
+                            "amount": amount,
+                            "vpn_key": vpn_key
+                        }
         
         return {
             "success": True,
@@ -429,51 +445,6 @@ async def check_payment(payment_id: str, user_id: str):
         
     except Exception as e:
         return {"error": f"Error checking payment: {str(e)}"}
-
-@app.post("/confirm-payment")
-async def confirm_payment_manual(request: ConfirmPaymentRequest):
-    """Ручное подтверждение платежа для тестирования"""
-    try:
-        if not db:
-            return {"error": "Database not connected"}
-            
-        payment = get_payment(request.payment_id)
-        if not payment:
-            return {"error": "Payment not found"}
-        
-        # Вручную помечаем платеж как успешный
-        update_payment_status(request.payment_id, "succeeded", "manual_confirmation")
-        
-        user_id = payment['user_id']
-        amount = payment['amount']
-        payment_type = payment['payment_type']
-        tariff = payment['tariff']
-        
-        # Начисляем баланс
-        update_user_balance(user_id, amount)
-        
-        if payment_type == 'tariff':
-            # Активируем подписку
-            tariff_days = 30 if tariff == "month" else 365
-            activate_subscription(user_id, tariff, tariff_days)
-            
-            # Начисляем реферальный бонус
-            referrals = get_referrals(user_id)
-            for ref in referrals:
-                if not ref.get('bonus_paid', False):
-                    update_user_balance(ref['referrer_id'], 50)
-                    mark_referral_bonus_paid(user_id)
-        
-        return {
-            "success": True,
-            "message": "Payment confirmed manually",
-            "payment_id": request.payment_id,
-            "user_id": user_id,
-            "amount": amount
-        }
-        
-    except Exception as e:
-        return {"error": f"Error: {str(e)}"}
 
 @app.post("/add-referral")
 async def add_referral_endpoint(referrer_id: str, referred_id: str):
@@ -509,11 +480,11 @@ async def activate_tariff(request: ActivateTariffRequest):
             'balance': user_balance - tariff_amount
         })
         
-        # Активируем подписку
+        # Активируем подписку и генерируем VPN ключ
         tariff_days = 30 if request.tariff == "month" else 365
-        activate_subscription(request.user_id, request.tariff, tariff_days)
+        new_end, vpn_key = activate_subscription(request.user_id, request.tariff, tariff_days)
         
-        return {"success": True, "days_added": tariff_days}
+        return {"success": True, "days_added": tariff_days, "vpn_key": vpn_key}
         
     except Exception as e:
         return {"error": str(e)}
