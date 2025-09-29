@@ -10,7 +10,6 @@ from pydantic import BaseModel
 import logging
 import secrets
 import string
-import json
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -27,43 +26,60 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Инициализация Firebase - ИСПРАВЛЕННАЯ ВЕРСИЯ
+# Инициализация Firebase с детальной диагностикой
 try:
     if not firebase_admin._apps:
-        # Получаем приватный ключ из переменной окружения
         private_key = os.getenv("FIREBASE_PRIVATE_KEY", "")
         
-        # ДЕБАГ: Проверяем что ключ загружен
-        logger.info(f"Private key loaded, length: {len(private_key)}")
+        # Детальная диагностика формата ключа
+        logger.info("=== FIREBASE PRIVATE KEY DIAGNOSTICS ===")
+        logger.info(f"Key length: {len(private_key)}")
         
-        # Правильно форматируем ключ - убедимся что есть BEGIN и END
-        if private_key and "BEGIN PRIVATE KEY" not in private_key:
-            private_key = "-----BEGIN PRIVATE KEY-----\n" + private_key
-        if private_key and "END PRIVATE KEY" not in private_key:
-            private_key = private_key + "\n-----END PRIVATE KEY-----"
+        if private_key:
+            lines = private_key.split('\n')
+            logger.info(f"Number of lines: {len(lines)}")
+            logger.info(f"First line: '{lines[0]}'")
+            logger.info(f"Last line: '{lines[-1]}'")
+            
+            # Проверяем требования PEM формата
+            has_begin = "BEGIN PRIVATE KEY" in private_key
+            has_end = "END PRIVATE KEY" in private_key
+            logger.info(f"Has BEGIN: {has_begin}")
+            logger.info(f"Has END: {has_end}")
+            
+            # Проверяем длину строк (кроме первой и последней)
+            if len(lines) > 2:
+                middle_lines = lines[1:-1]
+                valid_line_lengths = all(len(line) == 64 for line in middle_lines if line.strip())
+                logger.info(f"All middle lines are 64 chars: {valid_line_lengths}")
         
-        # Заменяем все возможные варианты переносов строк
-        private_key = private_key.replace('\\n', '\n')
+        if not private_key:
+            raise Exception("FIREBASE_PRIVATE_KEY is empty")
+        if not has_begin or not has_end:
+            raise Exception("PEM file missing BEGIN/END headers")
         
+        # Используем ключ как есть
         firebase_config = {
             "type": "service_account",
-            "project_id": "vacvpn-75yegf",
-            "private_key_id": "98df7d90549a40d34c0a3ee2c8e028e232e73e98",
+            "project_id": os.getenv("FIREBASE_PROJECT_ID", "vacvpn-75yegf"),
+            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID", "98df7d90549a40d34c0a3ee2c8e028e232e73e98"),
             "private_key": private_key,
-            "client_email": "firebase-adminsdk-fbsvc@vacvpn-75yegf.iam.gserviceaccount.com",
-            "client_id": "118426875107507915166",
+            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL", "firebase-adminsdk-fbsvc@vacvpn-75yegf.iam.gserviceaccount.com"),
+            "client_id": os.getenv("FIREBASE_CLIENT_ID", "118426875107507915166"),
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40vacvpn-75yegf.iam.gserviceaccount.com"
+            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_X509_CERT_URL", "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40vacvpn-75yegf.iam.gserviceaccount.com")
         }
         
         cred = credentials.Certificate(firebase_config)
         firebase_admin.initialize_app(cred)
+    
     db = firestore.client()
     logger.info("✅ Firebase initialized successfully")
+    
 except Exception as e:
-    logger.error(f"❌ Firebase initialization failed: {e}")
+    logger.error(f"❌ Firebase initialization failed: {str(e)}")
     db = None
 
 # Модели данных
@@ -406,7 +422,7 @@ async def create_payment(request: PaymentRequest):
             payment_data = response.json()
             update_payment_status(payment_id, "pending", payment_data.get("id"))
             
-            logger.info(f"💳 Payment created: {payment_data}")
+            logger.info(f"💳 Payment created: {payment_id} for user {request.user_id}")
             
             return {
                 "success": True,
