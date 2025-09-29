@@ -396,7 +396,7 @@
 
     // Данные пользователя
     const user = Telegram.WebApp.initDataUnsafe.user || {};
-    const userId = user.id || 'unknown';
+    const userId = Telegram.WebApp.initDataUnsafe.user?.id?.toString() || 'unknown';
     const userName = user.first_name || 'Пользователь';
     const userUsername = user.username || '';
 
@@ -456,13 +456,19 @@
       try {
         console.log('🔄 Initializing user:', userId);
         
+        if (!userId || userId === 'unknown') {
+          console.error('❌ User ID not available');
+          showError('Ошибка: не удалось получить ID пользователя');
+          return;
+        }
+        
         const response = await fetch(`${API_BASE_URL}/init-user`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            user_id: userId.toString(),
+            user_id: userId,
             username: userUsername,
             first_name: userName,
             last_name: user.last_name || ""
@@ -486,6 +492,11 @@
     async function loadUserData() {
       try {
         console.log('🔄 Loading user data for:', userId);
+        
+        if (!userId || userId === 'unknown') {
+          console.error('❌ User ID not available');
+          return;
+        }
         
         const response = await fetch(`${API_BASE_URL}/user-data?user_id=${userId}`);
         
@@ -550,6 +561,11 @@
         hideError();
         hideSuccess();
         
+        if (!userId || userId === 'unknown') {
+          showError('Ошибка: не удалось получить ID пользователя');
+          return;
+        }
+        
         paymentButton.disabled = true;
         loadingIndicator.style.display = 'block';
         
@@ -559,7 +575,7 @@
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            user_id: userId.toString(),
+            user_id: userId,
             amount: 100,
             payment_type: "balance",
             description: "Пополнение баланса VAC VPN"
@@ -607,6 +623,11 @@
       }
 
       try {
+        if (!userId || userId === 'unknown') {
+          showError('Ошибка: не удалось получить ID пользователя');
+          return;
+        }
+
         loadingIndicator.style.display = 'block';
         subscribeBtn.disabled = true;
         hideError();
@@ -624,7 +645,7 @@
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            user_id: userId.toString(),
+            user_id: userId,
             tariff: tariff,
             amount: amount,
             payment_type: "tariff"
@@ -661,6 +682,11 @@
     // Проверка статуса платежа
     async function checkPaymentStatus(paymentId) {
       try {
+        if (!paymentId) {
+          console.error('❌ No payment ID provided');
+          return;
+        }
+        
         console.log('🔄 Checking payment status:', paymentId);
         
         const response = await fetch(`${API_BASE_URL}/payment-status?payment_id=${paymentId}&user_id=${userId}`);
@@ -760,6 +786,7 @@
     // Инициализация при загрузке
     document.addEventListener('DOMContentLoaded', async () => {
       console.log('🚀 Starting initialization...');
+      console.log('👤 User data:', { userId, userName, userUsername });
       await initUser(); // Сначала создаем пользователя
       await loadUserData(); // Потом загружаем данные
       console.log('🎉 Initialization complete!');
