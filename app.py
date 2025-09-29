@@ -30,37 +30,40 @@ app.add_middleware(
 # Инициализация Firebase - ИСПРАВЛЕННАЯ ВЕРСИЯ
 try:
     if not firebase_admin._apps:
-        # Получаем приватный ключ и правильно форматируем
+        # Получаем приватный ключ из переменной окружения
         private_key = os.getenv("FIREBASE_PRIVATE_KEY", "")
         
-        # Если ключ содержит экранированные символы, заменяем их
-        if '\\n' in private_key:
-            private_key = private_key.replace('\\n', '\n')
+        # ДЕБАГ: Проверяем что ключ загружен
+        logger.info(f"Private key loaded, length: {len(private_key)}")
         
-        # Создаем конфиг для Firebase
+        # Правильно форматируем ключ - убедимся что есть BEGIN и END
+        if private_key and "BEGIN PRIVATE KEY" not in private_key:
+            private_key = "-----BEGIN PRIVATE KEY-----\n" + private_key
+        if private_key and "END PRIVATE KEY" not in private_key:
+            private_key = private_key + "\n-----END PRIVATE KEY-----"
+        
+        # Заменяем все возможные варианты переносов строк
+        private_key = private_key.replace('\\n', '\n')
+        
         firebase_config = {
             "type": "service_account",
-            "project_id": os.getenv("FIREBASE_PROJECT_ID"),
-            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
+            "project_id": "vacvpn-75yegf",
+            "private_key_id": "98df7d90549a40d34c0a3ee2c8e028e232e73e98",
             "private_key": private_key,
-            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
-            "client_id": os.getenv("FIREBASE_CLIENT_ID"),
+            "client_email": "firebase-adminsdk-fbsvc@vacvpn-75yegf.iam.gserviceaccount.com",
+            "client_id": "118426875107507915166",
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.getenv('FIREBASE_CLIENT_EMAIL', '').replace('@', '%40')}"
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40vacvpn-75yegf.iam.gserviceaccount.com"
         }
-        
-        logger.info(f"Firebase config project_id: {firebase_config['project_id']}")
-        logger.info(f"Firebase config client_email: {firebase_config['client_email']}")
         
         cred = credentials.Certificate(firebase_config)
         firebase_admin.initialize_app(cred)
     db = firestore.client()
-    logger.info("Firebase initialized successfully")
+    logger.info("✅ Firebase initialized successfully")
 except Exception as e:
-    logger.error(f"Firebase initialization failed: {e}")
-    logger.error(f"Private key length: {len(os.getenv('FIREBASE_PRIVATE_KEY', ''))}")
+    logger.error(f"❌ Firebase initialization failed: {e}")
     db = None
 
 # Модели данных
@@ -89,18 +92,18 @@ class InitUserRequest(BaseModel):
 # Функции работы с Firebase
 def get_user(user_id: str):
     if not db: 
-        logger.error("Database not connected")
+        logger.error("❌ Database not connected")
         return None
     try:
         doc = db.collection('users').document(user_id).get()
         return doc.to_dict() if doc.exists else None
     except Exception as e:
-        logger.error(f"Error getting user: {e}")
+        logger.error(f"❌ Error getting user: {e}")
         return None
 
 def create_user(user_data: UserCreateRequest):
     if not db: 
-        logger.error("Database not connected")
+        logger.error("❌ Database not connected")
         return
     try:
         user_ref = db.collection('users').document(user_data.user_id)
@@ -117,13 +120,13 @@ def create_user(user_data: UserCreateRequest):
                 'vpn_key': None,
                 'created_at': firestore.SERVER_TIMESTAMP
             })
-            logger.info(f"User created: {user_data.user_id}")
+            logger.info(f"✅ User created: {user_data.user_id}")
     except Exception as e:
-        logger.error(f"Error creating user: {e}")
+        logger.error(f"❌ Error creating user: {e}")
 
 def update_user_balance(user_id: str, amount: float):
     if not db: 
-        logger.error("Database not connected")
+        logger.error("❌ Database not connected")
         return
     try:
         user_ref = db.collection('users').document(user_id)
@@ -131,9 +134,9 @@ def update_user_balance(user_id: str, amount: float):
         if user.exists:
             current_balance = user.to_dict().get('balance', 0)
             user_ref.update({'balance': current_balance + amount})
-            logger.info(f"Balance updated for user {user_id}: +{amount}")
+            logger.info(f"✅ Balance updated for user {user_id}: +{amount}")
     except Exception as e:
-        logger.error(f"Error updating balance: {e}")
+        logger.error(f"❌ Error updating balance: {e}")
 
 def generate_vpn_key():
     """Генерирует уникальный VPN ключ"""
@@ -142,7 +145,7 @@ def generate_vpn_key():
 
 def activate_subscription(user_id: str, tariff: str, days: int):
     if not db: 
-        logger.error("Database not connected")
+        logger.error("❌ Database not connected")
         return None, None
     try:
         now = datetime.now()
@@ -157,15 +160,15 @@ def activate_subscription(user_id: str, tariff: str, days: int):
             'tariff_type': tariff,
             'vpn_key': vpn_key
         })
-        logger.info(f"Subscription activated for user {user_id}: {days} days, VPN key: {vpn_key}")
+        logger.info(f"✅ Subscription activated for user {user_id}: {days} days, VPN key: {vpn_key}")
         return new_end, vpn_key
     except Exception as e:
-        logger.error(f"Error activating subscription: {e}")
+        logger.error(f"❌ Error activating subscription: {e}")
         return None, None
 
 def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_type: str = "tariff"):
     if not db: 
-        logger.error("Database not connected")
+        logger.error("❌ Database not connected")
         return
     try:
         db.collection('payments').document(payment_id).set({
@@ -178,13 +181,13 @@ def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, paym
             'created_at': firestore.SERVER_TIMESTAMP,
             'yookassa_id': None
         })
-        logger.info(f"Payment saved: {payment_id} for user {user_id}")
+        logger.info(f"✅ Payment saved: {payment_id} for user {user_id}")
     except Exception as e:
-        logger.error(f"Error saving payment: {e}")
+        logger.error(f"❌ Error saving payment: {e}")
 
 def update_payment_status(payment_id: str, status: str, yookassa_id: str = None):
     if not db: 
-        logger.error("Database not connected")
+        logger.error("❌ Database not connected")
         return
     try:
         update_data = {
@@ -195,24 +198,24 @@ def update_payment_status(payment_id: str, status: str, yookassa_id: str = None)
             update_data['confirmed_at'] = firestore.SERVER_TIMESTAMP
         
         db.collection('payments').document(payment_id).update(update_data)
-        logger.info(f"Payment status updated: {payment_id} -> {status}")
+        logger.info(f"✅ Payment status updated: {payment_id} -> {status}")
     except Exception as e:
-        logger.error(f"Error updating payment status: {e}")
+        logger.error(f"❌ Error updating payment status: {e}")
 
 def get_payment(payment_id: str):
     if not db: 
-        logger.error("Database not connected")
+        logger.error("❌ Database not connected")
         return None
     try:
         doc = db.collection('payments').document(payment_id).get()
         return doc.to_dict() if doc.exists else None
     except Exception as e:
-        logger.error(f"Error getting payment: {e}")
+        logger.error(f"❌ Error getting payment: {e}")
         return None
 
 def add_referral(referrer_id: str, referred_id: str):
     if not db: 
-        logger.error("Database not connected")
+        logger.error("❌ Database not connected")
         return
     try:
         referral_id = f"{referrer_id}_{referred_id}"
@@ -222,32 +225,32 @@ def add_referral(referrer_id: str, referred_id: str):
             'bonus_paid': False,
             'created_at': firestore.SERVER_TIMESTAMP
         })
-        logger.info(f"Referral added: {referrer_id} -> {referred_id}")
+        logger.info(f"✅ Referral added: {referrer_id} -> {referred_id}")
     except Exception as e:
-        logger.error(f"Error adding referral: {e}")
+        logger.error(f"❌ Error adding referral: {e}")
 
 def get_referrals(referrer_id: str):
     if not db: 
-        logger.error("Database not connected")
+        logger.error("❌ Database not connected")
         return []
     try:
         referrals = db.collection('referrals').where('referrer_id', '==', referrer_id).stream()
         return [ref.to_dict() for ref in referrals]
     except Exception as e:
-        logger.error(f"Error getting referrals: {e}")
+        logger.error(f"❌ Error getting referrals: {e}")
         return []
 
 def mark_referral_bonus_paid(referred_id: str):
     if not db: 
-        logger.error("Database not connected")
+        logger.error("❌ Database not connected")
         return
     try:
         referrals = db.collection('referrals').where('referred_id', '==', referred_id).stream()
         for ref in referrals:
             ref.reference.update({'bonus_paid': True})
-        logger.info(f"Referral bonus paid for: {referred_id}")
+        logger.info(f"✅ Referral bonus paid for: {referred_id}")
     except Exception as e:
-        logger.error(f"Error marking referral bonus paid: {e}")
+        logger.error(f"❌ Error marking referral bonus paid: {e}")
 
 # Эндпоинты API
 @app.get("/")
@@ -284,13 +287,13 @@ async def init_user(request: InitUserRequest):
                 'vpn_key': None,
                 'created_at': firestore.SERVER_TIMESTAMP
             })
-            logger.info(f"User auto-created: {request.user_id}")
+            logger.info(f"✅ User auto-created: {request.user_id}")
             return {"success": True, "message": "User created", "user_id": request.user_id}
         else:
             return {"success": True, "message": "User already exists", "user_id": request.user_id}
             
     except Exception as e:
-        logger.error(f"Error initializing user: {e}")
+        logger.error(f"❌ Error initializing user: {e}")
         return {"error": str(e)}
 
 @app.get("/user-data")
@@ -403,7 +406,7 @@ async def create_payment(request: PaymentRequest):
             payment_data = response.json()
             update_payment_status(payment_id, "pending", payment_data.get("id"))
             
-            logger.info(f"Данные платежа: {payment_data}")
+            logger.info(f"💳 Payment created: {payment_data}")
             
             return {
                 "success": True,
@@ -416,7 +419,7 @@ async def create_payment(request: PaymentRequest):
             return {"error": f"Payment gateway error: {response.status_code}"}
             
     except Exception as e:
-        logger.error(f"Error creating payment: {e}")
+        logger.error(f"❌ Error creating payment: {e}")
         return {"error": f"Server error: {str(e)}"}
 
 @app.get("/payment-status")
@@ -496,7 +499,7 @@ async def check_payment(payment_id: str, user_id: str):
         }
         
     except Exception as e:
-        logger.error(f"Error checking payment: {e}")
+        logger.error(f"❌ Error checking payment: {e}")
         return {"error": f"Error checking payment: {str(e)}"}
 
 @app.post("/add-referral")
