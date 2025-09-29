@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="VAC VPN API")
 
-# CORS
+# CORS - ДОБАВЛЕНО В САМОМ НАЧАЛЕ
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
