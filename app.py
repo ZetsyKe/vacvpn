@@ -230,6 +230,10 @@ async def init_user(request: InitUserRequest):
         if not db:
             return {"error": "Database not connected"}
         
+        # Проверяем user_id
+        if not request.user_id or request.user_id == 'unknown':
+            return {"error": "Invalid user ID"}
+        
         # Создаем пользователя если не существует
         user_ref = db.collection('users').document(request.user_id)
         if not user_ref.get().exists:
@@ -259,6 +263,9 @@ async def get_user_info(user_id: str):
     try:
         if not db:
             return {"error": "Database not connected"}
+        
+        if not user_id or user_id == 'unknown':
+            return {"error": "Invalid user ID"}
             
         user = get_user(user_id)
         if not user:
@@ -310,6 +317,10 @@ async def create_payment(request: PaymentRequest):
         if not db:
             return {"error": "Database not connected"}
         
+        # Проверяем user_id
+        if not request.user_id or request.user_id == 'unknown':
+            return {"error": "Invalid user ID"}
+        
         # Тарифы
         tariff_config = {
             "month": {"amount": 150, "description": "Месячная подписка VAC VPN"},
@@ -357,6 +368,8 @@ async def create_payment(request: PaymentRequest):
             payment_data = response.json()
             update_payment_status(payment_id, "pending", payment_data.get("id"))
             
+            logger.info(f"Данные платежа: {payment_data}")
+            
             return {
                 "success": True,
                 "payment_id": payment_id,
@@ -368,6 +381,7 @@ async def create_payment(request: PaymentRequest):
             return {"error": f"Payment gateway error: {response.status_code}"}
             
     except Exception as e:
+        logger.error(f"Error creating payment: {e}")
         return {"error": f"Server error: {str(e)}"}
 
 @app.get("/payment-status")
@@ -375,6 +389,9 @@ async def check_payment(payment_id: str, user_id: str):
     try:
         if not db:
             return {"error": "Database not connected"}
+            
+        if not payment_id or payment_id == 'undefined':
+            return {"error": "Invalid payment ID"}
             
         payment = get_payment(payment_id)
         if not payment:
@@ -444,6 +461,7 @@ async def check_payment(payment_id: str, user_id: str):
         }
         
     except Exception as e:
+        logger.error(f"Error checking payment: {e}")
         return {"error": f"Error checking payment: {str(e)}"}
 
 @app.post("/add-referral")
