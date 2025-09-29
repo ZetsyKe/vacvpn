@@ -10,6 +10,7 @@ from pydantic import BaseModel
 import logging
 import secrets
 import string
+import json
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="VAC VPN API")
 
-# CORS - ДОБАВЛЕНО В САМОМ НАЧАЛЕ
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,26 +27,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Инициализация Firebase
+# Инициализация Firebase - ИСПРАВЛЕННАЯ ВЕРСИЯ
 try:
     if not firebase_admin._apps:
+        # Получаем приватный ключ и правильно форматируем
+        private_key = os.getenv("FIREBASE_PRIVATE_KEY", "")
+        
+        # Если ключ содержит экранированные символы, заменяем их
+        if '\\n' in private_key:
+            private_key = private_key.replace('\\n', '\n')
+        
+        # Создаем конфиг для Firebase
         firebase_config = {
             "type": "service_account",
             "project_id": os.getenv("FIREBASE_PROJECT_ID"),
             "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
-            "private_key": os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n'),
+            "private_key": private_key,
             "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
             "client_id": os.getenv("FIREBASE_CLIENT_ID"),
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.getenv('FIREBASE_CLIENT_EMAIL', '').replace('@', '%40')}"
         }
+        
+        logger.info(f"Firebase config project_id: {firebase_config['project_id']}")
+        logger.info(f"Firebase config client_email: {firebase_config['client_email']}")
+        
         cred = credentials.Certificate(firebase_config)
         firebase_admin.initialize_app(cred)
     db = firestore.client()
     logger.info("Firebase initialized successfully")
 except Exception as e:
     logger.error(f"Firebase initialization failed: {e}")
+    logger.error(f"Private key length: {len(os.getenv('FIREBASE_PRIVATE_KEY', ''))}")
     db = None
 
 # Модели данных
@@ -73,7 +88,9 @@ class InitUserRequest(BaseModel):
 
 # Функции работы с Firebase
 def get_user(user_id: str):
-    if not db: return None
+    if not db: 
+        logger.error("Database not connected")
+        return None
     try:
         doc = db.collection('users').document(user_id).get()
         return doc.to_dict() if doc.exists else None
@@ -82,7 +99,9 @@ def get_user(user_id: str):
         return None
 
 def create_user(user_data: UserCreateRequest):
-    if not db: return
+    if not db: 
+        logger.error("Database not connected")
+        return
     try:
         user_ref = db.collection('users').document(user_data.user_id)
         if not user_ref.get().exists:
@@ -103,7 +122,9 @@ def create_user(user_data: UserCreateRequest):
         logger.error(f"Error creating user: {e}")
 
 def update_user_balance(user_id: str, amount: float):
-    if not db: return
+    if not db: 
+        logger.error("Database not connected")
+        return
     try:
         user_ref = db.collection('users').document(user_id)
         user = user_ref.get()
@@ -120,7 +141,9 @@ def generate_vpn_key():
     return 'vpn_' + ''.join(secrets.choice(alphabet) for _ in range(16))
 
 def activate_subscription(user_id: str, tariff: str, days: int):
-    if not db: return
+    if not db: 
+        logger.error("Database not connected")
+        return None, None
     try:
         now = datetime.now()
         new_end = now + timedelta(days=days)
@@ -141,7 +164,9 @@ def activate_subscription(user_id: str, tariff: str, days: int):
         return None, None
 
 def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_type: str = "tariff"):
-    if not db: return
+    if not db: 
+        logger.error("Database not connected")
+        return
     try:
         db.collection('payments').document(payment_id).set({
             'payment_id': payment_id,
@@ -158,7 +183,9 @@ def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, paym
         logger.error(f"Error saving payment: {e}")
 
 def update_payment_status(payment_id: str, status: str, yookassa_id: str = None):
-    if not db: return
+    if not db: 
+        logger.error("Database not connected")
+        return
     try:
         update_data = {
             'status': status,
@@ -173,7 +200,9 @@ def update_payment_status(payment_id: str, status: str, yookassa_id: str = None)
         logger.error(f"Error updating payment status: {e}")
 
 def get_payment(payment_id: str):
-    if not db: return None
+    if not db: 
+        logger.error("Database not connected")
+        return None
     try:
         doc = db.collection('payments').document(payment_id).get()
         return doc.to_dict() if doc.exists else None
@@ -182,7 +211,9 @@ def get_payment(payment_id: str):
         return None
 
 def add_referral(referrer_id: str, referred_id: str):
-    if not db: return
+    if not db: 
+        logger.error("Database not connected")
+        return
     try:
         referral_id = f"{referrer_id}_{referred_id}"
         db.collection('referrals').document(referral_id).set({
@@ -196,7 +227,9 @@ def add_referral(referrer_id: str, referred_id: str):
         logger.error(f"Error adding referral: {e}")
 
 def get_referrals(referrer_id: str):
-    if not db: return []
+    if not db: 
+        logger.error("Database not connected")
+        return []
     try:
         referrals = db.collection('referrals').where('referrer_id', '==', referrer_id).stream()
         return [ref.to_dict() for ref in referrals]
@@ -205,7 +238,9 @@ def get_referrals(referrer_id: str):
         return []
 
 def mark_referral_bonus_paid(referred_id: str):
-    if not db: return
+    if not db: 
+        logger.error("Database not connected")
+        return
     try:
         referrals = db.collection('referrals').where('referred_id', '==', referred_id).stream()
         for ref in referrals:
@@ -217,7 +252,7 @@ def mark_referral_bonus_paid(referred_id: str):
 # Эндпоинты API
 @app.get("/")
 async def root():
-    return {"message": "VAC VPN API is running", "status": "ok"}
+    return {"message": "VAC VPN API is running", "status": "ok", "firebase": "connected" if db else "disconnected"}
 
 @app.get("/health")
 async def health_check():
