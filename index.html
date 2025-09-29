@@ -99,6 +99,16 @@
       margin-bottom: 16px;
       font-weight: 500;
     }
+    .vpn-key {
+      background: rgba(176, 203, 31, 0.1);
+      border: 1px solid var(--primary);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 10px 0;
+      font-family: monospace;
+      word-break: break-all;
+      display: none;
+    }
     .button {
       display: block;
       width: 100%;
@@ -127,13 +137,6 @@
     }
     .button-outline:active {
       background: rgba(176, 203, 31, 0.1);
-    }
-    .button-test {
-      background: transparent;
-      color: #ff4444;
-      border: 2px solid #ff4444;
-      margin-bottom: 16px;
-      font-size: 12px;
     }
     .tariff-grid {
       display: grid;
@@ -324,9 +327,15 @@
       <span>Статус подписки:</span>
       <span class="badge inactive-badge" id="subscriptionBadge">Неактивна</span>
     </div>
+    
+    <div class="vpn-key" id="vpnKeyContainer">
+      <strong>Ваш VPN ключ:</strong>
+      <div id="vpnKeyText">Загрузка...</div>
+      <button class="copy-btn" onclick="copyVpnKey()" style="margin-top: 8px;">Скопировать ключ</button>
+    </div>
+    
     <button class="button button-yellow" id="paymentButton" onclick="createPayment()">ПОПОЛНИТЬ БАЛАНС</button>
     <button class="button button-outline" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</button>
-    <button class="button button-test" onclick="manualConfirmPayment()">ПОДТВЕРДИТЬ ПЛАТЕЖ (ТЕСТ)</button>
     <div class="loading" id="loadingIndicator">Подождите, идет обработка...</div>
     <div class="error-message" id="errorMessage"></div>
     <div class="success-message" id="successMessage"></div>
@@ -339,14 +348,14 @@
         <div class="tariff-label">Месячный</div>
         <div class="tariff-price">150₽<span class="tariff-period">/мес</span></div>
         <div class="tariff-trial">Пробная версия на 1 неделю</div>
-        <div class="tariff-description">Полный доступ ко всем функциям VPN на 1 месяц</div>
+        <div class="tariff-description">Полный доступ ко всем функциям VPN на 1 месяц + ключ</div>
       </div>
       <div class="tariff-card" id="tariff1year" onclick="selectTariff('1year')">
         <div class="tariff-dot"></div>
         <div class="tariff-label">Годовой</div>
         <div class="tariff-price">1300₽<span class="tariff-period">/год</span></div>
         <div class="tariff-trial">Пробная версия на 1 неделю</div>
-        <div class="tariff-description">Полный доступ на 1 год со скидкой 30%</div>
+        <div class="tariff-description">Полный доступ на 1 год со скидкой 30% + ключ</div>
       </div>
     </div>
     <button class="button button-yellow" id="subscribeBtn" style="display:none;" onclick="activateSubscription()">ПОДКЛЮЧИТЬ ПОДПИСКУ</button>
@@ -382,18 +391,21 @@
     const subscriptionBadge = document.getElementById('subscriptionBadge');
     const userBalance = document.getElementById('userBalance');
     const balanceDays = document.getElementById('balanceDays');
-    
+    const vpnKeyContainer = document.getElementById('vpnKeyContainer');
+    const vpnKeyText = document.getElementById('vpnKeyText');
+
     // Данные пользователя
     const user = Telegram.WebApp.initDataUnsafe.user || {};
     const userId = user.id || 'unknown';
     const userName = user.first_name || 'Пользователь';
-    
+    const userUsername = user.username || '';
+
     // URL API
     const API_BASE_URL = "https://vacvpn.onrender.com";
-    
+
     // Переменные для хранения данных
     let currentPaymentId = null;
-    
+
     // Инициализация интерфейса
     document.getElementById('userName').textContent = userName;
     document.getElementById('refLink').textContent = `https://t.me/vaaaac_bot?start=ref_${userId}`;
@@ -439,9 +451,42 @@
       document.getElementById('subscribeBtn').style.display = 'block';
     }
 
+    // Инициализация пользователя при загрузке
+    async function initUser() {
+      try {
+        console.log('🔄 Initializing user:', userId);
+        
+        const response = await fetch(`${API_BASE_URL}/init-user`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            user_id: userId.toString(),
+            username: userUsername,
+            first_name: userName,
+            last_name: user.last_name || ""
+          })
+        });
+
+        const data = await response.json();
+        console.log('👤 User init result:', data);
+        
+        if (data.success) {
+          console.log('✅ User initialized successfully');
+        } else {
+          console.warn('⚠️ User init warning:', data.error);
+        }
+      } catch (error) {
+        console.error('❌ User init error:', error);
+      }
+    }
+
     // Загрузка данных пользователя
     async function loadUserData() {
       try {
+        console.log('🔄 Loading user data for:', userId);
+        
         const response = await fetch(`${API_BASE_URL}/user-data?user_id=${userId}`);
         
         if (!response.ok) {
@@ -449,13 +494,16 @@
         }
         
         const userData = await response.json();
+        console.log('📊 User data loaded:', userData);
         
         if (userData.error) {
           throw new Error(userData.error);
         }
         
         // Обновляем баланс
-        userBalance.textContent = `${userData.balance || 0}₽`;
+        const balance = userData.balance || 0;
+        userBalance.textContent = `${balance}₽`;
+        console.log('💰 Balance updated to:', balance);
         
         // Обновляем статус подписки
         if (userData.has_subscription) {
@@ -469,16 +517,30 @@
           // Показываем оставшиеся дни
           if (userData.days_remaining > 0) {
             balanceDays.textContent = `Осталось ${userData.days_remaining} дней подписки`;
+          } else {
+            balanceDays.textContent = 'Подписка активна';
+          }
+          
+          // Показываем VPN ключ если есть
+          if (userData.vpn_key) {
+            vpnKeyText.textContent = userData.vpn_key;
+            vpnKeyContainer.style.display = 'block';
           }
         } else {
           subscriptionBadge.textContent = 'Неактивна';
           subscriptionBadge.className = 'badge inactive-badge';
+          document.querySelectorAll('.tariff-card').forEach(card => {
+            card.classList.remove('disabled');
+          });
           balanceDays.textContent = 'Подписка неактивна';
+          vpnKeyContainer.style.display = 'none';
         }
         
+        console.log('✅ User data updated successfully');
+        
       } catch (error) {
-        console.error('Ошибка загрузки данных:', error);
-        showError('Ошибка загрузки данных пользователя');
+        console.error('❌ Ошибка загрузки данных:', error);
+        showError('Ошибка загрузки данных пользователя: ' + error.message);
       }
     }
 
@@ -509,6 +571,7 @@
         }
 
         const data = await response.json();
+        console.log('💳 Payment creation response:', data);
         
         if (data.error) {
           throw new Error(data.error);
@@ -518,8 +581,9 @@
           throw new Error("Не удалось получить ссылку для оплаты");
         }
 
-        // Сохраняем ID платежа для ручного подтверждения
+        // Сохраняем ID платежа
         currentPaymentId = data.payment_id;
+        console.log('📝 Payment ID saved:', currentPaymentId);
         
         Telegram.WebApp.openLink(data.payment_url);
         
@@ -552,6 +616,8 @@
         const tariff = tariffMap[tariffId];
         const amount = tariff === "month" ? 150 : 1300;
 
+        console.log('🎯 Activating subscription:', { tariff, amount });
+
         const response = await fetch(`${API_BASE_URL}/create-payment`, {
           method: "POST",
           headers: {
@@ -570,6 +636,7 @@
         }
 
         const data = await response.json();
+        console.log('💳 Subscription payment response:', data);
         
         if (data.error) {
           throw new Error(data.error);
@@ -577,6 +644,7 @@
 
         if (data.payment_url) {
           currentPaymentId = data.payment_id;
+          console.log('📝 Subscription Payment ID saved:', currentPaymentId);
           Telegram.WebApp.openLink(data.payment_url);
           checkPaymentStatus(data.payment_id);
         } else {
@@ -593,6 +661,8 @@
     // Проверка статуса платежа
     async function checkPaymentStatus(paymentId) {
       try {
+        console.log('🔄 Checking payment status:', paymentId);
+        
         const response = await fetch(`${API_BASE_URL}/payment-status?payment_id=${paymentId}&user_id=${userId}`);
         
         if (!response.ok) {
@@ -600,66 +670,40 @@
         }
         
         const data = await response.json();
+        console.log('📊 Payment status:', data);
         
         if (data.status === 'succeeded') {
-          showSuccess('Оплата прошла успешно! Баланс пополнен.');
-          await loadUserData();
-        } else if (data.status === 'pending') {
-          // Для тестовых платежей автоматически подтверждаем через 5 секунд
-          if (data.amount <= 2) {
-            setTimeout(async () => {
-              await manualConfirmPaymentById(paymentId);
-            }, 5000);
+          if (data.vpn_key) {
+            showSuccess('✅ Оплата прошла успешно! VPN ключ активирован.');
+            // Показываем VPN ключ
+            vpnKeyText.textContent = data.vpn_key;
+            vpnKeyContainer.style.display = 'block';
           } else {
-            setTimeout(() => checkPaymentStatus(paymentId), 5000);
+            showSuccess('✅ Оплата прошла успешно! Баланс пополнен.');
           }
+          await loadUserData(); // Обновляем данные после успешной оплаты
+        } else if (data.status === 'pending') {
+          // Продолжаем проверять каждые 3 секунды
+          setTimeout(() => checkPaymentStatus(paymentId), 3000);
         } else if (data.status === 'canceled') {
-          showError('Платеж отменен');
+          showError('❌ Платеж отменен');
         }
       } catch (error) {
-        setTimeout(() => checkPaymentStatus(paymentId), 5000);
+        console.error('❌ Payment status check error:', error);
+        setTimeout(() => checkPaymentStatus(paymentId), 3000);
       }
     }
 
-    // Ручное подтверждение платежа
-    async function manualConfirmPayment() {
-      let paymentId = currentPaymentId;
-      
-      if (!paymentId) {
-        paymentId = prompt("Введите ID платежа для подтверждения:");
-        if (!paymentId) return;
-      }
-      
-      await manualConfirmPaymentById(paymentId);
-    }
-
-    async function manualConfirmPaymentById(paymentId) {
-      try {
-        loadingIndicator.style.display = 'block';
-        
-        const response = await fetch(`${API_BASE_URL}/confirm-payment`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            payment_id: paymentId
-          })
+    // Копирование VPN ключа
+    function copyVpnKey() {
+      const key = vpnKeyText.textContent;
+      navigator.clipboard.writeText(key)
+        .then(() => {
+          Telegram.WebApp.showAlert('VPN ключ скопирован в буфер обмена!');
+        })
+        .catch(err => {
+          Telegram.WebApp.showAlert('Не удалось скопировать ключ');
         });
-
-        const data = await response.json();
-        
-        if (data.success) {
-          showSuccess('Платеж подтвержден! Баланс пополнен.');
-          await loadUserData();
-        } else {
-          showError(data.error || "Ошибка подтверждения");
-        }
-      } catch (error) {
-        showError("Ошибка соединения");
-      } finally {
-        loadingIndicator.style.display = 'none';
-      }
     }
 
     // Вспомогательные функции
@@ -715,7 +759,10 @@
 
     // Инициализация при загрузке
     document.addEventListener('DOMContentLoaded', async () => {
-      await loadUserData();
+      console.log('🚀 Starting initialization...');
+      await initUser(); // Сначала создаем пользователя
+      await loadUserData(); // Потом загружаем данные
+      console.log('🎉 Initialization complete!');
     });
   </script>
 </body>
