@@ -897,6 +897,66 @@ async def debug_user_endpoint(request: VlessConfigRequest):
         logger.error(f"❌ Error getting debug info: {e}")
         return {"error": f"Error getting debug info: {str(e)}"}
 
+@app.post("/auto-fix-subscription")
+async def auto_fix_subscription_endpoint(request: VlessConfigRequest):
+    """Автоматически исправляет подписку при загрузке страницы"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+            
+        user = get_user(request.user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        # Если у пользователя есть подписка но нет UUID - автоматически исправляем
+        if user.get('has_subscription', False) and not user.get('vless_uuid'):
+            logger.info(f"🔄 Auto-fixing subscription for user {request.user_id}")
+            
+            # Генерируем новый UUID
+            vless_uuid = generate_vless_uuid()
+            logger.info(f"🆔 Auto-generating VLESS UUID: {vless_uuid}")
+            
+            # Обновляем данные пользователя
+            user_ref = db.collection('users').document(request.user_id)
+            user_ref.update({
+                'vless_uuid': vless_uuid,
+                'updated_at': firestore.SERVER_TIMESTAMP
+            })
+            
+            # Проверяем сохранение
+            updated_user = user_ref.get()
+            if updated_user.exists and updated_user.to_dict().get('vless_uuid') == vless_uuid:
+                logger.info(f"✅ Auto-fix successful for user {request.user_id}")
+                return {
+                    "success": True,
+                    "message": "Subscription auto-fixed - VLESS UUID generated",
+                    "vless_uuid": vless_uuid,
+                    "auto_fixed": True
+                }
+            else:
+                logger.error(f"❌ Auto-fix failed for user {request.user_id}")
+                return {
+                    "success": False,
+                    "message": "Auto-fix failed",
+                    "auto_fixed": False
+                }
+        else:
+            # Все в порядке, ничего исправлять не нужно
+            return {
+                "success": True,
+                "message": "No fix needed",
+                "vless_uuid": user.get('vless_uuid'),
+                "auto_fixed": False
+            }
+            
+    except Exception as e:
+        logger.error(f"❌ Error auto-fixing subscription: {e}")
+        return {
+            "success": False,
+            "error": f"Error auto-fixing subscription: {str(e)}",
+            "auto_fixed": False
+        }
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
