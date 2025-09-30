@@ -417,6 +417,12 @@
       border-left: 4px solid #4fc3f7;
       font-size: 14px;
     }
+    .section-title {
+      color: var(--primary);
+      margin-bottom: 16px;
+      font-size: 18px;
+      font-weight: 700;
+    }
   </style>
 </head>
 <body>
@@ -480,8 +486,11 @@
     </div>
     
     <button class="button button-yellow" id="paymentButton" onclick="createPayment()">ПОПОЛНИТЬ БАЛАНС</button>
-    <button class="button button-outline" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</button>
-    <button class="button button-change" id="changeTariffButton" onclick="showTariffChange()" style="display: none;">СМЕНИТЬ ТАРИФ</button>
+    
+    <!-- Кнопки для разных состояний -->
+    <button class="button button-outline" id="activateSubscriptionBtn" onclick="showTariffSelection('activate')" style="display: none;">ВКЛЮЧИТЬ ПОДПИСКУ</button>
+    <button class="button button-change" id="changeTariffBtnMain" onclick="showTariffSelection('change')" style="display: none;">СМЕНИТЬ ТАРИФ</button>
+    
     <button class="button button-outline" id="vlessButton" onclick="getVlessConfig()" style="display: none;">ПОЛУЧИТЬ VLESS КОНФИГ</button>
     <button class="button button-fix" id="fixSubscriptionButton" onclick="fixSubscription()" style="display: none;">ИСПРАВИТЬ ПОДПИСКУ</button>
     
@@ -491,8 +500,9 @@
     <div class="info-message" id="infoMessage"></div>
   </div>
 
-  <div class="card" id="tariffBlock" style="display: none;">
-    <h3 style="margin-bottom: 16px; color: var(--primary);">Выберите тарифный план</h3>
+  <!-- Блок выбора тарифа (скрыт по умолчанию) -->
+  <div class="card" id="tariffSelectionBlock" style="display: none;">
+    <div class="section-title" id="tariffSelectionTitle">Выберите тарифный план</div>
     
     <div class="change-tariff-info" id="changeTariffMessage" style="display: none;">
       <strong>ℹ️ Смена тарифа</strong><br>
@@ -517,9 +527,11 @@
         <div class="tariff-description">Полный доступ на 1 год со скидкой 30% + VLESS ключ</div>
       </div>
     </div>
+    
+    <!-- Кнопки действий для выбранного тарифа -->
     <button class="button button-yellow" id="subscribeBtn" style="display:none;" onclick="activateSubscription()">АКТИВИРОВАТЬ ПОДПИСКУ</button>
     <button class="button button-change" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИТЬ ТАРИФ</button>
-    <button class="button button-outline" onclick="hideTariffs()">ОТМЕНА</button>
+    <button class="button button-outline" onclick="hideTariffSelection()">ОТМЕНА</button>
   </div>
 
   <div class="card">
@@ -586,7 +598,7 @@
     let currentPaymentId = null;
     let selectedTariff = null;
     let currentUserData = null;
-    let isChangingTariff = false;
+    let currentTariffAction = null; // 'activate' или 'change'
 
     // Инициализация интерфейса
     document.getElementById('userName').textContent = userName;
@@ -628,50 +640,57 @@
         );
     }
 
-    // Функции тарифов
-    function selectTariff(id) {
-        document.querySelectorAll('.tariff-card').forEach(card => {
-            card.classList.remove('selected');
-        });
-        document.getElementById(`tariff${id}`).classList.add('selected');
-        
-        if (isChangingTariff) {
-            document.getElementById('changeTariffBtn').style.display = 'block';
-            document.getElementById('subscribeBtn').style.display = 'none';
-        } else {
-            document.getElementById('subscribeBtn').style.display = 'block';
-            document.getElementById('changeTariffBtn').style.display = 'none';
-        }
-        
-        selectedTariff = id;
-    }
-
-    function showTariffChange() {
-        isChangingTariff = true;
-        document.getElementById('tariffBlock').style.display = 'block';
-        document.getElementById('changeTariffMessage').style.display = 'block';
-        document.getElementById('changeTariffButton').style.display = 'none';
-        
-        // Показываем текущий тариф
-        if (currentUserData && currentUserData.current_tariff) {
-            document.getElementById(`tariff${currentUserData.current_tariff}`).classList.add('current');
-        }
-        
-        scrollToTariffs();
-    }
-
-    function hideTariffs() {
-        document.getElementById('tariffBlock').style.display = 'none';
-        document.getElementById('changeTariffMessage').style.display = 'none';
-        isChangingTariff = false;
+    // Функции работы с тарифами
+    function showTariffSelection(action) {
+        currentTariffAction = action;
+        document.getElementById('tariffSelectionBlock').style.display = 'block';
         
         // Сбрасываем выделение
         document.querySelectorAll('.tariff-card').forEach(card => {
             card.classList.remove('selected', 'current');
         });
         
-        if (currentUserData && currentUserData.has_subscription) {
-            document.getElementById('changeTariffButton').style.display = 'block';
+        // Показываем текущий тариф если он есть
+        if (currentUserData && currentUserData.current_tariff) {
+            document.getElementById(`tariff${currentUserData.current_tariff}`).classList.add('current');
+        }
+        
+        // Настраиваем интерфейс в зависимости от действия
+        if (action === 'activate') {
+            document.getElementById('tariffSelectionTitle').textContent = 'Выберите тарифный план';
+            document.getElementById('changeTariffMessage').style.display = 'none';
+            document.getElementById('subscribeBtn').style.display = 'none';
+            document.getElementById('changeTariffBtn').style.display = 'none';
+        } else if (action === 'change') {
+            document.getElementById('tariffSelectionTitle').textContent = 'Смена тарифного плана';
+            document.getElementById('changeTariffMessage').style.display = 'block';
+            document.getElementById('subscribeBtn').style.display = 'none';
+            document.getElementById('changeTariffBtn').style.display = 'none';
+        }
+        
+        scrollToElement('tariffSelectionBlock');
+    }
+
+    function hideTariffSelection() {
+        document.getElementById('tariffSelectionBlock').style.display = 'none';
+        selectedTariff = null;
+        currentTariffAction = null;
+    }
+
+    function selectTariff(id) {
+        document.querySelectorAll('.tariff-card').forEach(card => {
+            card.classList.remove('selected');
+        });
+        document.getElementById(`tariff${id}`).classList.add('selected');
+        selectedTariff = id;
+        
+        // Показываем соответствующую кнопку действия
+        if (currentTariffAction === 'activate') {
+            document.getElementById('subscribeBtn').style.display = 'block';
+            document.getElementById('changeTariffBtn').style.display = 'none';
+        } else if (currentTariffAction === 'change') {
+            document.getElementById('subscribeBtn').style.display = 'none';
+            document.getElementById('changeTariffBtn').style.display = 'block';
         }
     }
 
@@ -819,12 +838,16 @@
         const vlessConfigContainer = document.getElementById('vlessConfigContainer');
         const vlessButton = document.getElementById('vlessButton');
         const fixSubscriptionButton = document.getElementById('fixSubscriptionButton');
-        const changeTariffButton = document.getElementById('changeTariffButton');
-        const subscribeBtn = document.getElementById('subscribeBtn');
+        const activateSubscriptionBtn = document.getElementById('activateSubscriptionBtn');
+        const changeTariffBtnMain = document.getElementById('changeTariffBtnMain');
         
         if (userData.has_subscription) {
             subscriptionBadge.textContent = 'Активна';
             subscriptionBadge.className = 'badge active-badge';
+            
+            // Показываем кнопку смены тарифа
+            activateSubscriptionBtn.style.display = 'none';
+            changeTariffBtnMain.style.display = 'block';
             
             // Показываем информацию о текущем тарифе
             if (userData.current_tariff && TARIFFS[userData.current_tariff]) {
@@ -833,9 +856,6 @@
                 currentTariffDetails.textContent = `Ежедневное списание: ${currentTariff.daily_cost}₽`;
                 currentTariffInfo.style.display = 'block';
             }
-            
-            // Показываем кнопку смены тарифа
-            changeTariffButton.style.display = 'block';
             
             // Показываем информацию о ежедневном списании
             if (userData.daily_cost) {
@@ -870,7 +890,8 @@
             subscriptionBadge.textContent = 'Неактивна';
             subscriptionBadge.className = 'badge inactive-badge';
             currentTariffInfo.style.display = 'none';
-            changeTariffButton.style.display = 'none';
+            changeTariffBtnMain.style.display = 'none';
+            activateSubscriptionBtn.style.display = 'block';
             dailyCostInfo.style.display = 'none';
             
             if (balance > 0) {
@@ -952,7 +973,7 @@
         }
     }
 
-    // Функция активации подписки
+    // Функция активации подписки (с оплатой)
     async function activateSubscription() {
         if (!selectedTariff) {
             showError("Пожалуйста, выберите тарифный план");
@@ -975,18 +996,21 @@
             hideInfo();
 
             const tariff = TARIFFS[selectedTariff];
+            const amount = tariff.price;
 
-            console.log('🎯 Activating subscription:', { selectedTariff });
+            console.log('🎯 Activating subscription with payment:', { selectedTariff, amount });
 
-            const response = await fetch(`${API_BASE_URL}/activate-subscription`, {
+            // Используем существующий эндпоинт для создания платежа
+            const response = await fetch(`${API_BASE_URL}/create-payment`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
                     user_id: userId,
+                    amount: amount,
                     tariff: selectedTariff,
-                    daily_cost: tariff.daily_cost
+                    payment_type: "tariff"
                 })
             });
 
@@ -995,19 +1019,20 @@
             }
 
             const data = await response.json();
-            console.log('📊 Subscription activation response:', data);
+            console.log('💳 Subscription payment response:', data);
             
             if (data.error) {
                 throw new Error(data.error);
             }
 
-            if (data.success) {
-                showSuccess('✅ Подписка успешно активирована! VLESS конфигурация доступна.');
-                // Обновляем данные пользователя
-                await loadUserData();
-                hideTariffs();
+            if (data.payment_url) {
+                currentPaymentId = data.payment_id;
+                console.log('📝 Subscription Payment ID saved:', currentPaymentId);
+                tg.openLink(data.payment_url);
+                checkPaymentStatus(data.payment_id);
+                hideTariffSelection();
             } else {
-                showError(data.error || "Ошибка активации подписки");
+                showError(data.error || "Ошибка оплаты");
             }
         } catch (error) {
             showError(error.message);
@@ -1017,7 +1042,7 @@
         }
     }
 
-    // Функция смены тарифа
+    // Функция смены тарифа (без оплаты)
     async function changeTariff() {
         if (!selectedTariff) {
             showError("Пожалуйста, выберите новый тарифный план");
@@ -1070,7 +1095,7 @@
                 showSuccess('✅ Тариф успешно изменен! Оставшиеся дни пересчитаны.');
                 // Обновляем данные пользователя
                 await loadUserData();
-                hideTariffs();
+                hideTariffSelection();
             } else {
                 showError(data.error || "Ошибка смены тарифа");
             }
@@ -1274,8 +1299,8 @@
     }
 
     // Вспомогательные функции
-    function scrollToTariffs() {
-        document.getElementById('tariffBlock').scrollIntoView({
+    function scrollToElement(elementId) {
+        document.getElementById(elementId).scrollIntoView({
             behavior: 'smooth'
         });
     }
