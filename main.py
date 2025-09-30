@@ -12,8 +12,6 @@ import secrets
 import string
 import json
 import tempfile
-import base64
-import hashlib
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -153,7 +151,6 @@ def create_user(user_data: UserCreateRequest):
                 'has_subscription': False,
                 'subscription_end': None,
                 'tariff_type': 'none',
-                'vpn_key': None,
                 'vless_uuid': None,
                 'created_at': firestore.SERVER_TIMESTAMP
             })
@@ -180,11 +177,6 @@ def update_user_balance(user_id: str, amount: float):
     except Exception as e:
         logger.error(f"❌ Error updating balance: {e}")
         return False
-
-def generate_vpn_key():
-    """Генерирует уникальный VPN ключ"""
-    alphabet = string.ascii_letters + string.digits
-    return 'vpn_' + ''.join(secrets.choice(alphabet) for _ in range(16))
 
 def generate_vless_uuid():
     """Генерирует UUID для VLESS"""
@@ -224,7 +216,7 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
 def activate_subscription(user_id: str, tariff: str, days: int):
     if not db: 
         logger.error("❌ Database not connected")
-        return None, None, None
+        return None, None
     try:
         now = datetime.now()
         new_end = now + timedelta(days=days)
@@ -232,23 +224,22 @@ def activate_subscription(user_id: str, tariff: str, days: int):
         # Генерируем UUID для VLESS
         vless_uuid = generate_vless_uuid()
         
-        # Генерируем VPN ключ
-        vpn_key = generate_vpn_key()
-        
-        db.collection('users').document(user_id).update({
+        # Обновляем данные пользователя
+        user_ref = db.collection('users').document(user_id)
+        user_ref.update({
             'has_subscription': True,
             'subscription_end': new_end.isoformat(),
             'tariff_type': tariff,
-            'vpn_key': vpn_key,
             'vless_uuid': vless_uuid,
-            'subscription_active': True
+            'subscription_active': True,
+            'updated_at': firestore.SERVER_TIMESTAMP
         })
         
         logger.info(f"✅ Subscription activated for user {user_id}: {days} days, UUID: {vless_uuid}")
-        return new_end, vpn_key, vless_uuid
+        return new_end, vless_uuid
     except Exception as e:
         logger.error(f"❌ Error activating subscription: {e}")
-        return None, None, None
+        return None, None
 
 def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_type: str = "tariff"):
     if not db: 
@@ -371,7 +362,6 @@ async def init_user(request: InitUserRequest):
                 'has_subscription': False,
                 'subscription_end': None,
                 'tariff_type': 'none',
-                'vpn_key': None,
                 'vless_uuid': None,
                 'created_at': firestore.SERVER_TIMESTAMP
             })
@@ -402,13 +392,11 @@ async def get_user_info(user_id: str):
                 "subscription_end": None,
                 "tariff_type": "none",
                 "days_remaining": 0,
-                "vpn_key": None,
                 "vless_uuid": None
             }
         
         has_subscription = user.get('has_subscription', False)
         subscription_end = user.get('subscription_end')
-        vpn_key = user.get('vpn_key')
         vless_uuid = user.get('vless_uuid')
         days_remaining = 0
         
@@ -427,7 +415,6 @@ async def get_user_info(user_id: str):
             "subscription_end": subscription_end,
             "tariff_type": user.get('tariff_type', 'none'),
             "days_remaining": days_remaining,
-            "vpn_key": vpn_key,
             "vless_uuid": vless_uuid
         }
         
@@ -532,7 +519,6 @@ async def check_payment(payment_id: str, user_id: str):
                 "status": "succeeded",
                 "payment_id": payment_id,
                 "amount": payment['amount'],
-                "vpn_key": get_user(user_id).get('vpn_key') if get_user(user_id) else None,
                 "vless_uuid": get_user(user_id).get('vless_uuid') if get_user(user_id) else None
             }
         
@@ -561,9 +547,9 @@ async def check_payment(payment_id: str, user_id: str):
                         tariff = payment['tariff']
                         
                         if payment_type == 'tariff':
-                            # Активируем подписку и генерируем VPN ключ + VLESS UUID
+                            # Активируем подписку и генерируем VLESS UUID
                             tariff_days = 30 if tariff == "month" else 365
-                            new_end, vpn_key, vless_uuid = activate_subscription(user_id, tariff, tariff_days)
+                            new_end, vless_uuid = activate_subscription(user_id, tariff, tariff_days)
                             
                             # Начисляем реферальный бонус
                             referrals = get_referrals(user_id)
@@ -574,7 +560,6 @@ async def check_payment(payment_id: str, user_id: str):
                         else:
                             # Просто пополняем баланс
                             update_user_balance(user_id, amount)
-                            vpn_key = get_user(user_id).get('vpn_key') if get_user(user_id) else None
                             vless_uuid = get_user(user_id).get('vless_uuid') if get_user(user_id) else None
                     
                         return {
@@ -582,7 +567,6 @@ async def check_payment(payment_id: str, user_id: str):
                             "status": status,
                             "payment_id": payment_id,
                             "amount": amount,
-                            "vpn_key": vpn_key,
                             "vless_uuid": vless_uuid
                         }
         
@@ -663,14 +647,13 @@ async def activate_tariff(request: ActivateTariffRequest):
             'balance': user_balance - tariff_amount
         })
         
-        # Активируем подписку и генерируем VPN ключ + VLESS UUID
+        # Активируем подписку и генерируем VLESS UUID
         tariff_days = 30 if request.tariff == "month" else 365
-        new_end, vpn_key, vless_uuid = activate_subscription(request.user_id, request.tariff, tariff_days)
+        new_end, vless_uuid = activate_subscription(request.user_id, request.tariff, tariff_days)
         
         return {
             "success": True, 
             "days_added": tariff_days, 
-            "vpn_key": vpn_key,
             "vless_uuid": vless_uuid
         }
         
@@ -702,9 +685,14 @@ async def get_vless_config(request: VlessConfigRequest):
                 end_date = datetime.fromisoformat(subscription_end.replace('Z', '+00:00'))
                 now = datetime.now().replace(tzinfo=end_date.tzinfo) if end_date.tzinfo else datetime.now()
                 if now > end_date:
-                    return {"error": "Subscription expired"}
-            except:
-                pass
+                    # Подписка истекла
+                    db.collection('users').document(request.user_id).update({
+                        'has_subscription': False,
+                        'subscription_active': False
+                    })
+                    return {"error": "Subscription expired. Please renew your subscription."}
+            except Exception as date_error:
+                logger.error(f"❌ Error parsing subscription date: {date_error}")
         
         # Создаем конфиги для всех серверов
         configs = []
