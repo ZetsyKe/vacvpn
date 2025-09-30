@@ -47,17 +47,17 @@ VLESS_SERVERS = [
     }
 ]
 
-# Тарифы (ежедневное списание)
+# Тарифы (стоимость покупки)
 TARIFFS = {
     "month": {
         "name": "Месячный",
-        "daily_cost": 5.0,  # 150₽ / 30 дней = 5₽ в день
-        "total_cost": 150.0
+        "price": 150.0,
+        "daily_cost": 5.0  # 150 / 30 дней
     },
     "year": {
         "name": "Годовой", 
-        "daily_cost": 0.41,  # 150₽ / 365 дней ≈ 0.41₽ в день
-        "total_cost": 150.0
+        "price": 1300.0,
+        "daily_cost": 3.56  # 1300 / 365 дней
     }
 }
 
@@ -124,6 +124,10 @@ class ActivateTariffRequest(BaseModel):
     user_id: str
     tariff: str
 
+class ChangeTariffRequest(BaseModel):
+    user_id: str
+    new_tariff: str
+
 class InitUserRequest(BaseModel):
     user_id: str
     username: str = ""
@@ -164,6 +168,7 @@ def create_user(user_data: UserCreateRequest):
                 'balance': 0.0,
                 'has_subscription': False,
                 'current_tariff': None,
+                'subscription_start': None,
                 'last_deduction_date': None,
                 'vless_uuid': None,
                 'created_at': firestore.SERVER_TIMESTAMP
@@ -249,6 +254,7 @@ def activate_subscription(user_id: str, tariff: str):
             'has_subscription': True,
             'current_tariff': tariff,
             'vless_uuid': vless_uuid,
+            'subscription_start': datetime.now().isoformat(),
             'last_deduction_date': datetime.now().isoformat(),
             'updated_at': firestore.SERVER_TIMESTAMP
         }
@@ -270,6 +276,44 @@ def activate_subscription(user_id: str, tariff: str):
         import traceback
         logger.error(traceback.format_exc())
         return None
+
+def change_tariff(user_id: str, new_tariff: str):
+    if not db: 
+        logger.error("❌ Database not connected")
+        return False
+    try:
+        user_ref = db.collection('users').document(user_id)
+        
+        # Получаем текущие данные пользователя
+        user_doc = user_ref.get()
+        if not user_doc.exists:
+            logger.error(f"❌ User {user_id} not found in database")
+            return False
+            
+        user_data = user_doc.to_dict()
+        
+        if not user_data.get('has_subscription', False):
+            logger.error(f"❌ User {user_id} doesn't have active subscription")
+            return False
+            
+        current_tariff = user_data.get('current_tariff')
+        if current_tariff == new_tariff:
+            logger.info(f"ℹ️ User {user_id} already has tariff {new_tariff}")
+            return True
+            
+        # Меняем тариф
+        user_ref.update({
+            'current_tariff': new_tariff,
+            'last_deduction_date': datetime.now().isoformat(),
+            'updated_at': firestore.SERVER_TIMESTAMP
+        })
+        
+        logger.info(f"✅ Tariff changed for user {user_id}: {current_tariff} -> {new_tariff}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error changing tariff: {e}")
+        return False
 
 def process_daily_deductions(user_id: str):
     """Обрабатывает ежедневные списания за подписку"""
@@ -317,7 +361,8 @@ def process_daily_deductions(user_id: str):
                 # Недостаточно средств - отключаем подписку
                 db.collection('users').document(user_id).update({
                     'has_subscription': False,
-                    'current_tariff': None
+                    'current_tariff': None,
+                    'vless_uuid': None
                 })
                 logger.info(f"❌ Insufficient funds for user {user_id}, subscription deactivated")
                 return False
@@ -449,6 +494,7 @@ async def init_user(request: InitUserRequest):
                 'balance': 0.0,
                 'has_subscription': False,
                 'current_tariff': None,
+                'subscription_start': None,
                 'last_deduction_date': None,
                 'vless_uuid': None,
                 'created_at': firestore.SERVER_TIMESTAMP
@@ -521,17 +567,13 @@ async def create_payment(request: PaymentRequest):
         if not request.user_id or request.user_id == 'unknown':
             return {"error": "Invalid user ID"}
         
-        # Тарифы
-        tariff_config = {
-            "month": {"amount": 150, "description": "Пополнение баланса VAC VPN"},
-            "year": {"amount": 150, "description": "Пополнение баланса VAC VPN"}
-        }
-        
+        # Определяем сумму платежа
         amount = request.amount
         if request.payment_type == "tariff":
-            tariff_info = tariff_config.get(request.tariff, tariff_config["month"])
-            amount = tariff_info["amount"]
-            description = tariff_info["description"]
+            if request.tariff not in TARIFFS:
+                return {"error": "Invalid tariff"}
+            amount = TARIFFS[request.tariff]["price"]
+            description = f"Покупка тарифа {TARIFFS[request.tariff]['name']} - VAC VPN"
         else:
             description = f"Пополнение баланса VAC VPN на {amount}₽"
         
@@ -598,14 +640,11 @@ async def check_payment(payment_id: str, user_id: str):
             return {"error": "Payment not found"}
         
         if payment['status'] == 'succeeded':
-            # Получаем обновленные данные пользователя
-            user = get_user(user_id)
             return {
                 "success": True,
                 "status": "succeeded",
                 "payment_id": payment_id,
-                "amount": payment['amount'],
-                "vless_uuid": user.get('vless_uuid') if user else None
+                "amount": payment['amount']
             }
         
         yookassa_id = payment.get('yookassa_id')
@@ -649,16 +688,12 @@ async def check_payment(payment_id: str, user_id: str):
                                 if not ref.get('bonus_paid', False):
                                     update_user_balance(ref['referrer_id'], 50)
                                     mark_referral_bonus_paid(user_id)
-                        
-                        user = get_user(user_id)
-                        vless_uuid = user.get('vless_uuid') if user else None
                     
                         return {
                             "success": True,
                             "status": status,
                             "payment_id": payment_id,
-                            "amount": amount,
-                            "vless_uuid": vless_uuid
+                            "amount": amount
                         }
         
         return {
@@ -727,15 +762,18 @@ async def activate_tariff(request: ActivateTariffRequest):
         if not user:
             return {"error": "User not found"}
         
-        # Проверяем достаточно ли средств для активации (минимум 1 день)
         if request.tariff not in TARIFFS:
             return {"error": "Invalid tariff"}
             
-        daily_cost = TARIFFS[request.tariff]["daily_cost"]
+        tariff_price = TARIFFS[request.tariff]["price"]
         user_balance = user.get('balance', 0)
         
-        if user_balance < daily_cost:
-            return {"error": f"Insufficient balance. Need at least {daily_cost}₽ for one day"}
+        if user_balance < tariff_price:
+            return {"error": f"Insufficient balance. Need {tariff_price}₽ for {TARIFFS[request.tariff]['name']} tariff"}
+        
+        # Списываем стоимость тарифа
+        new_balance = user_balance - tariff_price
+        update_user_balance(request.user_id, -tariff_price)
         
         # Активируем подписку и генерируем VLESS UUID
         vless_uuid = activate_subscription(request.user_id, request.tariff)
@@ -746,12 +784,53 @@ async def activate_tariff(request: ActivateTariffRequest):
         return {
             "success": True, 
             "tariff": request.tariff,
-            "daily_cost": daily_cost,
-            "vless_uuid": vless_uuid
+            "tariff_name": TARIFFS[request.tariff]['name'],
+            "daily_cost": TARIFFS[request.tariff]['daily_cost'],
+            "vless_uuid": vless_uuid,
+            "new_balance": new_balance
         }
         
     except Exception as e:
         logger.error(f"❌ Error activating tariff: {e}")
+        return {"error": str(e)}
+
+@app.post("/change-tariff")
+async def change_tariff_endpoint(request: ChangeTariffRequest):
+    """Сменить тариф"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+            
+        user = get_user(request.user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        if not user.get('has_subscription', False):
+            return {"error": "No active subscription"}
+            
+        if request.new_tariff not in TARIFFS:
+            return {"error": "Invalid tariff"}
+            
+        current_tariff = user.get('current_tariff')
+        if current_tariff == request.new_tariff:
+            return {"error": "You already have this tariff"}
+        
+        # Меняем тариф
+        success = change_tariff(request.user_id, request.new_tariff)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Тариф успешно изменен на {TARIFFS[request.new_tariff]['name']}",
+                "new_tariff": request.new_tariff,
+                "new_tariff_name": TARIFFS[request.new_tariff]['name'],
+                "daily_cost": TARIFFS[request.new_tariff]['daily_cost']
+            }
+        else:
+            return {"error": "Failed to change tariff"}
+            
+    except Exception as e:
+        logger.error(f"❌ Error changing tariff: {e}")
         return {"error": str(e)}
 
 @app.post("/vless-config")
@@ -771,9 +850,6 @@ async def get_vless_config(request: VlessConfigRequest):
         vless_uuid = user.get('vless_uuid')
         if not vless_uuid:
             logger.error(f"❌ VLESS UUID not found for user {request.user_id}")
-            # Проверяем есть ли подписка
-            if user.get('has_subscription'):
-                logger.error(f"❌ User {request.user_id} has subscription but no UUID")
             return {"error": "VLESS UUID not found. Activate subscription first."}
         
         if not user.get('has_subscription', False):
