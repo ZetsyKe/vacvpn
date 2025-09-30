@@ -102,15 +102,8 @@
     .daily-cost {
       font-size: 14px;
       color: var(--primary);
-      margin-bottom: 8px;
+      margin-bottom: 10px;
       font-weight: 600;
-    }
-    .current-tariff {
-      background: rgba(176, 203, 31, 0.1);
-      border-radius: 8px;
-      padding: 12px;
-      margin: 10px 0;
-      border-left: 4px solid var(--primary);
     }
     .vless-config {
       background: rgba(176, 203, 31, 0.1);
@@ -155,22 +148,6 @@
     .button-outline:active {
       background: rgba(176, 203, 31, 0.1);
     }
-    .button-fix {
-      background: #ff4444;
-      color: white;
-      border: 2px solid #ff4444;
-    }
-    .button-fix:active {
-      background: #cc3333;
-    }
-    .button-change {
-      background: #4fc3f7;
-      color: white;
-      border: 2px solid #4fc3f7;
-    }
-    .button-change:active {
-      background: #29b6f6;
-    }
     .tariff-grid {
       display: grid;
       gap: 16px;
@@ -187,10 +164,6 @@
     .tariff-card.selected {
       background: rgba(176, 203, 31, 0.1);
       box-shadow: 0 0 0 2px var(--primary);
-    }
-    .tariff-card.current {
-      background: rgba(79, 195, 247, 0.1);
-      box-shadow: 0 0 0 2px #4fc3f7;
     }
     .tariff-card.disabled {
       opacity: 0.6;
@@ -210,11 +183,6 @@
       background: var(--primary);
       box-shadow: 0 0 6px var(--primary);
     }
-    .tariff-card.current .tariff-dot {
-      background: #4fc3f7;
-      border-color: #4fc3f7;
-      box-shadow: 0 0 6px #4fc3f7;
-    }
     .tariff-label {
       font-weight: 700;
       font-size: 16px;
@@ -230,12 +198,6 @@
       font-size: 14px;
       opacity: 0.8;
       margin-left: 4px;
-    }
-    .tariff-daily {
-      font-size: 14px;
-      color: var(--primary);
-      font-weight: 600;
-      margin: 4px 0;
     }
     .tariff-trial {
       display: inline-block;
@@ -326,13 +288,6 @@
       margin-top: 10px;
       display: none;
     }
-    .info-message {
-      color: #4fc3f7;
-      font-size: 14px;
-      text-align: center;
-      margin-top: 10px;
-      display: none;
-    }
     .subscription-status {
       color: var(--primary);
       font-size: 14px;
@@ -390,39 +345,6 @@
       cursor: pointer;
       margin-top: 10px;
     }
-    .balance-info {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .balance-left {
-      flex-grow: 1;
-    }
-    .days-left {
-      font-size: 14px;
-      color: var(--primary);
-      font-weight: 600;
-      background: rgba(176, 203, 31, 0.1);
-      padding: 4px 8px;
-      border-radius: 6px;
-    }
-    .change-tariff-info {
-      background: rgba(79, 195, 247, 0.1);
-      border-radius: 8px;
-      padding: 12px;
-      margin: 10px 0;
-      border-left: 4px solid #4fc3f7;
-      font-size: 14px;
-    }
-    .section-title {
-      color: var(--primary);
-      margin-bottom: 16px;
-      font-size: 18px;
-      font-weight: 700;
-    }
   </style>
 </head>
 <body>
@@ -443,26 +365,12 @@
   </div>
 
   <div class="card">
-    <div class="balance-info">
-      <div class="balance-left">
-        <div class="balance" id="userBalance">0₽</div>
-        <div class="balance-days" id="balanceDays">Обновите данные</div>
-      </div>
-      <div class="days-left" id="daysLeft">~0 дней</div>
-    </div>
-    
-    <div class="daily-cost" id="dailyCostInfo" style="display: none;">
-      Ежедневное списание: <span id="dailyCost">0₽</span>/день
-    </div>
-    
+    <div class="balance" id="userBalance">0₽</div>
+    <div class="balance-days" id="balanceDays">Обновите данные</div>
+    <div class="daily-cost" id="dailyCost" style="display: none;"></div>
     <div class="subscription-status" id="subscriptionStatus">
       <span>Статус подписки:</span>
       <span class="badge inactive-badge" id="subscriptionBadge">Неактивна</span>
-    </div>
-
-    <div class="current-tariff" id="currentTariffInfo" style="display: none;">
-      <strong>Текущий тариф:</strong> <span id="currentTariffName">-</span><br>
-      <span id="currentTariffDetails">-</span>
     </div>
     
     <div class="vless-config" id="vlessConfigContainer">
@@ -486,52 +394,32 @@
     </div>
     
     <button class="button button-yellow" id="paymentButton" onclick="createPayment()">ПОПОЛНИТЬ БАЛАНС</button>
-    
-    <!-- Кнопки для разных состояний -->
-    <button class="button button-outline" id="activateSubscriptionBtn" onclick="showTariffSelection('activate')" style="display: none;">ВКЛЮЧИТЬ ПОДПИСКУ</button>
-    <button class="button button-change" id="changeTariffBtnMain" onclick="showTariffSelection('change')" style="display: none;">СМЕНИТЬ ТАРИФ</button>
-    
+    <button class="button button-yellow" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</button>
     <button class="button button-outline" id="vlessButton" onclick="getVlessConfig()" style="display: none;">ПОЛУЧИТЬ VLESS КОНФИГ</button>
-    <button class="button button-fix" id="fixSubscriptionButton" onclick="fixSubscription()" style="display: none;">ИСПРАВИТЬ ПОДПИСКУ</button>
     
     <div class="loading" id="loadingIndicator">Подождите, идет обработка...</div>
     <div class="error-message" id="errorMessage"></div>
     <div class="success-message" id="successMessage"></div>
-    <div class="info-message" id="infoMessage"></div>
   </div>
 
-  <!-- Блок выбора тарифа (скрыт по умолчанию) -->
-  <div class="card" id="tariffSelectionBlock" style="display: none;">
-    <div class="section-title" id="tariffSelectionTitle">Выберите тарифный план</div>
-    
-    <div class="change-tariff-info" id="changeTariffMessage" style="display: none;">
-      <strong>ℹ️ Смена тарифа</strong><br>
-      При смене тарифа оставшиеся дни пересчитываются по новому тарифу
-    </div>
-    
+  <div class="card" id="tariffBlock">
     <div class="tariff-grid">
       <div class="tariff-card" id="tariff1month" onclick="selectTariff('1month')">
         <div class="tariff-dot"></div>
         <div class="tariff-label">Месячный</div>
         <div class="tariff-price">150₽<span class="tariff-period">/мес</span></div>
-        <div class="tariff-daily">~5₽ в день</div>
-        <div class="tariff-trial">Пробная версия на 1 неделю</div>
-        <div class="tariff-description">Полный доступ ко всем функциям VPN на 1 месяц + VLESS ключ</div>
+        <div class="tariff-trial">5₽ в день</div>
+        <div class="tariff-description">Ежедневное списание 5₽ с баланса + VLESS ключ</div>
       </div>
       <div class="tariff-card" id="tariff1year" onclick="selectTariff('1year')">
         <div class="tariff-dot"></div>
         <div class="tariff-label">Годовой</div>
-        <div class="tariff-price">1300₽<span class="tariff-period">/год</span></div>
-        <div class="tariff-daily">~3.56₽ в день</div>
-        <div class="tariff-trial">Пробная версия на 1 неделю</div>
-        <div class="tariff-description">Полный доступ на 1 год со скидкой 30% + VLESS ключ</div>
+        <div class="tariff-price">150₽<span class="tariff-period">/год</span></div>
+        <div class="tariff-trial">0.41₽ в день</div>
+        <div class="tariff-description">Ежедневное списание 0.41₽ с баланса + VLESS ключ</div>
       </div>
     </div>
-    
-    <!-- Кнопки действий для выбранного тарифа -->
-    <button class="button button-yellow" id="subscribeBtn" style="display:none;" onclick="activateSubscription()">АКТИВИРОВАТЬ ПОДПИСКУ</button>
-    <button class="button button-change" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИТЬ ТАРИФ</button>
-    <button class="button button-outline" onclick="hideTariffSelection()">ОТМЕНА</button>
+    <button class="button button-yellow" id="subscribeBtn" style="display:none;" onclick="activateSubscription()">ПОДКЛЮЧИТЬ ПОДПИСКУ</button>
   </div>
 
   <div class="card">
@@ -576,29 +464,8 @@
     // URL API
     const API_BASE_URL = "https://vacvpn-api-production-d067.up.railway.app";
 
-    // Тарифы с расчетом стоимости за день
-    const TARIFFS = {
-        "1month": {
-            label: "Месячный",
-            price: 150,
-            period: "мес",
-            daily_cost: 5, // 150 / 30 дней
-            description: "Полный доступ ко всем функциям VPN + VLESS ключ"
-        },
-        "1year": {
-            label: "Годовой", 
-            price: 1300,
-            period: "год",
-            daily_cost: 3.56, // 1300 / 365 дней
-            description: "Полный доступ на 1 год со скидкой + VLESS ключ"
-        }
-    };
-
     // Переменные для хранения данных
     let currentPaymentId = null;
-    let selectedTariff = null;
-    let currentUserData = null;
-    let currentTariffAction = null; // 'activate' или 'change'
 
     // Инициализация интерфейса
     document.getElementById('userName').textContent = userName;
@@ -622,9 +489,7 @@
             '2. Нельзя передавать аккаунт третьим лицам\n' +
             '3. Возврат средств возможен в течение 3 дней\n' +
             '4. VLESS ключ выдается только при активной подписке\n' +
-            '5. Баланс пополняется платежами, подписка списывается ежедневно\n' +
-            '6. При смене тарифа оставшиеся дни пересчитываются\n' +
-            '7. При нулевом балансе подписка автоматически приостанавливается'
+            '5. Подписка работает по принципу ежедневного списания с баланса'
         );
         toggleMenu();
     }
@@ -640,94 +505,13 @@
         );
     }
 
-    // Функции работы с тарифами
-    function showTariffSelection(action) {
-        currentTariffAction = action;
-        document.getElementById('tariffSelectionBlock').style.display = 'block';
-        
-        // Сбрасываем выделение
-        document.querySelectorAll('.tariff-card').forEach(card => {
-            card.classList.remove('selected', 'current');
-        });
-        
-        // Показываем текущий тариф если он есть
-        if (currentUserData && currentUserData.current_tariff) {
-            document.getElementById(`tariff${currentUserData.current_tariff}`).classList.add('current');
-        }
-        
-        // Настраиваем интерфейс в зависимости от действия
-        if (action === 'activate') {
-            document.getElementById('tariffSelectionTitle').textContent = 'Выберите тарифный план';
-            document.getElementById('changeTariffMessage').style.display = 'none';
-            document.getElementById('subscribeBtn').style.display = 'none';
-            document.getElementById('changeTariffBtn').style.display = 'none';
-        } else if (action === 'change') {
-            document.getElementById('tariffSelectionTitle').textContent = 'Смена тарифного плана';
-            document.getElementById('changeTariffMessage').style.display = 'block';
-            document.getElementById('subscribeBtn').style.display = 'none';
-            document.getElementById('changeTariffBtn').style.display = 'none';
-        }
-        
-        scrollToElement('tariffSelectionBlock');
-    }
-
-    function hideTariffSelection() {
-        document.getElementById('tariffSelectionBlock').style.display = 'none';
-        selectedTariff = null;
-        currentTariffAction = null;
-    }
-
+    // Функции тарифов
     function selectTariff(id) {
         document.querySelectorAll('.tariff-card').forEach(card => {
             card.classList.remove('selected');
         });
         document.getElementById(`tariff${id}`).classList.add('selected');
-        selectedTariff = id;
-        
-        // Показываем соответствующую кнопку действия
-        if (currentTariffAction === 'activate') {
-            document.getElementById('subscribeBtn').style.display = 'block';
-            document.getElementById('changeTariffBtn').style.display = 'none';
-        } else if (currentTariffAction === 'change') {
-            document.getElementById('subscribeBtn').style.display = 'none';
-            document.getElementById('changeTariffBtn').style.display = 'block';
-        }
-    }
-
-    // Автоматическое исправление подписки
-    async function autoFixSubscription() {
-        try {
-            console.log('🔄 Checking for subscription issues...');
-            
-            const response = await fetch(`${API_BASE_URL}/auto-fix-subscription`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    user_id: userId
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            console.log('🔧 Auto-fix result:', data);
-            
-            if (data.auto_fixed) {
-                console.log('✅ Subscription auto-fixed!');
-                showInfo('🔧 Подписка автоматически исправлена! UUID сгенерирован.');
-                return true;
-            }
-            
-            return false;
-            
-        } catch (error) {
-            console.error('❌ Auto-fix error:', error);
-            return false;
-        }
+        document.getElementById('subscribeBtn').style.display = 'block';
     }
 
     // Инициализация пользователя при загрузке
@@ -772,7 +556,7 @@
         }
     }
 
-    // Загрузка данных пользователя с автоматическим исправлением
+    // Загрузка данных пользователя
     async function loadUserData() {
         try {
             console.log('🔄 Loading user data for:', userId);
@@ -787,29 +571,11 @@
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             
-            let userData = await response.json();
+            const userData = await response.json();
             console.log('📊 User data loaded:', userData);
             
             if (userData.error) {
                 throw new Error(userData.error);
-            }
-            
-            // Сохраняем данные пользователя
-            currentUserData = userData;
-            
-            // Проверяем и автоматически исправляем подписку если нужно
-            if (userData.has_subscription && !userData.vless_uuid) {
-                console.log('⚠️ Subscription issue detected: has subscription but no UUID');
-                const fixed = await autoFixSubscription();
-                if (fixed) {
-                    // Перезагружаем данные после исправления
-                    const newResponse = await fetch(`${API_BASE_URL}/user-data?user_id=${userId}`);
-                    if (newResponse.ok) {
-                        userData = await newResponse.json();
-                        currentUserData = userData;
-                        console.log('📊 User data after auto-fix:', userData);
-                    }
-                }
             }
             
             // Обновляем интерфейс
@@ -829,94 +595,61 @@
         // Обновляем статус подписки
         const subscriptionBadge = document.getElementById('subscriptionBadge');
         const balanceDays = document.getElementById('balanceDays');
-        const dailyCostInfo = document.getElementById('dailyCostInfo');
-        const dailyCost = document.getElementById('dailyCost');
-        const daysLeft = document.getElementById('daysLeft');
-        const currentTariffInfo = document.getElementById('currentTariffInfo');
-        const currentTariffName = document.getElementById('currentTariffName');
-        const currentTariffDetails = document.getElementById('currentTariffDetails');
+        const dailyCostElement = document.getElementById('dailyCost');
         const vlessConfigContainer = document.getElementById('vlessConfigContainer');
         const vlessButton = document.getElementById('vlessButton');
-        const fixSubscriptionButton = document.getElementById('fixSubscriptionButton');
-        const activateSubscriptionBtn = document.getElementById('activateSubscriptionBtn');
-        const changeTariffBtnMain = document.getElementById('changeTariffBtnMain');
+        const subscribeBtn = document.getElementById('subscribeBtn');
         
         if (userData.has_subscription) {
             subscriptionBadge.textContent = 'Активна';
             subscriptionBadge.className = 'badge active-badge';
+            document.querySelectorAll('.tariff-card').forEach(card => {
+                card.classList.add('disabled');
+            });
+            subscribeBtn.style.display = 'none';
+            vlessButton.style.display = 'block';
             
-            // Показываем кнопку смены тарифа
-            activateSubscriptionBtn.style.display = 'none';
-            changeTariffBtnMain.style.display = 'block';
-            
-            // Показываем информацию о текущем тарифе
-            if (userData.current_tariff && TARIFFS[userData.current_tariff]) {
-                const currentTariff = TARIFFS[userData.current_tariff];
-                currentTariffName.textContent = currentTariff.label;
-                currentTariffDetails.textContent = `Ежедневное списание: ${currentTariff.daily_cost}₽`;
-                currentTariffInfo.style.display = 'block';
+            // Показываем ежедневную стоимость
+            if (userData.daily_cost > 0) {
+                dailyCostElement.textContent = `Ежедневное списание: ${userData.daily_cost}₽`;
+                dailyCostElement.style.display = 'block';
             }
             
-            // Показываем информацию о ежедневном списании
-            if (userData.daily_cost) {
-                dailyCost.textContent = `${userData.daily_cost}₽`;
-                dailyCostInfo.style.display = 'block';
-            }
-            
-            // Рассчитываем и показываем оставшиеся дни по балансу
-            if (userData.daily_cost > 0 && balance > 0) {
-                const estimatedDays = Math.floor(balance / userData.daily_cost);
-                daysLeft.textContent = `~${estimatedDays} дней`;
-                balanceDays.textContent = `Подписка активна, списание ${userData.daily_cost}₽/день`;
+            // Обновляем информацию о балансе
+            const currentTariff = userData.current_tariff;
+            let tariffName = '';
+            if (currentTariff === 'month') {
+                tariffName = 'Месячный';
+                balanceDays.textContent = `Активен месячный тариф (5₽/день)`;
+            } else if (currentTariff === 'year') {
+                tariffName = 'Годовой';
+                balanceDays.textContent = `Активен годовой тариф (0.41₽/день)`;
             } else {
-                daysLeft.textContent = '0 дней';
-                balanceDays.textContent = 'Недостаточно средств для подписки';
+                balanceDays.textContent = 'Подписка активна';
             }
             
-            // Показываем соответствующие кнопки
+            // Показываем VLESS UUID если есть
             if (userData.vless_uuid) {
-                // Все в порядке - показываем кнопку получения конфига
-                vlessButton.style.display = 'block';
-                fixSubscriptionButton.style.display = 'none';
-                
-                // Показываем VLESS UUID если есть
                 document.getElementById('vlessUuidText').textContent = userData.vless_uuid;
-            } else {
-                // Есть подписка но нет UUID - показываем кнопку исправления
-                vlessButton.style.display = 'none';
-                fixSubscriptionButton.style.display = 'block';
             }
         } else {
             subscriptionBadge.textContent = 'Неактивна';
             subscriptionBadge.className = 'badge inactive-badge';
-            currentTariffInfo.style.display = 'none';
-            changeTariffBtnMain.style.display = 'none';
-            activateSubscriptionBtn.style.display = 'block';
-            dailyCostInfo.style.display = 'none';
-            
-            if (balance > 0) {
-                // Показываем сколько дней можно купить для каждого тарифа
-                const monthDays = Math.floor(balance / TARIFFS['1month'].daily_cost);
-                const yearDays = Math.floor(balance / TARIFFS['1year'].daily_cost);
-                balanceDays.textContent = `На балансе: ~${monthDays}д (мес.) или ~${yearDays}д (год)`;
-                daysLeft.textContent = 'Неактивно';
-            } else {
-                balanceDays.textContent = 'Пополните баланс для активации подписки';
-                daysLeft.textContent = '0 дней';
-            }
-            
+            document.querySelectorAll('.tariff-card').forEach(card => {
+                card.classList.remove('disabled');
+            });
+            balanceDays.textContent = 'Подписка неактивна';
+            dailyCostElement.style.display = 'none';
             vlessConfigContainer.style.display = 'none';
             vlessButton.style.display = 'none';
-            fixSubscriptionButton.style.display = 'none';
         }
     }
 
-    // Основная функция оплаты (пополнение баланса)
+    // Основная функция оплаты
     async function createPayment() {
         try {
             hideError();
             hideSuccess();
-            hideInfo();
             
             if (!userId || userId === 'unknown') {
                 showError('Ошибка: откройте приложение через Telegram бота');
@@ -936,7 +669,7 @@
                 },
                 body: JSON.stringify({
                     user_id: userId,
-                    amount: 100, // Минимальная сумма пополнения
+                    amount: 150,
                     payment_type: "balance"
                 })
             });
@@ -973,9 +706,10 @@
         }
     }
 
-    // Функция активации подписки (с оплатой)
+    // Функция активации подписки
     async function activateSubscription() {
-        if (!selectedTariff) {
+        const selected = document.querySelector('.tariff-card.selected');
+        if (!selected) {
             showError("Пожалуйста, выберите тарифный план");
             return;
         }
@@ -992,25 +726,21 @@
             loadingIndicator.style.display = 'block';
             subscribeBtn.disabled = true;
             hideError();
-            hideSuccess();
-            hideInfo();
 
-            const tariff = TARIFFS[selectedTariff];
-            const amount = tariff.price;
+            const tariffId = selected.id.replace('tariff', '');
+            const tariffMap = {"1month": "month", "1year": "year"};
+            const tariff = tariffMap[tariffId];
 
-            console.log('🎯 Activating subscription with payment:', { selectedTariff, amount });
+            console.log('🎯 Activating subscription:', { tariff });
 
-            // Используем существующий эндпоинт для создания платежа
-            const response = await fetch(`${API_BASE_URL}/create-payment`, {
+            const response = await fetch(`${API_BASE_URL}/activate-tariff`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
                     user_id: userId,
-                    amount: amount,
-                    tariff: selectedTariff,
-                    payment_type: "tariff"
+                    tariff: tariff
                 })
             });
 
@@ -1019,91 +749,24 @@
             }
 
             const data = await response.json();
-            console.log('💳 Subscription payment response:', data);
-            
-            if (data.error) {
-                throw new Error(data.error);
-            }
-
-            if (data.payment_url) {
-                currentPaymentId = data.payment_id;
-                console.log('📝 Subscription Payment ID saved:', currentPaymentId);
-                tg.openLink(data.payment_url);
-                checkPaymentStatus(data.payment_id);
-                hideTariffSelection();
-            } else {
-                showError(data.error || "Ошибка оплаты");
-            }
-        } catch (error) {
-            showError(error.message);
-        } finally {
-            document.getElementById('loadingIndicator').style.display = 'none';
-            document.getElementById('subscribeBtn').disabled = false;
-        }
-    }
-
-    // Функция смены тарифа (без оплаты)
-    async function changeTariff() {
-        if (!selectedTariff) {
-            showError("Пожалуйста, выберите новый тарифный план");
-            return;
-        }
-
-        try {
-            if (!userId || userId === 'unknown') {
-                showError('Ошибка: откройте приложение через Telegram бота');
-                return;
-            }
-
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            const changeTariffBtn = document.getElementById('changeTariffBtn');
-
-            loadingIndicator.style.display = 'block';
-            changeTariffBtn.disabled = true;
-            hideError();
-            hideSuccess();
-            hideInfo();
-
-            const tariff = TARIFFS[selectedTariff];
-
-            console.log('🔄 Changing tariff to:', selectedTariff);
-
-            const response = await fetch(`${API_BASE_URL}/change-tariff`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    user_id: userId,
-                    new_tariff: selectedTariff,
-                    daily_cost: tariff.daily_cost
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            console.log('📊 Tariff change response:', data);
+            console.log('🔧 Subscription activation response:', data);
             
             if (data.error) {
                 throw new Error(data.error);
             }
 
             if (data.success) {
-                showSuccess('✅ Тариф успешно изменен! Оставшиеся дни пересчитаны.');
+                showSuccess(`✅ Подписка "${tariff === 'month' ? 'Месячный' : 'Годовой'}" успешно активирована! Ежедневное списание: ${data.daily_cost}₽`);
                 // Обновляем данные пользователя
                 await loadUserData();
-                hideTariffSelection();
             } else {
-                showError(data.error || "Ошибка смены тарифа");
+                showError(data.error || "Ошибка активации подписки");
             }
         } catch (error) {
             showError(error.message);
         } finally {
             document.getElementById('loadingIndicator').style.display = 'none';
-            document.getElementById('changeTariffBtn').disabled = false;
+            document.getElementById('subscribeBtn').disabled = false;
         }
     }
 
@@ -1127,11 +790,7 @@
             console.log('📊 Payment status:', data);
             
             if (data.status === 'succeeded') {
-                if (data.payment_type === 'balance') {
-                    showSuccess('✅ Баланс успешно пополнен!');
-                } else if (data.payment_type === 'tariff') {
-                    showSuccess('✅ Оплата прошла успешно! Подписка активирована.');
-                }
+                showSuccess('✅ Оплата прошла успешно! Баланс пополнен.');
                 // Обновляем данные пользователя
                 await loadUserData();
             } else if (data.status === 'pending') {
@@ -1157,8 +816,6 @@
             const loadingIndicator = document.getElementById('loadingIndicator');
             loadingIndicator.style.display = 'block';
             hideError();
-            hideSuccess();
-            hideInfo();
 
             const response = await fetch(`${API_BASE_URL}/vless-config`, {
                 method: "POST",
@@ -1187,54 +844,6 @@
         } catch (error) {
             console.error('❌ Error getting VLESS config:', error);
             showError('Ошибка получения VLESS конфигурации: ' + error.message);
-        } finally {
-            document.getElementById('loadingIndicator').style.display = 'none';
-        }
-    }
-
-    // Функция для ручного исправления подписки
-    async function fixSubscription() {
-        try {
-            if (!userId || userId === 'unknown') {
-                showError('Ошибка: откройте приложение через Telegram бота');
-                return;
-            }
-
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            loadingIndicator.style.display = 'block';
-            hideError();
-            hideSuccess();
-            hideInfo();
-
-            const response = await fetch(`${API_BASE_URL}/fix-subscription`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    user_id: userId
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            console.log('🔧 Fix subscription response:', data);
-            
-            if (data.error) {
-                throw new Error(data.error);
-            }
-
-            showSuccess('✅ Подписка исправлена! UUID сгенерирован.');
-            
-            // Обновляем данные пользователя
-            await loadUserData();
-            
-        } catch (error) {
-            console.error('❌ Error fixing subscription:', error);
-            showError('Ошибка исправления подписки: ' + error.message);
         } finally {
             document.getElementById('loadingIndicator').style.display = 'none';
         }
@@ -1299,8 +908,8 @@
     }
 
     // Вспомогательные функции
-    function scrollToElement(elementId) {
-        document.getElementById(elementId).scrollIntoView({
+    function scrollToTariffs() {
+        document.getElementById('tariffBlock').scrollIntoView({
             behavior: 'smooth'
         });
     }
@@ -1340,17 +949,6 @@
 
     function hideSuccess() {
         document.getElementById('successMessage').style.display = 'none';
-    }
-
-    function showInfo(message) {
-        const infoElement = document.getElementById('infoMessage');
-        infoElement.textContent = message;
-        infoElement.style.display = 'block';
-        setTimeout(() => infoElement.style.display = 'none', 5000);
-    }
-
-    function hideInfo() {
-        document.getElementById('infoMessage').style.display = 'none';
     }
 
     // Закрытие меню при клике вне его
