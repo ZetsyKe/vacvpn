@@ -99,16 +99,6 @@
       margin-bottom: 16px;
       font-weight: 500;
     }
-    .vpn-key {
-      background: rgba(176, 203, 31, 0.1);
-      border: 1px solid var(--primary);
-      border-radius: 8px;
-      padding: 12px;
-      margin: 10px 0;
-      font-family: monospace;
-      word-break: break-all;
-      display: none;
-    }
     .vless-config {
       background: rgba(176, 203, 31, 0.1);
       border: 1px solid var(--primary);
@@ -376,12 +366,6 @@
       <span class="badge inactive-badge" id="subscriptionBadge">Неактивна</span>
     </div>
     
-    <div class="vpn-key" id="vpnKeyContainer">
-      <strong>Ваш VPN ключ:</strong>
-      <div id="vpnKeyText">Загрузка...</div>
-      <button class="copy-btn" onclick="copyVpnKey()" style="margin-top: 8px;">Скопировать ключ</button>
-    </div>
-
     <div class="vless-config" id="vlessConfigContainer">
       <h3 style="color: var(--primary); margin-bottom: 12px;">🔧 VLESS Конфигурация</h3>
       <div style="margin-bottom: 12px;">
@@ -603,8 +587,6 @@
         // Обновляем статус подписки
         const subscriptionBadge = document.getElementById('subscriptionBadge');
         const balanceDays = document.getElementById('balanceDays');
-        const vpnKeyContainer = document.getElementById('vpnKeyContainer');
-        const vpnKeyText = document.getElementById('vpnKeyText');
         const vlessConfigContainer = document.getElementById('vlessConfigContainer');
         const vlessButton = document.getElementById('vlessButton');
         const subscribeBtn = document.getElementById('subscribeBtn');
@@ -625,12 +607,6 @@
                 balanceDays.textContent = 'Подписка активна';
             }
             
-            // Показываем VPN ключ если есть
-            if (userData.vpn_key) {
-                vpnKeyText.textContent = userData.vpn_key;
-                vpnKeyContainer.style.display = 'block';
-            }
-            
             // Показываем VLESS UUID если есть
             if (userData.vless_uuid) {
                 document.getElementById('vlessUuidText').textContent = userData.vless_uuid;
@@ -642,7 +618,6 @@
                 card.classList.remove('disabled');
             });
             balanceDays.textContent = 'Подписка неактивна';
-            vpnKeyContainer.style.display = 'none';
             vlessConfigContainer.style.display = 'none';
             vlessButton.style.display = 'none';
         }
@@ -797,8 +772,8 @@
             console.log('📊 Payment status:', data);
             
             if (data.status === 'succeeded') {
-                if (data.vpn_key || data.vless_uuid) {
-                    showSuccess('✅ Оплата прошла успешно! VPN ключ и VLESS конфигурация активированы.');
+                if (data.vless_uuid) {
+                    showSuccess('✅ Оплата прошла успешно! VLESS конфигурация активирована.');
                     // Обновляем данные пользователя
                     await loadUserData();
                 } else {
@@ -917,18 +892,6 @@
     function closeQRModal() {
         const qrModal = document.getElementById('qrModal');
         qrModal.style.display = 'none';
-    }
-
-    // Копирование VPN ключа
-    function copyVpnKey() {
-        const key = document.getElementById('vpnKeyText').textContent;
-        navigator.clipboard.writeText(key)
-            .then(() => {
-                tg.showAlert('VPN ключ скопирован в буфер обмена!');
-            })
-            .catch(err => {
-                tg.showAlert('Не удалось скопировать ключ');
-            });
     }
 
     // Вспомогательные функции
