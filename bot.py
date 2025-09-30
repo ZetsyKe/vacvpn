@@ -19,7 +19,7 @@ TOKEN = os.getenv("TOKEN")
 WEB_APP_URL = "https://vacvpn.vercel.app"
 SUPPORT_NICK = "@vacvpn_support"
 TG_CHANNEL = "@vac_vpn"
-API_BASE_URL = os.getenv("API_BASE_URL", "https://vacvpn.onrender.com")  
+API_BASE_URL = os.getenv("API_BASE_URL", "https://vacvpn-api-production-d067.up.railway.app")
 BOT_USERNAME = "vaaaac_bot"
 
 if not TOKEN:
@@ -31,6 +31,9 @@ bot = Bot(
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 dp = Dispatcher()
+
+# Хранилище для отслеживания уже обработанных рефералов
+processed_referrals = set()
 
 # Функции для работы с API
 async def make_api_request(url: str, method: str = "GET", json_data: dict = None, params: dict = None):
@@ -63,7 +66,7 @@ async def get_user_info(user_id: int):
 
 async def create_user(user_data: dict):
     """Создает пользователя через API"""
-    url = f"{API_BASE_URL}/create-user"
+    url = f"{API_BASE_URL}/init-user"
     return await make_api_request(url, "POST", json_data=user_data)
 
 async def add_referral_api(referrer_id: str, referred_id: str):
@@ -73,6 +76,27 @@ async def add_referral_api(referrer_id: str, referred_id: str):
         "referrer_id": referrer_id,
         "referred_id": referred_id
     })
+
+async def update_user_balance(user_id: str, amount: float):
+    """Начисляет бонус на баланс пользователя через API"""
+    try:
+        url = f"{API_BASE_URL}/update-balance"
+        result = await make_api_request(url, "POST", json_data={
+            "user_id": user_id,
+            "amount": amount
+        })
+        
+        if result and result.get('success'):
+            logger.info(f"✅ Бонус {amount}₽ успешно начислен пользователю {user_id}")
+            return True
+        else:
+            error_msg = result.get('error', 'Unknown error') if result else 'No response'
+            logger.error(f"❌ Ошибка начисления бонуса пользователю {user_id}: {error_msg}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка при вызове API обновления баланса: {e}")
+        return False
 
 # Клавиатуры
 def get_main_keyboard():
@@ -147,7 +171,7 @@ def get_welcome_message(user_name: str, is_referral: bool = False):
 👫 <b>Пригласите друга и получите бонус!</b>
 """
     if is_referral:
-        message += "\n🎉 Вы зарегистрировались по реферальной ссылке! Бонус будет начислен после активации подписки."
+        message += "\n🎉 Вы зарегистрировались по реферальной ссылке! Бонус 50₽ уже начислен на ваш баланс!"
     
     return message
 
@@ -202,7 +226,7 @@ def get_ref_message(user_id: int):
 
 🎁 <b>Бонус за приглашение:</b>
 • 50₽ на баланс за каждого друга
-• Бонус начисляется после активации подписки
+• Бонус начисляется сразу после регистрации по вашей ссылке
 
 💡 Делитесь ссылкой и получайте бонусы!
 """
@@ -241,22 +265,54 @@ async def cmd_start(message: types.Message):
         try:
             referrer_id = args[1][4:]
             referred_id = str(user.id)
-
-            if referred_id != referrer_id:
-                referral_result = await add_referral_api(referrer_id, referred_id)
-                logger.info(f"Referral result: {referral_result}")
-                is_referral = True
+            
+            # Проверяем валидность ID
+            if not referrer_id.isdigit():
+                logger.warning(f"Неверный формат referrer_id: {referrer_id}")
+            elif referred_id == referrer_id:
+                logger.info("Пользователь пытается использовать свою ссылку")
+            else:
+                # Создаем уникальный ключ для этого реферала
+                referral_key = f"{referrer_id}_{referred_id}"
                 
-                # Уведомляем реферера
-                try:
-                    await bot.send_message(
-                        chat_id=int(referrer_id),
-                        text=f"🎉 У вас новый реферал!\nПользователь @{user.username or 'без username'} присоединился по вашей ссылке.\nБонус 50₽ будет начислен после оплаты подписки."
-                    )
-                except Exception as e:
-                    logger.info(f"Не удалось уведомить реферера {referrer_id}: {e}")
-        except ValueError as e:
-            logger.warning(f"Неверный формат реферальной ссылки: {args[1]}, error: {e}")
+                # Проверяем, не обрабатывали ли мы уже этого реферала
+                if referral_key not in processed_referrals:
+                    # Добавляем в обработанные
+                    processed_referrals.add(referral_key)
+                    
+                    # Добавляем реферала в систему
+                    referral_result = await add_referral_api(referrer_id, referred_id)
+                    logger.info(f"Referral result: {referral_result}")
+                    
+                    # НАЧИСЛЯЕМ БОНУС 50₽ СРАЗУ
+                    bonus_amount = 50.0
+                    bonus_result = await update_user_balance(referrer_id, bonus_amount)
+                    
+                    if bonus_result:
+                        logger.info(f"✅ Бонус 50₽ начислен рефереру {referrer_id}")
+                        is_referral = True
+                        
+                        # Уведомляем реферера только если бонус успешно начислен
+                        try:
+                            await bot.send_message(
+                                chat_id=int(referrer_id),
+                                text=f"🎉 <b>У вас новый реферал!</b>\n\n"
+                                     f"👤 Пользователь: @{user.username or user.first_name}\n"
+                                     f"💰 <b>Бонус 50₽ уже начислен на ваш баланс!</b>\n\n"
+                                     f"Продолжайте приглашать друзей и зарабатывать больше! 🚀"
+                            )
+                            logger.info(f"✅ Уведомление отправлено рефереру {referrer_id}")
+                        except Exception as e:
+                            logger.error(f"❌ Не удалось уведомить реферера {referrer_id}: {e}")
+                    else:
+                        logger.error(f"❌ Не удалось начислить бонус рефереру {referrer_id}")
+                        # Удаляем из обработанных, чтобы попробовать снова
+                        processed_referrals.discard(referral_key)
+                else:
+                    logger.info(f"Реферал {referral_key} уже обработан ранее")
+                    
+        except Exception as e:
+            logger.error(f"❌ Ошибка обработки реферальной ссылки: {e}")
 
     await message.answer(
         text=get_welcome_message(user.first_name, is_referral),
