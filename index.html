@@ -109,6 +109,20 @@
       word-break: break-all;
       display: none;
     }
+    .vless-config {
+      background: rgba(176, 203, 31, 0.1);
+      border: 1px solid var(--primary);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 10px 0;
+      display: none;
+    }
+    .server-config {
+      background: rgba(0,0,0,0.2);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 8px 0;
+    }
     .button {
       display: block;
       width: 100%;
@@ -301,6 +315,40 @@
       background: #ff4444;
       color: white;
     }
+    .qr-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.8);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .qr-content {
+      background: var(--card);
+      padding: 20px;
+      border-radius: 12px;
+      text-align: center;
+      max-width: 300px;
+      width: 90%;
+    }
+    .qr-image {
+      width: 200px;
+      height: 200px;
+      margin: 10px 0;
+    }
+    .close-btn {
+      background: var(--primary);
+      color: var(--bg);
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
@@ -333,9 +381,31 @@
       <div id="vpnKeyText">Загрузка...</div>
       <button class="copy-btn" onclick="copyVpnKey()" style="margin-top: 8px;">Скопировать ключ</button>
     </div>
+
+    <div class="vless-config" id="vlessConfigContainer">
+      <h3 style="color: var(--primary); margin-bottom: 12px;">🔧 VLESS Конфигурация</h3>
+      <div style="margin-bottom: 12px;">
+        <strong>UUID:</strong> 
+        <div style="font-family: monospace; background: rgba(176, 203, 31, 0.1); padding: 8px; border-radius: 4px; margin-top: 4px; word-break: break-all; font-size: 12px;" id="vlessUuidText">
+          Загрузка...
+        </div>
+      </div>
+      <div id="vlessServersList"></div>
+      <div style="margin-top: 12px; padding: 12px; background: rgba(176, 203, 31, 0.1); border-radius: 6px;">
+        <strong>📱 Инструкции по установке:</strong>
+        <ul style="margin: 8px 0; padding-left: 20px; font-size: 12px;">
+          <li><strong>Android:</strong> Скачайте V2RayNG из Play Store</li>
+          <li><strong>iOS:</strong> Скачайте Shadowrocket из App Store</li>
+          <li><strong>Windows:</strong> Скачайте V2RayN с GitHub</li>
+          <li><strong>macOS:</strong> Скачайте V2RayU с GitHub</li>
+        </ul>
+      </div>
+    </div>
     
     <button class="button button-yellow" id="paymentButton" onclick="createPayment()">ПОПОЛНИТЬ БАЛАНС</button>
     <button class="button button-outline" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</button>
+    <button class="button button-outline" id="vlessButton" onclick="getVlessConfig()" style="display: none;">ПОЛУЧИТЬ VLESS КОНФИГ</button>
+    
     <div class="loading" id="loadingIndicator">Подождите, идет обработка...</div>
     <div class="error-message" id="errorMessage"></div>
     <div class="success-message" id="successMessage"></div>
@@ -348,14 +418,14 @@
         <div class="tariff-label">Месячный</div>
         <div class="tariff-price">150₽<span class="tariff-period">/мес</span></div>
         <div class="tariff-trial">Пробная версия на 1 неделю</div>
-        <div class="tariff-description">Полный доступ ко всем функциям VPN на 1 месяц + ключ</div>
+        <div class="tariff-description">Полный доступ ко всем функциям VPN на 1 месяц + VLESS ключ</div>
       </div>
       <div class="tariff-card" id="tariff1year" onclick="selectTariff('1year')">
         <div class="tariff-dot"></div>
         <div class="tariff-label">Годовой</div>
         <div class="tariff-price">1300₽<span class="tariff-period">/год</span></div>
         <div class="tariff-trial">Пробная версия на 1 неделю</div>
-        <div class="tariff-description">Полный доступ на 1 год со скидкой 30% + ключ</div>
+        <div class="tariff-description">Полный доступ на 1 год со скидкой 30% + VLESS ключ</div>
       </div>
     </div>
     <button class="button button-yellow" id="subscribeBtn" style="display:none;" onclick="activateSubscription()">ПОДКЛЮЧИТЬ ПОДПИСКУ</button>
@@ -375,6 +445,15 @@
 
   <div class="card">
     <button class="button-help" onclick="showHelp()">Помощь</button>
+  </div>
+
+  <!-- QR Code Modal -->
+  <div class="qr-modal" id="qrModal">
+    <div class="qr-content">
+      <h3 style="color: var(--primary); margin-bottom: 10px;">📱 QR код для импорта</h3>
+      <img class="qr-image" id="qrImage" src="" alt="QR Code">
+      <button class="close-btn" onclick="closeQRModal()">Закрыть</button>
+    </div>
   </div>
 
   <script>
@@ -417,7 +496,8 @@
             'Правила использования VAC VPN:\n\n' +
             '1. Запрещено использование для незаконной деятельности\n' +
             '2. Нельзя передавать аккаунт третьим лицам\n' +
-            '3. Возврат средств возможен в течение 3 дней'
+            '3. Возврат средств возможен в течение 3 дней\n' +
+            '4. VLESS ключ выдается только при активной подписке'
         );
         toggleMenu();
     }
@@ -525,6 +605,8 @@
         const balanceDays = document.getElementById('balanceDays');
         const vpnKeyContainer = document.getElementById('vpnKeyContainer');
         const vpnKeyText = document.getElementById('vpnKeyText');
+        const vlessConfigContainer = document.getElementById('vlessConfigContainer');
+        const vlessButton = document.getElementById('vlessButton');
         const subscribeBtn = document.getElementById('subscribeBtn');
         
         if (userData.has_subscription) {
@@ -534,6 +616,7 @@
                 card.classList.add('disabled');
             });
             subscribeBtn.style.display = 'none';
+            vlessButton.style.display = 'block';
             
             // Показываем оставшиеся дни
             if (userData.days_remaining > 0) {
@@ -547,6 +630,11 @@
                 vpnKeyText.textContent = userData.vpn_key;
                 vpnKeyContainer.style.display = 'block';
             }
+            
+            // Показываем VLESS UUID если есть
+            if (userData.vless_uuid) {
+                document.getElementById('vlessUuidText').textContent = userData.vless_uuid;
+            }
         } else {
             subscriptionBadge.textContent = 'Неактивна';
             subscriptionBadge.className = 'badge inactive-badge';
@@ -555,6 +643,8 @@
             });
             balanceDays.textContent = 'Подписка неактивна';
             vpnKeyContainer.style.display = 'none';
+            vlessConfigContainer.style.display = 'none';
+            vlessButton.style.display = 'none';
         }
     }
 
@@ -707,15 +797,14 @@
             console.log('📊 Payment status:', data);
             
             if (data.status === 'succeeded') {
-                if (data.vpn_key) {
-                    showSuccess('✅ Оплата прошла успешно! VPN ключ активирован.');
-                    // Показываем VPN ключ
-                    document.getElementById('vpnKeyText').textContent = data.vpn_key;
-                    document.getElementById('vpnKeyContainer').style.display = 'block';
+                if (data.vpn_key || data.vless_uuid) {
+                    showSuccess('✅ Оплата прошла успешно! VPN ключ и VLESS конфигурация активированы.');
+                    // Обновляем данные пользователя
+                    await loadUserData();
                 } else {
                     showSuccess('✅ Оплата прошла успешно! Баланс пополнен.');
+                    await loadUserData();
                 }
-                await loadUserData(); // Обновляем данные после успешной оплаты
             } else if (data.status === 'pending') {
                 // Продолжаем проверять каждые 3 секунды
                 setTimeout(() => checkPaymentStatus(paymentId), 3000);
@@ -726,6 +815,108 @@
             console.error('❌ Payment status check error:', error);
             setTimeout(() => checkPaymentStatus(paymentId), 3000);
         }
+    }
+
+    // Функции для работы с VLESS
+    async function getVlessConfig() {
+        try {
+            if (!userId || userId === 'unknown') {
+                showError('Ошибка: откройте приложение через Telegram бота');
+                return;
+            }
+
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            loadingIndicator.style.display = 'block';
+            hideError();
+
+            const response = await fetch(`${API_BASE_URL}/vless-config`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    user_id: userId
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log('🔧 VLESS config response:', data);
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            // Показываем VLESS конфигурацию
+            showVlessConfig(data);
+            
+        } catch (error) {
+            console.error('❌ Error getting VLESS config:', error);
+            showError('Ошибка получения VLESS конфигурации: ' + error.message);
+        } finally {
+            document.getElementById('loadingIndicator').style.display = 'none';
+        }
+    }
+
+    function showVlessConfig(configData) {
+        const vlessConfigContainer = document.getElementById('vlessConfigContainer');
+        const vlessServersList = document.getElementById('vlessServersList');
+        
+        // Обновляем UUID
+        document.getElementById('vlessUuidText').textContent = configData.vless_uuid;
+        
+        // Очищаем список серверов
+        vlessServersList.innerHTML = '';
+        
+        // Добавляем конфиги для каждого сервера
+        configData.configs.forEach((serverConfig, index) => {
+            const serverDiv = document.createElement('div');
+            serverDiv.className = 'server-config';
+            serverDiv.innerHTML = `
+                <strong>Сервер ${index + 1}:</strong> ${serverConfig.config.server}
+                <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button class="copy-btn" onclick="copyVlessLink('${serverConfig.vless_link}')">
+                        📋 Скопировать ссылку
+                    </button>
+                    <button class="copy-btn" onclick="showVlessQR('${serverConfig.qr_code}')">
+                        📱 Показать QR
+                    </button>
+                </div>
+            `;
+            vlessServersList.appendChild(serverDiv);
+        });
+        
+        // Показываем контейнер
+        vlessConfigContainer.style.display = 'block';
+        
+        // Прокручиваем к конфигурации
+        vlessConfigContainer.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function copyVlessLink(link) {
+        navigator.clipboard.writeText(link)
+            .then(() => {
+                tg.showAlert('VLESS ссылка скопирована в буфер обмена!');
+            })
+            .catch(err => {
+                tg.showAlert('Не удалось скопировать ссылку');
+            });
+    }
+
+    function showVlessQR(qrUrl) {
+        const qrModal = document.getElementById('qrModal');
+        const qrImage = document.getElementById('qrImage');
+        
+        qrImage.src = qrUrl;
+        qrModal.style.display = 'flex';
+    }
+
+    function closeQRModal() {
+        const qrModal = document.getElementById('qrModal');
+        qrModal.style.display = 'none';
     }
 
     // Копирование VPN ключа
@@ -790,6 +981,13 @@
         const menuBtn = document.querySelector('.menu-btn');
         if (menu && menuBtn && !menu.contains(e.target) && !menuBtn.contains(e.target)) {
             menu.style.display = 'none';
+        }
+    });
+
+    // Закрытие QR модального окна при клике вне его
+    document.getElementById('qrModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeQRModal();
         }
     });
 
