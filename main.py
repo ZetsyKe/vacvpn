@@ -786,6 +786,117 @@ async def check_subscription_status(user_id: str):
     except Exception as e:
         return {"error": str(e)}
 
+# НОВЫЕ ЭНДПОИНТЫ ДЛЯ ИСПРАВЛЕНИЯ ПРОБЛЕМЫ
+@app.post("/generate-vless-uuid")
+async def generate_vless_uuid_endpoint(request: VlessConfigRequest):
+    """Принудительно генерирует VLESS UUID для пользователя с активной подпиской"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+            
+        user = get_user(request.user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        if not user.get('has_subscription', False):
+            return {"error": "No active subscription"}
+        
+        # Генерируем новый UUID
+        vless_uuid = generate_vless_uuid()
+        logger.info(f"🆔 Generating new VLESS UUID for user {request.user_id}: {vless_uuid}")
+        
+        # Обновляем данные пользователя
+        user_ref = db.collection('users').document(request.user_id)
+        user_ref.update({
+            'vless_uuid': vless_uuid,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        })
+        
+        # Проверяем сохранение
+        updated_user = user_ref.get()
+        if updated_user.exists and updated_user.to_dict().get('vless_uuid') == vless_uuid:
+            logger.info(f"✅ VLESS UUID successfully saved for user {request.user_id}")
+            return {
+                "success": True,
+                "message": "VLESS UUID generated successfully",
+                "vless_uuid": vless_uuid
+            }
+        else:
+            logger.error(f"❌ Failed to save VLESS UUID for user {request.user_id}")
+            return {"error": "Failed to save VLESS UUID"}
+            
+    except Exception as e:
+        logger.error(f"❌ Error generating VLESS UUID: {e}")
+        return {"error": f"Error generating VLESS UUID: {str(e)}"}
+
+@app.post("/fix-subscription")
+async def fix_subscription_endpoint(request: VlessConfigRequest):
+    """Исправляет подписку пользователя - генерирует UUID если его нет"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+            
+        user = get_user(request.user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        if not user.get('has_subscription', False):
+            return {"error": "No active subscription"}
+        
+        vless_uuid = user.get('vless_uuid')
+        
+        if not vless_uuid:
+            # Генерируем новый UUID
+            vless_uuid = generate_vless_uuid()
+            logger.info(f"🔧 Fixing subscription for user {request.user_id}, generating UUID: {vless_uuid}")
+            
+            # Обновляем данные пользователя
+            user_ref = db.collection('users').document(request.user_id)
+            user_ref.update({
+                'vless_uuid': vless_uuid,
+                'updated_at': firestore.SERVER_TIMESTAMP
+            })
+            
+            return {
+                "success": True,
+                "message": "Subscription fixed - VLESS UUID generated",
+                "vless_uuid": vless_uuid
+            }
+        else:
+            return {
+                "success": True,
+                "message": "Subscription already has VLESS UUID",
+                "vless_uuid": vless_uuid
+            }
+            
+    except Exception as e:
+        logger.error(f"❌ Error fixing subscription: {e}")
+        return {"error": f"Error fixing subscription: {str(e)}"}
+
+@app.post("/debug-user")
+async def debug_user_endpoint(request: VlessConfigRequest):
+    """Отладочная информация о пользователе"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+            
+        user = get_user(request.user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        return {
+            "success": True,
+            "user_data": user,
+            "has_subscription": user.get('has_subscription', False),
+            "vless_uuid": user.get('vless_uuid'),
+            "subscription_end": user.get('subscription_end'),
+            "tariff_type": user.get('tariff_type')
+        }
+            
+    except Exception as e:
+        logger.error(f"❌ Error getting debug info: {e}")
+        return {"error": f"Error getting debug info: {str(e)}"}
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
