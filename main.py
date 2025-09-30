@@ -97,6 +97,10 @@ class InitUserRequest(BaseModel):
     first_name: str = ""
     last_name: str = ""
 
+class UpdateBalanceRequest(BaseModel):
+    user_id: str
+    amount: float
+
 # Функции работы с Firebase
 def get_user(user_id: str):
     if not db: 
@@ -135,16 +139,22 @@ def create_user(user_data: UserCreateRequest):
 def update_user_balance(user_id: str, amount: float):
     if not db: 
         logger.error("❌ Database not connected")
-        return
+        return False
     try:
         user_ref = db.collection('users').document(user_id)
         user = user_ref.get()
         if user.exists:
             current_balance = user.to_dict().get('balance', 0)
-            user_ref.update({'balance': current_balance + amount})
-            logger.info(f"✅ Balance updated for user {user_id}: +{amount}")
+            new_balance = current_balance + amount
+            user_ref.update({'balance': new_balance})
+            logger.info(f"✅ Balance updated for user {user_id}: {current_balance} -> {new_balance} (+{amount})")
+            return True
+        else:
+            logger.error(f"❌ User {user_id} not found")
+            return False
     except Exception as e:
         logger.error(f"❌ Error updating balance: {e}")
+        return False
 
 def generate_vpn_key():
     """Генерирует уникальный VPN ключ"""
@@ -224,18 +234,21 @@ def get_payment(payment_id: str):
 def add_referral(referrer_id: str, referred_id: str):
     if not db: 
         logger.error("❌ Database not connected")
-        return
+        return False
     try:
         referral_id = f"{referrer_id}_{referred_id}"
         db.collection('referrals').document(referral_id).set({
             'referrer_id': referrer_id,
             'referred_id': referred_id,
-            'bonus_paid': False,
+            'bonus_paid': True,  # Устанавливаем сразу как оплаченный
+            'bonus_amount': 50.0,
             'created_at': firestore.SERVER_TIMESTAMP
         })
         logger.info(f"✅ Referral added: {referrer_id} -> {referred_id}")
+        return True
     except Exception as e:
         logger.error(f"❌ Error adding referral: {e}")
+        return False
 
 def get_referrals(referrer_id: str):
     if not db: 
@@ -518,9 +531,42 @@ async def add_referral_endpoint(referrer_id: str, referred_id: str):
         if referrer_id == referred_id:
             return {"error": "Cannot refer yourself"}
         
-        add_referral(referrer_id, referred_id)
-        return {"success": True}
+        success = add_referral(referrer_id, referred_id)
+        if success:
+            return {"success": True, "message": "Referral added successfully"}
+        else:
+            return {"error": "Failed to add referral"}
     except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/update-balance")
+async def update_balance_endpoint(request: UpdateBalanceRequest):
+    """Эндпоинт для обновления баланса пользователя"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        logger.info(f"🔄 Updating balance for user {request.user_id}: +{request.amount}₽")
+        
+        # Обновляем баланс
+        success = update_user_balance(request.user_id, request.amount)
+        
+        if success:
+            # Получаем обновленные данные пользователя для подтверждения
+            user = get_user(request.user_id)
+            if user:
+                return {
+                    "success": True, 
+                    "message": f"Баланс обновлен на +{request.amount}₽",
+                    "new_balance": user.get('balance', 0)
+                }
+            else:
+                return {"error": "User not found after update"}
+        else:
+            return {"error": "Failed to update balance"}
+            
+    except Exception as e:
+        logger.error(f"❌ Error updating balance: {e}")
         return {"error": str(e)}
 
 @app.post("/activate-tariff")
