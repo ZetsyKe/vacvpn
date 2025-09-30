@@ -10,6 +10,8 @@ from pydantic import BaseModel
 import logging
 import secrets
 import string
+import json
+import tempfile
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -26,53 +28,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Инициализация Firebase с детальной диагностикой
+# Инициализация Firebase
 try:
     if not firebase_admin._apps:
-        private_key = os.getenv("FIREBASE_PRIVATE_KEY", "")
+        # Способ 1: Попробуем загрузить из полного JSON
+        firebase_credentials_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
         
-        # Детальная диагностика формата ключа
-        logger.info("=== FIREBASE PRIVATE KEY DIAGNOSTICS ===")
-        logger.info(f"Key length: {len(private_key)}")
-        
-        if private_key:
-            lines = private_key.split('\n')
-            logger.info(f"Number of lines: {len(lines)}")
-            logger.info(f"First line: '{lines[0]}'")
-            logger.info(f"Last line: '{lines[-1]}'")
+        if firebase_credentials_json:
+            logger.info("🚀 Initializing Firebase from FIREBASE_CREDENTIALS_JSON")
+            firebase_config = json.loads(firebase_credentials_json)
+            cred = credentials.Certificate(firebase_config)
+        else:
+            # Способ 2: Собираем конфиг из отдельных переменных
+            logger.info("🚀 Initializing Firebase from individual environment variables")
             
-            # Проверяем требования PEM формата
-            has_begin = "BEGIN PRIVATE KEY" in private_key
-            has_end = "END PRIVATE KEY" in private_key
-            logger.info(f"Has BEGIN: {has_begin}")
-            logger.info(f"Has END: {has_end}")
+            private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n')
             
-            # Проверяем длину строк (кроме первой и последней)
-            if len(lines) > 2:
-                middle_lines = lines[1:-1]
-                valid_line_lengths = all(len(line) == 64 for line in middle_lines if line.strip())
-                logger.info(f"All middle lines are 64 chars: {valid_line_lengths}")
+            if not private_key:
+                raise ValueError("FIREBASE_PRIVATE_KEY environment variable is empty")
+            
+            firebase_config = {
+                "type": "service_account",
+                "project_id": os.getenv("FIREBASE_PROJECT_ID", "vacvpn-75yegf"),
+                "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID", "8e6469cea94608d13c03d57a60f70ad7269e9421"),
+                "private_key": private_key,
+                "client_email": os.getenv("FIREBASE_CLIENT_EMAIL", "firebase-adminsdk-fbsvc@vacvpn-75yegf.iam.gserviceaccount.com"),
+                "client_id": os.getenv("FIREBASE_CLIENT_ID", "118426875107507915166"),
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_X509_CERT_URL", "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40vacvpn-75yegf.iam.gserviceaccount.com"),
+                "universe_domain": "googleapis.com"
+            }
+            
+            cred = credentials.Certificate(firebase_config)
         
-        if not private_key:
-            raise Exception("FIREBASE_PRIVATE_KEY is empty")
-        if not has_begin or not has_end:
-            raise Exception("PEM file missing BEGIN/END headers")
-        
-        # Используем ключ как есть
-        firebase_config = {
-            "type": "service_account",
-            "project_id": os.getenv("FIREBASE_PROJECT_ID", "vacvpn-75yegf"),
-            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID", "98df7d90549a40d34c0a3ee2c8e028e232e73e98"),
-            "private_key": private_key,
-            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL", "firebase-adminsdk-fbsvc@vacvpn-75yegf.iam.gserviceaccount.com"),
-            "client_id": os.getenv("FIREBASE_CLIENT_ID", "118426875107507915166"),
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_X509_CERT_URL", "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40vacvpn-75yegf.iam.gserviceaccount.com")
-        }
-        
-        cred = credentials.Certificate(firebase_config)
         firebase_admin.initialize_app(cred)
     
     db = firestore.client()
@@ -80,6 +70,8 @@ try:
     
 except Exception as e:
     logger.error(f"❌ Firebase initialization failed: {str(e)}")
+    import traceback
+    logger.error(traceback.format_exc())
     db = None
 
 # Модели данных
