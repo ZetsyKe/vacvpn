@@ -142,6 +142,14 @@
     .button-outline:active {
       background: rgba(176, 203, 31, 0.1);
     }
+    .button-fix {
+      background: #ff4444;
+      color: white;
+      border: 2px solid #ff4444;
+    }
+    .button-fix:active {
+      background: #cc3333;
+    }
     .tariff-grid {
       display: grid;
       gap: 16px;
@@ -282,6 +290,13 @@
       margin-top: 10px;
       display: none;
     }
+    .info-message {
+      color: #4fc3f7;
+      font-size: 14px;
+      text-align: center;
+      margin-top: 10px;
+      display: none;
+    }
     .subscription-status {
       color: var(--primary);
       font-size: 14px;
@@ -389,10 +404,12 @@
     <button class="button button-yellow" id="paymentButton" onclick="createPayment()">ПОПОЛНИТЬ БАЛАНС</button>
     <button class="button button-outline" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</button>
     <button class="button button-outline" id="vlessButton" onclick="getVlessConfig()" style="display: none;">ПОЛУЧИТЬ VLESS КОНФИГ</button>
+    <button class="button button-fix" id="fixSubscriptionButton" onclick="fixSubscription()" style="display: none;">ИСПРАВИТЬ ПОДПИСКУ</button>
     
     <div class="loading" id="loadingIndicator">Подождите, идет обработка...</div>
     <div class="error-message" id="errorMessage"></div>
     <div class="success-message" id="successMessage"></div>
+    <div class="info-message" id="infoMessage"></div>
   </div>
 
   <div class="card" id="tariffBlock">
@@ -506,6 +523,42 @@
         document.getElementById('subscribeBtn').style.display = 'block';
     }
 
+    // Автоматическое исправление подписки
+    async function autoFixSubscription() {
+        try {
+            console.log('🔄 Checking for subscription issues...');
+            
+            const response = await fetch(`${API_BASE_URL}/auto-fix-subscription`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    user_id: userId
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log('🔧 Auto-fix result:', data);
+            
+            if (data.auto_fixed) {
+                console.log('✅ Subscription auto-fixed!');
+                showInfo('🔧 Подписка автоматически исправлена! UUID сгенерирован.');
+                return true;
+            }
+            
+            return false;
+            
+        } catch (error) {
+            console.error('❌ Auto-fix error:', error);
+            return false;
+        }
+    }
+
     // Инициализация пользователя при загрузке
     async function initUser() {
         try {
@@ -548,7 +601,7 @@
         }
     }
 
-    // Загрузка данных пользователя
+    // Загрузка данных пользователя с автоматическим исправлением
     async function loadUserData() {
         try {
             console.log('🔄 Loading user data for:', userId);
@@ -570,6 +623,20 @@
                 throw new Error(userData.error);
             }
             
+            // Проверяем и автоматически исправляем подписку если нужно
+            if (userData.has_subscription && !userData.vless_uuid) {
+                console.log('⚠️ Subscription issue detected: has subscription but no UUID');
+                const fixed = await autoFixSubscription();
+                if (fixed) {
+                    // Перезагружаем данные после исправления
+                    const newResponse = await fetch(`${API_BASE_URL}/user-data?user_id=${userId}`);
+                    if (newResponse.ok) {
+                        userData = await newResponse.json();
+                        console.log('📊 User data after auto-fix:', userData);
+                    }
+                }
+            }
+            
             // Обновляем интерфейс
             updateUserInterface(userData);
             
@@ -589,6 +656,7 @@
         const balanceDays = document.getElementById('balanceDays');
         const vlessConfigContainer = document.getElementById('vlessConfigContainer');
         const vlessButton = document.getElementById('vlessButton');
+        const fixSubscriptionButton = document.getElementById('fixSubscriptionButton');
         const subscribeBtn = document.getElementById('subscribeBtn');
         
         if (userData.has_subscription) {
@@ -598,7 +666,6 @@
                 card.classList.add('disabled');
             });
             subscribeBtn.style.display = 'none';
-            vlessButton.style.display = 'block';
             
             // Показываем оставшиеся дни
             if (userData.days_remaining > 0) {
@@ -607,9 +674,18 @@
                 balanceDays.textContent = 'Подписка активна';
             }
             
-            // Показываем VLESS UUID если есть
+            // Показываем соответствующие кнопки
             if (userData.vless_uuid) {
+                // Все в порядке - показываем кнопку получения конфига
+                vlessButton.style.display = 'block';
+                fixSubscriptionButton.style.display = 'none';
+                
+                // Показываем VLESS UUID если есть
                 document.getElementById('vlessUuidText').textContent = userData.vless_uuid;
+            } else {
+                // Есть подписка но нет UUID - показываем кнопку исправления
+                vlessButton.style.display = 'none';
+                fixSubscriptionButton.style.display = 'block';
             }
         } else {
             subscriptionBadge.textContent = 'Неактивна';
@@ -620,6 +696,7 @@
             balanceDays.textContent = 'Подписка неактивна';
             vlessConfigContainer.style.display = 'none';
             vlessButton.style.display = 'none';
+            fixSubscriptionButton.style.display = 'none';
         }
     }
 
@@ -628,6 +705,7 @@
         try {
             hideError();
             hideSuccess();
+            hideInfo();
             
             if (!userId || userId === 'unknown') {
                 showError('Ошибка: откройте приложение через Telegram бота');
@@ -704,6 +782,8 @@
             loadingIndicator.style.display = 'block';
             subscribeBtn.disabled = true;
             hideError();
+            hideSuccess();
+            hideInfo();
 
             const tariffId = selected.id.replace('tariff', '');
             const tariffMap = {"1month": "month", "1year": "year"};
@@ -803,6 +883,8 @@
             const loadingIndicator = document.getElementById('loadingIndicator');
             loadingIndicator.style.display = 'block';
             hideError();
+            hideSuccess();
+            hideInfo();
 
             const response = await fetch(`${API_BASE_URL}/vless-config`, {
                 method: "POST",
@@ -831,6 +913,54 @@
         } catch (error) {
             console.error('❌ Error getting VLESS config:', error);
             showError('Ошибка получения VLESS конфигурации: ' + error.message);
+        } finally {
+            document.getElementById('loadingIndicator').style.display = 'none';
+        }
+    }
+
+    // Функция для ручного исправления подписки
+    async function fixSubscription() {
+        try {
+            if (!userId || userId === 'unknown') {
+                showError('Ошибка: откройте приложение через Telegram бота');
+                return;
+            }
+
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            loadingIndicator.style.display = 'block';
+            hideError();
+            hideSuccess();
+            hideInfo();
+
+            const response = await fetch(`${API_BASE_URL}/fix-subscription`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    user_id: userId
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log('🔧 Fix subscription response:', data);
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            showSuccess('✅ Подписка исправлена! UUID сгенерирован.');
+            
+            // Обновляем данные пользователя
+            await loadUserData();
+            
+        } catch (error) {
+            console.error('❌ Error fixing subscription:', error);
+            showError('Ошибка исправления подписки: ' + error.message);
         } finally {
             document.getElementById('loadingIndicator').style.display = 'none';
         }
@@ -936,6 +1066,17 @@
 
     function hideSuccess() {
         document.getElementById('successMessage').style.display = 'none';
+    }
+
+    function showInfo(message) {
+        const infoElement = document.getElementById('infoMessage');
+        infoElement.textContent = message;
+        infoElement.style.display = 'block';
+        setTimeout(() => infoElement.style.display = 'none', 5000);
+    }
+
+    function hideInfo() {
+        document.getElementById('infoMessage').style.display = 'none';
     }
 
     // Закрытие меню при клике вне его
