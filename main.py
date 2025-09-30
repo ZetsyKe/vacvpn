@@ -223,22 +223,42 @@ def activate_subscription(user_id: str, tariff: str, days: int):
         
         # Генерируем UUID для VLESS
         vless_uuid = generate_vless_uuid()
+        logger.info(f"🆔 Generated VLESS UUID for user {user_id}: {vless_uuid}")
         
         # Обновляем данные пользователя
         user_ref = db.collection('users').document(user_id)
-        user_ref.update({
+        
+        # Получаем текущие данные пользователя
+        user_doc = user_ref.get()
+        if not user_doc.exists:
+            logger.error(f"❌ User {user_id} not found in database")
+            return None, None
+            
+        update_data = {
             'has_subscription': True,
             'subscription_end': new_end.isoformat(),
             'tariff_type': tariff,
             'vless_uuid': vless_uuid,
             'subscription_active': True,
             'updated_at': firestore.SERVER_TIMESTAMP
-        })
+        }
         
+        user_ref.update(update_data)
         logger.info(f"✅ Subscription activated for user {user_id}: {days} days, UUID: {vless_uuid}")
+        
+        # Проверяем что данные сохранились
+        updated_user = user_ref.get()
+        if updated_user.exists:
+            saved_uuid = updated_user.to_dict().get('vless_uuid')
+            logger.info(f"✅ UUID saved in database: {saved_uuid}")
+        else:
+            logger.error("❌ Failed to verify UUID save")
+            
         return new_end, vless_uuid
     except Exception as e:
         logger.error(f"❌ Error activating subscription: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return None, None
 
 def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_type: str = "tariff"):
@@ -514,12 +534,14 @@ async def check_payment(payment_id: str, user_id: str):
             return {"error": "Payment not found"}
         
         if payment['status'] == 'succeeded':
+            # Получаем обновленные данные пользователя
+            user = get_user(user_id)
             return {
                 "success": True,
                 "status": "succeeded",
                 "payment_id": payment_id,
                 "amount": payment['amount'],
-                "vless_uuid": get_user(user_id).get('vless_uuid') if get_user(user_id) else None
+                "vless_uuid": user.get('vless_uuid') if user else None
             }
         
         yookassa_id = payment.get('yookassa_id')
@@ -551,6 +573,10 @@ async def check_payment(payment_id: str, user_id: str):
                             tariff_days = 30 if tariff == "month" else 365
                             new_end, vless_uuid = activate_subscription(user_id, tariff, tariff_days)
                             
+                            if not vless_uuid:
+                                logger.error(f"❌ Failed to activate subscription for user {user_id}")
+                                return {"error": "Failed to activate subscription"}
+                            
                             # Начисляем реферальный бонус
                             referrals = get_referrals(user_id)
                             for ref in referrals:
@@ -560,7 +586,8 @@ async def check_payment(payment_id: str, user_id: str):
                         else:
                             # Просто пополняем баланс
                             update_user_balance(user_id, amount)
-                            vless_uuid = get_user(user_id).get('vless_uuid') if get_user(user_id) else None
+                            user = get_user(user_id)
+                            vless_uuid = user.get('vless_uuid') if user else None
                     
                         return {
                             "success": True,
@@ -651,6 +678,9 @@ async def activate_tariff(request: ActivateTariffRequest):
         tariff_days = 30 if request.tariff == "month" else 365
         new_end, vless_uuid = activate_subscription(request.user_id, request.tariff, tariff_days)
         
+        if not vless_uuid:
+            return {"error": "Failed to generate VLESS configuration"}
+        
         return {
             "success": True, 
             "days_added": tariff_days, 
@@ -658,6 +688,7 @@ async def activate_tariff(request: ActivateTariffRequest):
         }
         
     except Exception as e:
+        logger.error(f"❌ Error activating tariff: {e}")
         return {"error": str(e)}
 
 @app.post("/vless-config")
@@ -673,6 +704,10 @@ async def get_vless_config(request: VlessConfigRequest):
         
         vless_uuid = user.get('vless_uuid')
         if not vless_uuid:
+            logger.error(f"❌ VLESS UUID not found for user {request.user_id}")
+            # Проверяем есть ли подписка
+            if user.get('has_subscription'):
+                logger.error(f"❌ User {request.user_id} has subscription but no UUID")
             return {"error": "VLESS UUID not found. Activate subscription first."}
         
         if not user.get('has_subscription', False):
