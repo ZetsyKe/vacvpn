@@ -394,7 +394,7 @@
     </div>
     
     <button class="button button-yellow" id="paymentButton" onclick="createPayment()">ПОПОЛНИТЬ БАЛАНС</button>
-    <button class="button button-yellow" onclick="scrollToTariffs()">СМЕНИТЬ ТАРИФ</button>
+    <button class="button button-yellow" onclick="scrollToTariffs()">КУПИТЬ/СМЕНИТЬ ТАРИФ</button>
     <button class="button button-outline" id="vlessButton" onclick="getVlessConfig()" style="display: none;">ПОЛУЧИТЬ VLESS КОНФИГ</button>
     
     <div class="loading" id="loadingIndicator">Подождите, идет обработка...</div>
@@ -407,19 +407,20 @@
       <div class="tariff-card" id="tariff1month" onclick="selectTariff('1month')">
         <div class="tariff-dot"></div>
         <div class="tariff-label">Месячный</div>
-        <div class="tariff-price">150₽<span class="tariff-period">/мес</span></div>
+        <div class="tariff-price">150₽</div>
         <div class="tariff-trial">5₽ в день</div>
-        <div class="tariff-description">Ежедневное списание 5₽ с баланса + VLESS ключ</div>
+        <div class="tariff-description">Стоимость списывается с баланса. Ежедневное списание 5₽</div>
       </div>
       <div class="tariff-card" id="tariff1year" onclick="selectTariff('1year')">
         <div class="tariff-dot"></div>
         <div class="tariff-label">Годовой</div>
-        <div class="tariff-price">150₽<span class="tariff-period">/год</span></div>
-        <div class="tariff-trial">0.41₽ в день</div>
-        <div class="tariff-description">Ежедневное списание 0.41₽ с баланса + VLESS ключ</div>
+        <div class="tariff-price">1300₽</div>
+        <div class="tariff-trial">3.56₽ в день</div>
+        <div class="tariff-description">Стоимость списывается с баланса. Ежедневное списание 3.56₽</div>
       </div>
     </div>
-    <button class="button button-yellow" id="subscribeBtn" style="display:none;" onclick="activateSubscription()">ПОДКЛЮЧИТЬ ПОДПИСКУ</button>
+    <button class="button button-yellow" id="buyTariffBtn" style="display:none;" onclick="buyTariff()">КУПИТЬ ТАРИФ</button>
+    <button class="button button-yellow" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИТЬ ТАРИФ</button>
   </div>
 
   <div class="card">
@@ -466,6 +467,8 @@
 
     // Переменные для хранения данных
     let currentPaymentId = null;
+    let currentTariff = null;
+    let hasSubscription = false;
 
     // Инициализация интерфейса
     document.getElementById('userName').textContent = userName;
@@ -511,7 +514,18 @@
             card.classList.remove('selected');
         });
         document.getElementById(`tariff${id}`).classList.add('selected');
-        document.getElementById('subscribeBtn').style.display = 'block';
+        
+        const tariffMap = {"1month": "month", "1year": "year"};
+        currentTariff = tariffMap[id];
+        
+        // Показываем соответствующую кнопку
+        if (hasSubscription) {
+            document.getElementById('changeTariffBtn').style.display = 'block';
+            document.getElementById('buyTariffBtn').style.display = 'none';
+        } else {
+            document.getElementById('buyTariffBtn').style.display = 'block';
+            document.getElementById('changeTariffBtn').style.display = 'none';
+        }
     }
 
     // Инициализация пользователя при загрузке
@@ -592,22 +606,25 @@
         const balance = userData.balance || 0;
         document.getElementById('userBalance').textContent = `${balance}₽`;
         
+        // Сохраняем статус подписки
+        hasSubscription = userData.has_subscription || false;
+        currentTariff = userData.current_tariff;
+        
         // Обновляем статус подписки
         const subscriptionBadge = document.getElementById('subscriptionBadge');
         const balanceDays = document.getElementById('balanceDays');
         const dailyCostElement = document.getElementById('dailyCost');
         const vlessConfigContainer = document.getElementById('vlessConfigContainer');
         const vlessButton = document.getElementById('vlessButton');
-        const subscribeBtn = document.getElementById('subscribeBtn');
+        const buyTariffBtn = document.getElementById('buyTariffBtn');
+        const changeTariffBtn = document.getElementById('changeTariffBtn');
         
-        if (userData.has_subscription) {
+        if (hasSubscription) {
             subscriptionBadge.textContent = 'Активна';
             subscriptionBadge.className = 'badge active-badge';
-            document.querySelectorAll('.tariff-card').forEach(card => {
-                card.classList.add('disabled');
-            });
-            subscribeBtn.style.display = 'none';
             vlessButton.style.display = 'block';
+            buyTariffBtn.style.display = 'none';
+            changeTariffBtn.style.display = 'block';
             
             // Показываем ежедневную стоимость
             if (userData.daily_cost > 0) {
@@ -615,15 +632,11 @@
                 dailyCostElement.style.display = 'block';
             }
             
-            // Обновляем информацию о балансе
-            const currentTariff = userData.current_tariff;
-            let tariffName = '';
+            // Обновляем информацию о тарифе
             if (currentTariff === 'month') {
-                tariffName = 'Месячный';
-                balanceDays.textContent = `Активен месячный тариф (5₽/день)`;
+                balanceDays.textContent = `Активен месячный тариф`;
             } else if (currentTariff === 'year') {
-                tariffName = 'Годовой';
-                balanceDays.textContent = `Активен годовой тариф (0.41₽/день)`;
+                balanceDays.textContent = `Активен годовой тариф`;
             } else {
                 balanceDays.textContent = 'Подписка активна';
             }
@@ -632,20 +645,31 @@
             if (userData.vless_uuid) {
                 document.getElementById('vlessUuidText').textContent = userData.vless_uuid;
             }
+            
+            // Выбираем текущий тариф
+            if (currentTariff === 'month') {
+                selectTariff('1month');
+            } else if (currentTariff === 'year') {
+                selectTariff('1year');
+            }
         } else {
             subscriptionBadge.textContent = 'Неактивна';
             subscriptionBadge.className = 'badge inactive-badge';
-            document.querySelectorAll('.tariff-card').forEach(card => {
-                card.classList.remove('disabled');
-            });
             balanceDays.textContent = 'Подписка неактивна';
             dailyCostElement.style.display = 'none';
             vlessConfigContainer.style.display = 'none';
             vlessButton.style.display = 'none';
+            buyTariffBtn.style.display = 'block';
+            changeTariffBtn.style.display = 'none';
+            
+            // Сбрасываем выбор тарифов
+            document.querySelectorAll('.tariff-card').forEach(card => {
+                card.classList.remove('selected');
+            });
         }
     }
 
-    // Основная функция оплаты
+    // Основная функция оплаты (пополнение баланса)
     async function createPayment() {
         try {
             hideError();
@@ -669,7 +693,7 @@
                 },
                 body: JSON.stringify({
                     user_id: userId,
-                    amount: 150,
+                    amount: 100,
                     payment_type: "balance"
                 })
             });
@@ -706,10 +730,9 @@
         }
     }
 
-    // Функция активации подписки
-    async function activateSubscription() {
-        const selected = document.querySelector('.tariff-card.selected');
-        if (!selected) {
+    // Покупка тарифа
+    async function buyTariff() {
+        if (!currentTariff) {
             showError("Пожалуйста, выберите тарифный план");
             return;
         }
@@ -721,17 +744,13 @@
             }
 
             const loadingIndicator = document.getElementById('loadingIndicator');
-            const subscribeBtn = document.getElementById('subscribeBtn');
+            const buyTariffBtn = document.getElementById('buyTariffBtn');
 
             loadingIndicator.style.display = 'block';
-            subscribeBtn.disabled = true;
+            buyTariffBtn.disabled = true;
             hideError();
 
-            const tariffId = selected.id.replace('tariff', '');
-            const tariffMap = {"1month": "month", "1year": "year"};
-            const tariff = tariffMap[tariffId];
-
-            console.log('🎯 Activating subscription:', { tariff });
+            console.log('🎯 Buying tariff:', { tariff: currentTariff });
 
             const response = await fetch(`${API_BASE_URL}/activate-tariff`, {
                 method: "POST",
@@ -740,7 +759,7 @@
                 },
                 body: JSON.stringify({
                     user_id: userId,
-                    tariff: tariff
+                    tariff: currentTariff
                 })
             });
 
@@ -749,24 +768,83 @@
             }
 
             const data = await response.json();
-            console.log('🔧 Subscription activation response:', data);
+            console.log('🔧 Tariff purchase response:', data);
             
             if (data.error) {
                 throw new Error(data.error);
             }
 
             if (data.success) {
-                showSuccess(`✅ Подписка "${tariff === 'month' ? 'Месячный' : 'Годовой'}" успешно активирована! Ежедневное списание: ${data.daily_cost}₽`);
+                showSuccess(`✅ Тариф "${data.tariff_name}" успешно активирован! Ежедневное списание: ${data.daily_cost}₽`);
                 // Обновляем данные пользователя
                 await loadUserData();
             } else {
-                showError(data.error || "Ошибка активации подписки");
+                showError(data.error || "Ошибка покупки тарифа");
             }
         } catch (error) {
             showError(error.message);
         } finally {
             document.getElementById('loadingIndicator').style.display = 'none';
-            document.getElementById('subscribeBtn').disabled = false;
+            document.getElementById('buyTariffBtn').disabled = false;
+        }
+    }
+
+    // Смена тарифа
+    async function changeTariff() {
+        if (!currentTariff) {
+            showError("Пожалуйста, выберите новый тарифный план");
+            return;
+        }
+
+        try {
+            if (!userId || userId === 'unknown') {
+                showError('Ошибка: откройте приложение через Telegram бота');
+                return;
+            }
+
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const changeTariffBtn = document.getElementById('changeTariffBtn');
+
+            loadingIndicator.style.display = 'block';
+            changeTariffBtn.disabled = true;
+            hideError();
+
+            console.log('🔄 Changing tariff to:', currentTariff);
+
+            const response = await fetch(`${API_BASE_URL}/change-tariff`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    user_id: userId,
+                    new_tariff: currentTariff
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log('🔧 Tariff change response:', data);
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            if (data.success) {
+                showSuccess(`✅ Тариф успешно изменен на "${data.new_tariff_name}"! Ежедневное списание: ${data.daily_cost}₽`);
+                // Обновляем данные пользователя
+                await loadUserData();
+            } else {
+                showError(data.error || "Ошибка смены тарифа");
+            }
+        } catch (error) {
+            showError(error.message);
+        } finally {
+            document.getElementById('loadingIndicator').style.display = 'none';
+            document.getElementById('changeTariffBtn').disabled = false;
         }
     }
 
