@@ -345,12 +345,6 @@
       cursor: pointer;
       margin-top: 10px;
     }
-    .tariff-savings {
-      color: #4CAF50;
-      font-size: 12px;
-      font-weight: 600;
-      margin-top: 4px;
-    }
   </style>
 </head>
 <body>
@@ -409,78 +403,46 @@
   </div>
 
   <div class="card" id="tariffBlock">
-    <h3 style="color: var(--primary); margin-bottom: 16px; text-align: center;">📦 ВЫБЕРИТЕ ТАРИФ</h3>
     <div class="tariff-grid">
       <div class="tariff-card" id="tariff1month" onclick="selectTariff('1month')">
         <div class="tariff-dot"></div>
-        <div class="tariff-label">Месячный тариф</div>
+        <div class="tariff-label">Месячный</div>
         <div class="tariff-price">150₽</div>
         <div class="tariff-trial">5₽ в день</div>
-        <div class="tariff-description">Доступ к VPN на 30 дней. Ежедневное списание 5₽ с баланса.</div>
+        <div class="tariff-description">Стоимость списывается с баланса. Ежедневное списание 5₽</div>
       </div>
       <div class="tariff-card" id="tariff1year" onclick="selectTariff('1year')">
         <div class="tariff-dot"></div>
-        <div class="tariff-label">Годовой тариф</div>
+        <div class="tariff-label">Годовой</div>
         <div class="tariff-price">1300₽</div>
         <div class="tariff-trial">3.56₽ в день</div>
-        <div class="tariff-savings">✅ Экономия 500₽</div>
-        <div class="tariff-description">Доступ к VPN на 365 дней. Ежедневное списание 3.56₽ с баланса.</div>
+        <div class="tariff-description">Стоимость списывается с баланса. Ежедневное списание 3.56₽</div>
       </div>
     </div>
-    
-    <div style="margin: 16px 0; padding: 12px; background: rgba(176, 203, 31, 0.1); border-radius: 8px;">
-      <div style="font-size: 14px; font-weight: 600; color: var(--primary); margin-bottom: 8px;">💡 Как это работает:</div>
-      <div style="font-size: 13px; opacity: 0.9; line-height: 1.4;">
-        • Пополните баланс на сумму выбранного тарифа<br>
-        • Нажмите "КУПИТЬ ТАРИФ" для активации<br>
-        • Стоимость спишется с баланса единоразово<br>
-        • Ежедневно будет списываться указанная сумма<br>
-        • При нулевом балансе подписка приостанавливается
-      </div>
-    </div>
-    
     <button class="button button-yellow" id="buyTariffBtn" style="display:none;" onclick="buyTariff()">КУПИТЬ ТАРИФ</button>
     <button class="button button-yellow" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИТЬ ТАРИФ</button>
   </div>
 
   <div class="card">
     <div class="referral-block">
-      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-        <span style="font-size: 18px;">👥</span>
-        <span style="font-weight: 600; color: var(--primary);">Реферальная программа</span>
-      </div>
       <div class="referral-description">
-        Пригласите друзей и получайте <strong>50₽ за каждого</strong> приглашенного пользователя, который оплатит подписку. Ваш друг также получит <strong>10₽ на баланс</strong> при регистрации!
+        Пригласите друзей и получайте 50₽ за каждого приглашенного пользователя, который оплатит подписку.
       </div>
-      <div style="margin: 12px 0;">
-        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 4px;">Ваша реферальная ссылка:</div>
-        <div class="ref-link-box">
-          <span class="ref-link-text" id="refLink">Загрузка ссылки...</span>
-          <button class="copy-btn" onclick="copyRef()">Скопировать</button>
-        </div>
-      </div>
-      <div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 8px;">
-        <div>
-          <strong style="color: var(--primary);" id="refCount">0</strong>
-          <div>приглашено</div>
-        </div>
-        <div>
-          <strong style="color: var(--primary);" id="refEarned">0₽</strong>
-          <div>заработано</div>
-        </div>
+      <div class="ref-link-box">
+        <span class="ref-link-text" id="refLink">Загрузка ссылки...</span>
+        <button class="copy-btn" onclick="copyRef()">Скопировать</button>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <button class="button-help" onclick="showHelp()">🆘 Помощь и поддержка</button>
+    <button class="button-help" onclick="showHelp()">Помощь</button>
   </div>
 
   <!-- QR Code Modal -->
   <div class="qr-modal" id="qrModal">
     <div class="qr-content">
       <h3 style="color: var(--primary); margin-bottom: 10px;">📱 QR код для импорта</h3>
-      <p style="font-size: 14px; margin-bottom: 10px; opacity: 0.8;">Отсканируйте код в приложении VPN</p>
       <img class="qr-image" id="qrImage" src="" alt="QR Code">
       <button class="close-btn" onclick="closeQRModal()">Закрыть</button>
     </div>
@@ -507,25 +469,6 @@
     let currentPaymentId = null;
     let currentTariff = null;
     let hasSubscription = false;
-    let userBalance = 0;
-
-    // Тарифные планы
-    const tariffPlans = {
-      '1month': {
-        id: 'month',
-        name: 'Месячный',
-        price: 150,
-        dailyCost: 5,
-        description: 'Доступ к VPN на 30 дней'
-      },
-      '1year': {
-        id: 'year', 
-        name: 'Годовой',
-        price: 1300,
-        dailyCost: 3.56,
-        description: 'Доступ к VPN на 365 дней'
-      }
-    };
 
     // Инициализация интерфейса
     document.getElementById('userName').textContent = userName;
@@ -544,20 +487,12 @@
 
     function showRules() {
         tg.showAlert(
-            '📋 Правила использования VAC VPN:\n\n' +
-            '✅ Разрешено:\n' +
-            '• Обход блокировок сайтов\n' +
-            '• Защита трафика в публичных сетях\n' \\
-            '• Легальное использование\n\n' +
-            '❌ Запрещено:\n' +
-            '• Нелегальная деятельность\n' +
-            '• Рассылка спама\n' +
-            '• Атаки на сети\n' +
-            '• Передача аккаунта третьим лицам\n\n' +
-            '💡 Условия:\n' +
-            '• Возврат средств в течение 3 дней\n' +
-            '• VLESS ключ только при активной подписке\n' +
-            '• Подписка работает по ежедневному списанию'
+            'Правила использования VAC VPN:\n\n' +
+            '1. Запрещено использование для незаконной деятельности\n' +
+            '2. Нельзя передавать аккаунт третьим лицам\n' +
+            '3. Возврат средств возможен в течение 3 дней\n' +
+            '4. VLESS ключ выдается только при активной подписке\n' +
+            '5. Подписка работает по принципу ежедневного списания с баланса'
         );
         toggleMenu();
     }
@@ -575,40 +510,21 @@
 
     // Функции тарифов
     function selectTariff(id) {
-        if (!tariffPlans[id]) {
-            showError("Выбран неверный тариф");
-            return;
-        }
-
         document.querySelectorAll('.tariff-card').forEach(card => {
             card.classList.remove('selected');
         });
         document.getElementById(`tariff${id}`).classList.add('selected');
         
-        currentTariff = id;
-        const tariff = tariffPlans[id];
-        
-        // Проверяем достаточно ли средств для покупки
-        const hasEnoughBalance = userBalance >= tariff.price;
+        const tariffMap = {"1month": "month", "1year": "year"};
+        currentTariff = tariffMap[id];
         
         // Показываем соответствующую кнопку
         if (hasSubscription) {
             document.getElementById('changeTariffBtn').style.display = 'block';
             document.getElementById('buyTariffBtn').style.display = 'none';
-            document.getElementById('changeTariffBtn').textContent = `СМЕНИТЬ НА ${tariff.name.toUpperCase()} ТАРИФ`;
         } else {
             document.getElementById('buyTariffBtn').style.display = 'block';
             document.getElementById('changeTariffBtn').style.display = 'none';
-            document.getElementById('buyTariffBtn').textContent = `КУПИТЬ ${tariff.name.toUpperCase()} ТАРИФ - ${tariff.price}₽`;
-            
-            // Подсвечиваем если недостаточно средств
-            if (!hasEnoughBalance) {
-                document.getElementById('buyTariffBtn').style.opacity = '0.6';
-                document.getElementById('buyTariffBtn').title = `Недостаточно средств. Нужно ${tariff.price}₽, на балансе ${userBalance}₽`;
-            } else {
-                document.getElementById('buyTariffBtn').style.opacity = '1';
-                document.getElementById('buyTariffBtn').title = '';
-            }
         }
     }
 
@@ -687,12 +603,8 @@
 
     function updateUserInterface(userData) {
         // Обновляем баланс
-        userBalance = userData.balance || 0;
-        document.getElementById('userBalance').textContent = `${userBalance}₽`;
-        
-        // Обновляем реферальную статистику
-        document.getElementById('refCount').textContent = userData.referral_count || 0;
-        document.getElementById('refEarned').textContent = `${userData.referral_earned || 0}₽`;
+        const balance = userData.balance || 0;
+        document.getElementById('userBalance').textContent = `${balance}₽`;
         
         // Сохраняем статус подписки
         hasSubscription = userData.has_subscription || false;
@@ -723,10 +635,8 @@
             // Обновляем информацию о тарифе
             if (currentTariff === 'month') {
                 balanceDays.textContent = `Активен месячный тариф`;
-                selectTariff('1month');
             } else if (currentTariff === 'year') {
                 balanceDays.textContent = `Активен годовой тариф`;
-                selectTariff('1year');
             } else {
                 balanceDays.textContent = 'Подписка активна';
             }
@@ -734,6 +644,13 @@
             // Показываем VLESS UUID если есть
             if (userData.vless_uuid) {
                 document.getElementById('vlessUuidText').textContent = userData.vless_uuid;
+            }
+            
+            // Выбираем текущий тариф
+            if (currentTariff === 'month') {
+                selectTariff('1month');
+            } else if (currentTariff === 'year') {
+                selectTariff('1year');
             }
         } else {
             subscriptionBadge.textContent = 'Неактивна';
@@ -749,7 +666,6 @@
             document.querySelectorAll('.tariff-card').forEach(card => {
                 card.classList.remove('selected');
             });
-            currentTariff = null;
         }
     }
 
@@ -770,14 +686,6 @@
             paymentButton.disabled = true;
             loadingIndicator.style.display = 'block';
             
-            // Показываем выбор суммы пополнения
-            const amount = await selectPaymentAmount();
-            if (!amount) {
-                loadingIndicator.style.display = 'none';
-                paymentButton.disabled = false;
-                return;
-            }
-
             const response = await fetch(`${API_BASE_URL}/create-payment`, {
                 method: "POST",
                 headers: {
@@ -785,7 +693,7 @@
                 },
                 body: JSON.stringify({
                     user_id: userId,
-                    amount: amount,
+                    amount: 100,
                     payment_type: "balance"
                 })
             });
@@ -822,31 +730,6 @@
         }
     }
 
-    // Выбор суммы пополнения
-    async function selectPaymentAmount() {
-        return new Promise((resolve) => {
-            tg.showPopup({
-                title: 'Выберите сумму пополнения',
-                message: 'Какую сумму вы хотите добавить на баланс?',
-                buttons: [
-                    {id: '100', type: 'default', text: '100₽'},
-                    {id: '300', type: 'default', text: '300₽'},
-                    {id: '500', type: 'default', text: '500₽'},
-                    {id: '1000', type: 'default', text: '1000₽'},
-                    {id: '1500', type: 'default', text: '1500₽'},
-                    {id: 'cancel', type: 'cancel', text: 'Отмена'}
-                ]
-            }, function(buttonId) {
-                if (buttonId === 'cancel' || !buttonId) {
-                    resolve(null);
-                } else {
-                    const amount = parseInt(buttonId);
-                    resolve(amount);
-                }
-            });
-        });
-    }
-
     // Покупка тарифа
     async function buyTariff() {
         if (!currentTariff) {
@@ -860,14 +743,6 @@
                 return;
             }
 
-            const selectedTariff = tariffPlans[currentTariff];
-            
-            // Проверяем баланс
-            if (userBalance < selectedTariff.price) {
-                showError(`Недостаточно средств! Для покупки тарифа нужно ${selectedTariff.price}₽, на балансе ${userBalance}₽`);
-                return;
-            }
-
             const loadingIndicator = document.getElementById('loadingIndicator');
             const buyTariffBtn = document.getElementById('buyTariffBtn');
 
@@ -875,7 +750,7 @@
             buyTariffBtn.disabled = true;
             hideError();
 
-            console.log('🎯 Buying tariff:', selectedTariff);
+            console.log('🎯 Buying tariff:', { tariff: currentTariff });
 
             const response = await fetch(`${API_BASE_URL}/activate-tariff`, {
                 method: "POST",
@@ -884,7 +759,7 @@
                 },
                 body: JSON.stringify({
                     user_id: userId,
-                    tariff: selectedTariff.id
+                    tariff: currentTariff
                 })
             });
 
@@ -900,7 +775,7 @@
             }
 
             if (data.success) {
-                showSuccess(`✅ Тариф "${selectedTariff.name}" успешно активирован!\n💳 Списанно: ${selectedTariff.price}₽\n📅 Ежедневное списание: ${selectedTariff.dailyCost}₽`);
+                showSuccess(`✅ Тариф "${data.tariff_name}" успешно активирован! Ежедневное списание: ${data.daily_cost}₽`);
                 // Обновляем данные пользователя
                 await loadUserData();
             } else {
@@ -927,14 +802,6 @@
                 return;
             }
 
-            const selectedTariff = tariffPlans[currentTariff];
-            
-            // Проверяем баланс
-            if (userBalance < selectedTariff.price) {
-                showError(`Недостаточно средств! Для смены тарифа нужно ${selectedTariff.price}₽, на балансе ${userBalance}₽`);
-                return;
-            }
-
             const loadingIndicator = document.getElementById('loadingIndicator');
             const changeTariffBtn = document.getElementById('changeTariffBtn');
 
@@ -942,7 +809,7 @@
             changeTariffBtn.disabled = true;
             hideError();
 
-            console.log('🔄 Changing tariff to:', selectedTariff);
+            console.log('🔄 Changing tariff to:', currentTariff);
 
             const response = await fetch(`${API_BASE_URL}/change-tariff`, {
                 method: "POST",
@@ -951,7 +818,7 @@
                 },
                 body: JSON.stringify({
                     user_id: userId,
-                    new_tariff: selectedTariff.id
+                    new_tariff: currentTariff
                 })
             });
 
@@ -967,7 +834,7 @@
             }
 
             if (data.success) {
-                showSuccess(`✅ Тариф успешно изменен на "${selectedTariff.name}"!\n💳 Списанно: ${selectedTariff.price}₽\n📅 Ежедневное списание: ${selectedTariff.dailyCost}₽`);
+                showSuccess(`✅ Тариф успешно изменен на "${data.new_tariff_name}"! Ежедневное списание: ${data.daily_cost}₽`);
                 // Обновляем данные пользователя
                 await loadUserData();
             } else {
@@ -1098,10 +965,10 @@
     function copyVlessLink(link) {
         navigator.clipboard.writeText(link)
             .then(() => {
-                tg.showAlert('✅ VLESS ссылка скопирована в буфер обмена!');
+                tg.showAlert('VLESS ссылка скопирована в буфер обмена!');
             })
             .catch(err => {
-                tg.showAlert('❌ Не удалось скопировать ссылку');
+                tg.showAlert('Не удалось скопировать ссылку');
             });
     }
 
@@ -1129,27 +996,15 @@
         const link = document.getElementById('refLink').textContent;
         navigator.clipboard.writeText(link)
             .then(() => {
-                tg.showAlert('✅ Реферальная ссылка скопирована!');
+                tg.showAlert('Ссылка скопирована в буфер обмена!');
             })
             .catch(err => {
-                tg.showAlert('❌ Не удалось скопировать ссылку');
+                tg.showAlert('Не удалось скопировать ссылку');
             });
     }
 
     function showHelp() {
-        tg.showAlert(
-            '🆘 Помощь по VAC VPN:\n\n' +
-            '📱 Настройка VPN:\n' +
-            '1. Скачайте приложение (V2RayNG/Shadowrocket)\n' +
-            '2. Нажмите "ПОЛУЧИТЬ VLESS КОНФИГ"\n' +
-            '3. Скопируйте ссылку или отсканируйте QR\n' \\
-            '4. Импортируйте в приложение\n\n' +
-            '💳 Пополнение баланса:\n' +
-            '• Минимальная сумма: 100₽\n' +
-            '• Баланс используется для подписки\n' +
-            '• При нулевом балансе VPN отключается\n\n' +
-            '📞 Поддержка: @vacvpn_support'
-        );
+        tg.openTelegramLink('https://t.me/vacvpn_support');
     }
 
     function showError(message) {
@@ -1197,11 +1052,6 @@
         await initUser();
         await loadUserData();
         console.log('🎉 Initialization complete!');
-        
-        // Показываем приветственное сообщение
-        setTimeout(() => {
-            tg.showAlert(`Добро пожаловать в VAC VPN, ${userName}! 🚀\n\nЗдесь вы можете настроить VPN подключение и управлять подпиской.`);
-        }, 1000);
     });
   </script>
 </body>
