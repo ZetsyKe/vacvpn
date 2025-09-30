@@ -345,6 +345,13 @@
       cursor: pointer;
       margin-top: 10px;
     }
+    .tariff-info {
+      background: rgba(176, 203, 31, 0.1);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 12px 0;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
@@ -403,6 +410,15 @@
   </div>
 
   <div class="card" id="tariffBlock">
+    <div class="tariff-info">
+      💡 <strong>Как работает подписка:</strong><br>
+      1. Пополняете баланс на сумму тарифа<br>
+      2. Деньги поступают на ваш баланс<br>
+      3. Активируете тариф - сумма спишется с баланса<br>
+      4. Ежедневно списывается стоимость дня<br>
+      5. При нулевом балансе подписка приостанавливается
+    </div>
+    
     <div class="tariff-grid">
       <div class="tariff-card" id="tariff1month" onclick="selectTariff('1month')">
         <div class="tariff-dot"></div>
@@ -419,6 +435,14 @@
         <div class="tariff-description">Стоимость списывается с баланса. Ежедневное списание 3.56₽</div>
       </div>
     </div>
+    
+    <div id="tariffPaymentInfo" style="display: none; margin: 12px 0; padding: 12px; background: rgba(176, 203, 31, 0.1); border-radius: 8px;">
+      <strong>Для активации тарифа нужно:</strong><br>
+      • Пополнить баланс на <span id="requiredAmount">0₽</span><br>
+      • Нажать кнопку "КУПИТЬ ТАРИФ"<br>
+      • Сумма спишется с баланса и тариф активируется
+    </div>
+    
     <button class="button button-yellow" id="buyTariffBtn" style="display:none;" onclick="buyTariff()">КУПИТЬ ТАРИФ</button>
     <button class="button button-yellow" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИТЬ ТАРИФ</button>
   </div>
@@ -469,6 +493,25 @@
     let currentPaymentId = null;
     let currentTariff = null;
     let hasSubscription = false;
+    let userBalance = 0;
+
+    // Тарифные планы
+    const tariffPlans = {
+      '1month': {
+        id: 'month',
+        name: 'Месячный',
+        price: 150,
+        dailyCost: 5,
+        description: 'Стоимость списывается с баланса. Ежедневное списание 5₽'
+      },
+      '1year': {
+        id: 'year', 
+        name: 'Годовой',
+        price: 1300,
+        dailyCost: 3.56,
+        description: 'Стоимость списывается с баланса. Ежедневное списание 3.56₽'
+      }
+    };
 
     // Инициализация интерфейса
     document.getElementById('userName').textContent = userName;
@@ -515,13 +558,33 @@
         });
         document.getElementById(`tariff${id}`).classList.add('selected');
         
-        const tariffMap = {"1month": "month", "1year": "year"};
-        currentTariff = tariffMap[id];
+        currentTariff = id;
+        const tariff = tariffPlans[id];
+        
+        // Показываем информацию о необходимой сумме
+        const tariffPaymentInfo = document.getElementById('tariffPaymentInfo');
+        const requiredAmount = document.getElementById('requiredAmount');
+        const buyTariffBtn = document.getElementById('buyTariffBtn');
+        
+        if (!hasSubscription) {
+            tariffPaymentInfo.style.display = 'block';
+            requiredAmount.textContent = `${tariff.price}₽`;
+            
+            // Проверяем достаточно ли средств
+            if (userBalance >= tariff.price) {
+                buyTariffBtn.textContent = `КУПИТЬ ТАРИФ - ${tariff.price}₽`;
+                buyTariffBtn.style.opacity = '1';
+            } else {
+                buyTariffBtn.textContent = `НЕДОСТАТОЧНО СРЕДСТВ`;
+                buyTariffBtn.style.opacity = '0.6';
+            }
+        }
         
         // Показываем соответствующую кнопку
         if (hasSubscription) {
             document.getElementById('changeTariffBtn').style.display = 'block';
             document.getElementById('buyTariffBtn').style.display = 'none';
+            tariffPaymentInfo.style.display = 'none';
         } else {
             document.getElementById('buyTariffBtn').style.display = 'block';
             document.getElementById('changeTariffBtn').style.display = 'none';
@@ -603,8 +666,8 @@
 
     function updateUserInterface(userData) {
         // Обновляем баланс
-        const balance = userData.balance || 0;
-        document.getElementById('userBalance').textContent = `${balance}₽`;
+        userBalance = userData.balance || 0;
+        document.getElementById('userBalance').textContent = `${userBalance}₽`;
         
         // Сохраняем статус подписки
         hasSubscription = userData.has_subscription || false;
@@ -618,6 +681,7 @@
         const vlessButton = document.getElementById('vlessButton');
         const buyTariffBtn = document.getElementById('buyTariffBtn');
         const changeTariffBtn = document.getElementById('changeTariffBtn');
+        const tariffPaymentInfo = document.getElementById('tariffPaymentInfo');
         
         if (hasSubscription) {
             subscriptionBadge.textContent = 'Активна';
@@ -625,6 +689,7 @@
             vlessButton.style.display = 'block';
             buyTariffBtn.style.display = 'none';
             changeTariffBtn.style.display = 'block';
+            tariffPaymentInfo.style.display = 'none';
             
             // Показываем ежедневную стоимость
             if (userData.daily_cost > 0) {
@@ -666,6 +731,8 @@
             document.querySelectorAll('.tariff-card').forEach(card => {
                 card.classList.remove('selected');
             });
+            currentTariff = null;
+            tariffPaymentInfo.style.display = 'none';
         }
     }
 
@@ -686,6 +753,14 @@
             paymentButton.disabled = true;
             loadingIndicator.style.display = 'block';
             
+            // Показываем выбор суммы пополнения
+            const amount = await selectPaymentAmount();
+            if (!amount) {
+                loadingIndicator.style.display = 'none';
+                paymentButton.disabled = false;
+                return;
+            }
+
             const response = await fetch(`${API_BASE_URL}/create-payment`, {
                 method: "POST",
                 headers: {
@@ -693,7 +768,7 @@
                 },
                 body: JSON.stringify({
                     user_id: userId,
-                    amount: 100,
+                    amount: amount,
                     payment_type: "balance"
                 })
             });
@@ -730,6 +805,31 @@
         }
     }
 
+    // Выбор суммы пополнения
+    async function selectPaymentAmount() {
+        return new Promise((resolve) => {
+            tg.showPopup({
+                title: 'Выберите сумму пополнения',
+                message: 'Какую сумму вы хотите добавить на баланс?',
+                buttons: [
+                    {id: '100', type: 'default', text: '100₽'},
+                    {id: '300', type: 'default', text: '300₽'},
+                    {id: '500', type: 'default', text: '500₽'},
+                    {id: '1000', type: 'default', text: '1000₽'},
+                    {id: '1500', type: 'default', text: '1500₽'},
+                    {id: 'cancel', type: 'cancel', text: 'Отмена'}
+                ]
+            }, function(buttonId) {
+                if (buttonId === 'cancel' || !buttonId) {
+                    resolve(null);
+                } else {
+                    const amount = parseInt(buttonId);
+                    resolve(amount);
+                }
+            });
+        });
+    }
+
     // Покупка тарифа
     async function buyTariff() {
         if (!currentTariff) {
@@ -743,6 +843,14 @@
                 return;
             }
 
+            const selectedTariff = tariffPlans[currentTariff];
+            
+            // Проверяем баланс
+            if (userBalance < selectedTariff.price) {
+                showError(`Недостаточно средств! Для покупки тарифа нужно ${selectedTariff.price}₽, на балансе ${userBalance}₽`);
+                return;
+            }
+
             const loadingIndicator = document.getElementById('loadingIndicator');
             const buyTariffBtn = document.getElementById('buyTariffBtn');
 
@@ -750,7 +858,7 @@
             buyTariffBtn.disabled = true;
             hideError();
 
-            console.log('🎯 Buying tariff:', { tariff: currentTariff });
+            console.log('🎯 Buying tariff:', selectedTariff);
 
             const response = await fetch(`${API_BASE_URL}/activate-tariff`, {
                 method: "POST",
@@ -759,7 +867,7 @@
                 },
                 body: JSON.stringify({
                     user_id: userId,
-                    tariff: currentTariff
+                    tariff: selectedTariff.id
                 })
             });
 
@@ -775,7 +883,7 @@
             }
 
             if (data.success) {
-                showSuccess(`✅ Тариф "${data.tariff_name}" успешно активирован! Ежедневное списание: ${data.daily_cost}₽`);
+                showSuccess(`✅ Тариф "${selectedTariff.name}" успешно активирован!\n💳 Списанно: ${selectedTariff.price}₽\n📅 Ежедневное списание: ${selectedTariff.dailyCost}₽`);
                 // Обновляем данные пользователя
                 await loadUserData();
             } else {
@@ -802,6 +910,14 @@
                 return;
             }
 
+            const selectedTariff = tariffPlans[currentTariff];
+            
+            // Проверяем баланс
+            if (userBalance < selectedTariff.price) {
+                showError(`Недостаточно средств! Для смены тарифа нужно ${selectedTariff.price}₽, на балансе ${userBalance}₽`);
+                return;
+            }
+
             const loadingIndicator = document.getElementById('loadingIndicator');
             const changeTariffBtn = document.getElementById('changeTariffBtn');
 
@@ -809,7 +925,7 @@
             changeTariffBtn.disabled = true;
             hideError();
 
-            console.log('🔄 Changing tariff to:', currentTariff);
+            console.log('🔄 Changing tariff to:', selectedTariff);
 
             const response = await fetch(`${API_BASE_URL}/change-tariff`, {
                 method: "POST",
@@ -818,7 +934,7 @@
                 },
                 body: JSON.stringify({
                     user_id: userId,
-                    new_tariff: currentTariff
+                    new_tariff: selectedTariff.id
                 })
             });
 
@@ -834,7 +950,7 @@
             }
 
             if (data.success) {
-                showSuccess(`✅ Тариф успешно изменен на "${data.new_tariff_name}"! Ежедневное списание: ${data.daily_cost}₽`);
+                showSuccess(`✅ Тариф успешно изменен на "${selectedTariff.name}"!\n💳 Списанно: ${selectedTariff.price}₽\n📅 Ежедневное списание: ${selectedTariff.dailyCost}₽`);
                 // Обновляем данные пользователя
                 await loadUserData();
             } else {
