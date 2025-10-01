@@ -105,6 +105,38 @@
       margin-bottom: 10px;
       font-weight: 600;
     }
+    .balance-info {
+      background: rgba(176, 203, 31, 0.1);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 12px 0;
+      font-size: 14px;
+    }
+    .balance-days-left {
+      color: var(--primary);
+      font-weight: 600;
+      margin-top: 4px;
+    }
+    .days-counter {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      padding: 8px;
+      background: rgba(176, 203, 31, 0.05);
+      border-radius: 6px;
+    }
+    .days-number {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--primary);
+      min-width: 40px;
+      text-align: center;
+    }
+    .days-label {
+      font-size: 14px;
+      opacity: 0.9;
+    }
     .vless-config {
       background: rgba(176, 203, 31, 0.1);
       border: 1px solid var(--primary);
@@ -375,6 +407,22 @@
     <div class="balance" id="userBalance">0₽</div>
     <div class="balance-days" id="balanceDays">Обновите данные</div>
     <div class="daily-cost" id="dailyCost" style="display: none;"></div>
+    
+    <div class="balance-info" id="balanceInfo" style="display: none;">
+      <div>💰 <strong>Информация о балансе:</strong></div>
+      <div class="balance-days-left" id="balanceDaysLeft">Загрузка...</div>
+      
+      <!-- Счетчик дней -->
+      <div class="days-counter" id="daysCounter" style="display: none;">
+        <div class="days-number" id="daysNumber">0</div>
+        <div class="days-label" id="daysLabel">дней</div>
+      </div>
+      
+      <div style="font-size: 13px; opacity: 0.8; margin-top: 4px;">
+        Расчет основан на текущем тарифе и ежедневном списании
+      </div>
+    </div>
+    
     <div class="subscription-status" id="subscriptionStatus">
       <span>Статус подписки:</span>
       <span class="badge inactive-badge" id="subscriptionBadge">Неактивна</span>
@@ -494,6 +542,7 @@
     let currentTariff = null;
     let hasSubscription = false;
     let userBalance = 0;
+    let currentDailyCost = 0;
 
     // Тарифные планы
     const tariffPlans = {
@@ -591,6 +640,85 @@
         }
     }
 
+    // Расчет дней по балансу
+    function calculateBalanceDays(balance, dailyCost) {
+        if (!dailyCost || dailyCost <= 0) return 0;
+        return Math.floor(balance / dailyCost);
+    }
+
+    // Получение правильного склонения для дней
+    function getDaysText(days) {
+        if (days === 1) return 'день';
+        if (days >= 2 && days <= 4) return 'дня';
+        return 'дней';
+    }
+
+    // Анимация счетчика
+    function animateCounter(element, targetValue, duration = 1000) {
+        const startValue = 0;
+        const startTime = performance.now();
+        
+        function updateCounter(currentTime) {
+            const elapsedTime = currentTime - startTime;
+            const progress = Math.min(elapsedTime / duration, 1);
+            
+            // Используем easeOutQuad для плавной анимации
+            const easeProgress = 1 - (1 - progress) * (1 - progress);
+            const currentValue = Math.floor(startValue + (targetValue - startValue) * easeProgress);
+            
+            element.textContent = currentValue;
+            
+            if (progress < 1) {
+                requestAnimationFrame(updateCounter);
+            } else {
+                element.textContent = targetValue;
+            }
+        }
+        
+        requestAnimationFrame(updateCounter);
+    }
+
+    // Обновление информации о днях по балансу
+    function updateBalanceDaysInfo() {
+        const balanceInfo = document.getElementById('balanceInfo');
+        const balanceDaysLeft = document.getElementById('balanceDaysLeft');
+        const daysCounter = document.getElementById('daysCounter');
+        const daysNumber = document.getElementById('daysNumber');
+        const daysLabel = document.getElementById('daysLabel');
+        
+        if (hasSubscription && currentDailyCost > 0) {
+            const daysLeft = calculateBalanceDays(userBalance, currentDailyCost);
+            
+            if (daysLeft > 0) {
+                balanceInfo.style.display = 'block';
+                daysCounter.style.display = 'flex';
+                
+                // Обновляем текстовую информацию
+                let daysText = '';
+                if (daysLeft === 1) {
+                    daysText = '1 день';
+                } else if (daysLeft >= 2 && daysLeft <= 4) {
+                    daysText = `${daysLeft} дня`;
+                } else {
+                    daysText = `${daysLeft} дней`;
+                }
+                
+                balanceDaysLeft.textContent = `💰 На балансе хватит примерно на:`;
+                
+                // Анимируем счетчик
+                animateCounter(daysNumber, daysLeft);
+                daysLabel.textContent = getDaysText(daysLeft);
+                
+            } else {
+                balanceInfo.style.display = 'block';
+                daysCounter.style.display = 'none';
+                balanceDaysLeft.textContent = '💰 Баланс почти исчерпан';
+            }
+        } else {
+            balanceInfo.style.display = 'none';
+        }
+    }
+
     // Инициализация пользователя при загрузке
     async function initUser() {
         try {
@@ -672,6 +800,7 @@
         // Сохраняем статус подписки
         hasSubscription = userData.has_subscription || false;
         currentTariff = userData.current_tariff;
+        currentDailyCost = userData.daily_cost || 0;
         
         // Обновляем статус подписки
         const subscriptionBadge = document.getElementById('subscriptionBadge');
@@ -692,8 +821,8 @@
             tariffPaymentInfo.style.display = 'none';
             
             // Показываем ежедневную стоимость
-            if (userData.daily_cost > 0) {
-                dailyCostElement.textContent = `Ежедневное списание: ${userData.daily_cost}₽`;
+            if (currentDailyCost > 0) {
+                dailyCostElement.textContent = `Ежедневное списание: ${currentDailyCost}₽`;
                 dailyCostElement.style.display = 'block';
             }
             
@@ -717,6 +846,10 @@
             } else if (currentTariff === 'year') {
                 selectTariff('1year');
             }
+            
+            // Обновляем информацию о днях по балансу
+            updateBalanceDaysInfo();
+            
         } else {
             subscriptionBadge.textContent = 'Неактивна';
             subscriptionBadge.className = 'badge inactive-badge';
@@ -733,6 +866,9 @@
             });
             currentTariff = null;
             tariffPaymentInfo.style.display = 'none';
+            
+            // Скрываем информацию о днях по балансу
+            document.getElementById('balanceInfo').style.display = 'none';
         }
     }
 
