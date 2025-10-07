@@ -1056,6 +1056,36 @@ async def check_referral(user_id: str):
         
     except Exception as e:
         return {"error": str(e)}
+        
+@app.delete("/clear-all-referrals")
+async def clear_all_referrals():
+    """Полностью очистить всю историю рефералов (админская функция)"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        # Получаем все рефералы
+        referrals_ref = db.collection('referrals')
+        referrals = referrals_ref.stream()
+        
+        deleted_count = 0
+        
+        # Удаляем все рефералы
+        for ref in referrals:
+            ref.reference.delete()
+            deleted_count += 1
+        
+        logger.info(f"🗑️ Deleted all referrals: {deleted_count} records")
+        
+        return {
+            "success": True,
+            "message": f"Удалено {deleted_count} реферальных записей",
+            "deleted_count": deleted_count
+        }
+            
+    except Exception as e:
+        logger.error(f"❌ Error clearing referrals: {e}")
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
