@@ -514,6 +514,7 @@ async def init_user(request: InitUserRequest):
         # Проверяем реферальную ссылку
         is_referral = False
         referrer_id = None
+        bonus_applied = False
         
         if request.start_param:
             # Обрабатываем разные форматы реферальных ссылок
@@ -560,6 +561,7 @@ async def init_user(request: InitUserRequest):
                         # Начисляем 100₽ новому пользователю
                         user_data['balance'] = 100.0
                         user_data['referred_by'] = referrer_id
+                        bonus_applied = True
                         
                         # Начисляем 50₽ тому, кто пригласил
                         update_user_balance(referrer_id, 50.0)
@@ -583,13 +585,31 @@ async def init_user(request: InitUserRequest):
             user_ref.set(user_data)
             logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}")
             
-            return {
-                "success": True, 
-                "message": "User created", 
-                "user_id": request.user_id,
-                "is_referral": is_referral,
-                "bonus_applied": is_referral and referrer_id and referrer_id != request.user_id
-            }
+            # Если бонус был начислен, возвращаем обновленные данные пользователя
+            if bonus_applied:
+                user_data_after_bonus = user_ref.get().to_dict()
+                return {
+                    "success": True, 
+                    "message": "User created with referral bonus",
+                    "user_id": request.user_id,
+                    "is_referral": is_referral,
+                    "bonus_applied": bonus_applied,
+                    "user_data": {
+                        "balance": user_data_after_bonus.get('balance', 0),
+                        "has_subscription": user_data_after_bonus.get('has_subscription', False),
+                        "current_tariff": user_data_after_bonus.get('current_tariff'),
+                        "vless_uuid": user_data_after_bonus.get('vless_uuid'),
+                        "daily_cost": 0
+                    }
+                }
+            else:
+                return {
+                    "success": True, 
+                    "message": "User created", 
+                    "user_id": request.user_id,
+                    "is_referral": is_referral,
+                    "bonus_applied": bonus_applied
+                }
         else:
             # Пользователь уже существует
             user_data = user_doc.to_dict()
@@ -600,9 +620,19 @@ async def init_user(request: InitUserRequest):
                 "message": "User already exists", 
                 "user_id": request.user_id,
                 "is_referral": has_bonus,
-                "bonus_applied": has_bonus
+                "bonus_applied": has_bonus,
+                "user_data": {
+                    "balance": user_data.get('balance', 0),
+                    "has_subscription": user_data.get('has_subscription', False),
+                    "current_tariff": user_data.get('current_tariff'),
+                    "vless_uuid": user_data.get('vless_uuid'),
+                    "daily_cost": TARIFFS[user_data.get('current_tariff')]["daily_cost"] if user_data.get('current_tariff') in TARIFFS else 0
+                }
             }
             
+    except Exception as e:
+        logger.error(f"❌ Error initializing user: {e}")
+        return {"error": str(e)}
     except Exception as e:
         logger.error(f"❌ Error initializing user: {e}")
         return {"error": str(e)}
