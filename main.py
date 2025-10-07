@@ -28,22 +28,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Конфигурация VLESS серверов
+# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ - ОБНОВЛЕНО!
 VLESS_SERVERS = [
     {
-        "address": "vpn1.vacvpn.com",
-        "port": 443,
-        "sni": "vpn1.vacvpn.com"
-    },
-    {
-        "address": "vpn2.vacvpn.com", 
-        "port": 443,
-        "sni": "vpn2.vacvpn.com"
-    },
-    {
-        "address": "vpn3.vacvpn.com",
-        "port": 443,
-        "sni": "vpn3.vacvpn.com"
+        "address": "45.134.13.189",  # Ваш IP сервер
+        "port": 8443,                # Порт который мы настроили
+        "sni": "localhost",          # SNI для TLS
+        "uuid": "f1cc0e69-45b2-43e8-b24f-fd2197615211"  # Ваш UUID
     }
 ]
 
@@ -201,27 +192,30 @@ def generate_vless_uuid():
     """Генерирует UUID для VLESS"""
     return str(uuid.uuid4())
 
+# ОБНОВЛЕННАЯ ФУНКЦИЯ ДЛЯ СОЗДАНИЯ VLESS КОНФИГА
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
     """Создает VLESS конфигурацию"""
     address = server_config["address"]
     port = server_config["port"]
     sni = server_config["sni"]
+    server_uuid = server_config["uuid"]  # Используем статичный UUID сервера
     
-    # Создаем VLESS ссылку
-    vless_link = f"vless://{vless_uuid}@{address}:{port}?encryption=none&security=tls&sni={sni}&fp=randomized&type=ws&path=%2F&host={address}#VAC_VPN_{user_id}"
+    # Создаем VLESS ссылку с правильными параметрами
+    vless_link = f"vless://{server_uuid}@{address}:{port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni={sni}&fp=randomized&type=ws&path=%2Fray&host={address}#VAC_VPN_{user_id}"
     
     # Создаем конфиг для приложений
     config = {
         "protocol": "vless",
-        "uuid": vless_uuid,
+        "uuid": server_uuid,
         "server": address,
         "port": port,
         "encryption": "none",
+        "flow": "xtls-rprx-vision",
         "security": "tls",
         "sni": sni,
         "fingerprint": "randomized",
         "type": "ws",
-        "path": "/",
+        "path": "/ray",
         "host": address,
         "remark": f"VAC VPN - {user_id}"
     }
@@ -237,9 +231,9 @@ def activate_subscription(user_id: str, tariff: str):
         logger.error("❌ Database not connected")
         return None
     try:
-        # Генерируем UUID для VLESS
-        vless_uuid = generate_vless_uuid()
-        logger.info(f"🆔 Generated VLESS UUID for user {user_id}: {vless_uuid}")
+        # Используем статичный UUID сервера вместо генерации нового
+        server_uuid = VLESS_SERVERS[0]["uuid"]
+        logger.info(f"🆔 Using static server UUID for user {user_id}: {server_uuid}")
         
         # Обновляем данные пользователя
         user_ref = db.collection('users').document(user_id)
@@ -253,14 +247,14 @@ def activate_subscription(user_id: str, tariff: str):
         update_data = {
             'has_subscription': True,
             'current_tariff': tariff,
-            'vless_uuid': vless_uuid,
+            'vless_uuid': server_uuid,  # Сохраняем UUID сервера
             'subscription_start': datetime.now().isoformat(),
             'last_deduction_date': datetime.now().isoformat(),
             'updated_at': firestore.SERVER_TIMESTAMP
         }
         
         user_ref.update(update_data)
-        logger.info(f"✅ Subscription activated for user {user_id}: tariff {tariff}, UUID: {vless_uuid}")
+        logger.info(f"✅ Subscription activated for user {user_id}: tariff {tariff}, UUID: {server_uuid}")
         
         # Проверяем что данные сохранились
         updated_user = user_ref.get()
@@ -270,7 +264,7 @@ def activate_subscription(user_id: str, tariff: str):
         else:
             logger.error("❌ Failed to verify UUID save")
             
-        return vless_uuid
+        return server_uuid
     except Exception as e:
         logger.error(f"❌ Error activating subscription: {e}")
         import traceback
@@ -466,11 +460,26 @@ def mark_referral_bonus_paid(referred_id: str):
 # Эндпоинты API
 @app.get("/")
 async def root():
-    return {"message": "VAC VPN API is running", "status": "ok", "firebase": "connected" if db else "disconnected"}
+    return {
+        "message": "VAC VPN API is running", 
+        "status": "ok", 
+        "firebase": "connected" if db else "disconnected",
+        "vless_server": VLESS_SERVERS[0]["address"],
+        "port": VLESS_SERVERS[0]["port"]
+    }
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "firebase": "connected" if db else "disconnected"}
+    return {
+        "status": "healthy", 
+        "timestamp": datetime.now().isoformat(), 
+        "firebase": "connected" if db else "disconnected",
+        "server_config": {
+            "address": VLESS_SERVERS[0]["address"],
+            "port": VLESS_SERVERS[0]["port"],
+            "uuid": VLESS_SERVERS[0]["uuid"][:8] + "..."  # Показываем только часть UUID
+        }
+    }
 
 @app.post("/init-user")
 async def init_user(request: InitUserRequest):
@@ -675,7 +684,7 @@ async def check_payment(payment_id: str, user_id: str):
                         update_user_balance(user_id, amount)
                         
                         if payment_type == 'tariff':
-                            # Активируем подписку и генерируем VLESS UUID
+                            # Активируем подписку используя статичный UUID сервера
                             vless_uuid = activate_subscription(user_id, tariff)
                             
                             if not vless_uuid:
@@ -775,7 +784,7 @@ async def activate_tariff(request: ActivateTariffRequest):
         new_balance = user_balance - tariff_price
         update_user_balance(request.user_id, -tariff_price)
         
-        # Активируем подписку и генерируем VLESS UUID
+        # Активируем подписку используя статичный UUID сервера
         vless_uuid = activate_subscription(request.user_id, request.tariff)
         
         if not vless_uuid:
