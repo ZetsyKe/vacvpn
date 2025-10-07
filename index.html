@@ -857,50 +857,74 @@
     }
 
     // Инициализация пользователя при загрузке
-    async function initUser() {
-        try {
-            console.log('🔄 Initializing user:', userId);
-            
-            if (!userId || userId === 'unknown') {
-                console.error('❌ User ID not available from Telegram');
-                showError('Ошибка: Telegram не предоставил данные пользователя. Откройте через бота.');
-                return;
-            }
-            
-            const response = await fetch(`${API_BASE_URL}/init-user`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    user_id: userId,
-                    username: userUsername,
-                    first_name: userName,
-                    last_name: initData.user?.last_name || "",
-                    start_param: initData.start_param || ""
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            console.log('👤 User init result:', data);
-            
-            if (data.success) {
-                console.log('✅ User initialized successfully');
-                if (data.is_referral && data.bonus_applied) {
-                    showSuccess('🎉 Вам начислен реферальный бонус 100₽!');
-                }
-            } else {
-                console.warn('⚠️ User init warning:', data.error);
-            }
-        } catch (error) {
-            console.error('❌ User init error:', error);
-            showError('Ошибка инициализации: ' + error.message);
+// Инициализация пользователя при загрузке
+async function initUser() {
+    try {
+        console.log('🔄 Initializing user:', userId);
+        
+        if (!userId || userId === 'unknown') {
+            console.error('❌ User ID not available from Telegram');
+            showError('Ошибка: Telegram не предоставил данные пользователя. Откройте через бота.');
+            return;
         }
+        
+        // Получаем start_param из URL или Telegram WebApp
+        let startParam = '';
+        
+        // Способ 1: Пробуем получить из Telegram WebApp
+        if (tg.initData) {
+            const urlParams = new URLSearchParams(tg.initData);
+            startParam = urlParams.get('startapp') || '';
+        }
+        
+        // Способ 2: Пробуем получить из обычного URL параметра
+        if (!startParam) {
+            const urlParams = new URLSearchParams(window.location.search);
+            startParam = urlParams.get('start') || '';
+        }
+        
+        // Способ 3: Пробуем получить из hash
+        if (!startParam && window.location.hash) {
+            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            startParam = hashParams.get('start') || '';
+        }
+        
+        console.log('🔗 Start param:', startParam);
+        
+        const response = await fetch(`${API_BASE_URL}/init-user`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                user_id: userId,
+                username: userUsername,
+                first_name: userName,
+                last_name: initData.user?.last_name || "",
+                start_param: startParam
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('👤 User init result:', data);
+        
+        if (data.success) {
+            console.log('✅ User initialized successfully');
+            if (data.is_referral && data.bonus_applied) {
+                showSuccess('🎉 Вам начислен реферальный бонус 100₽!');
+            }
+        } else {
+            console.warn('⚠️ User init warning:', data.error);
+        }
+    } catch (error) {
+        console.error('❌ User init error:', error);
+        showError('Ошибка инициализации: ' + error.message);
     }
+}
 
     // Загрузка данных пользователя
     async function loadUserData() {
