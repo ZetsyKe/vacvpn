@@ -505,45 +505,48 @@
   <div class="card" id="tariffBlock">
     <div class="tariff-info">
       💡 <strong>Как работает подписка:</strong><br>
-      1. Пополняете баланс на сумму тарифа<br>
-      2. Деньги поступают на ваш баланс<br>
-      3. Активируете тариф - сумма спишется с баланса<br>
-      4. Ежедневно списывается стоимость дня<br>
-      5. При нулевом балансе подписка приостанавливается
+      1. Выбираете тариф и нажимаете "КУПИТЬ ТАРИФ"<br>
+      2. <strong>Сумма тарифа поступает на ваш баланс</strong><br>
+      3. Ежедневно списывается стоимость дня с баланса<br>
+      4. При нулевом балансе подписка приостанавливается<br>
+      5. Можно пополнять баланс дополнительно
     </div>
     
     <div class="tariff-grid">
       <div class="tariff-card" id="tariff1month" onclick="selectTariff('1month')">
         <div class="tariff-dot"></div>
         <div class="tariff-label">Месячный</div>
-        <div class="tariff-price">150₽</div>
+        <div class="tariff-price">+150₽ на баланс</div>
         <div class="tariff-trial">5₽ в день</div>
-        <div class="tariff-description">Стоимость списывается с баланса. Ежедневное списание 5₽</div>
+        <div class="tariff-description">На баланс поступает 150₽. Ежедневное списание 5₽</div>
       </div>
       <div class="tariff-card" id="tariff1year" onclick="selectTariff('1year')">
         <div class="tariff-dot"></div>
         <div class="tariff-label">Годовой</div>
-        <div class="tariff-price">1300₽</div>
+        <div class="tariff-price">+1300₽ на баланс</div>
         <div class="tariff-trial">3.56₽ в день</div>
-        <div class="tariff-description">Стоимость списывается с баланса. Ежедневное списание 3.56₽</div>
+        <div class="tariff-description">На баланс поступает 1300₽. Ежедневное списание 3.56₽</div>
       </div>
     </div>
     
     <div id="tariffPaymentInfo" style="display: none; margin: 12px 0; padding: 12px; background: rgba(176, 203, 31, 0.1); border-radius: 8px;">
-      <strong>Для активации тарифа нужно:</strong><br>
-      • Пополнить баланс на <span id="requiredAmount">0₽</span><br>
-      • Нажать кнопку "КУПИТЬ ТАРИФ"<br>
-      • Сумма спишется с баланса и тариф активируется
+      <strong>При покупке тарифа:</strong><br>
+      • На баланс поступит: <strong style="color: var(--primary);">150₽</strong><br>
+      • Ежедневное списание: <strong>5₽</strong><br>
+      • Примерный срок: <strong>30 дней</strong>
     </div>
     
     <button class="button button-yellow" id="buyTariffBtn" style="display:none;" onclick="buyTariff()">КУПИТЬ ТАРИФ</button>
-    <button class="button button-yellow" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИТЬ ТАРИФ</button>
+    <button class="button button-yellow" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИЬ ТАРИФ</button>
   </div>
 
   <div class="card">
     <div class="referral-block">
       <div class="referral-description">
-        Пригласите друзей и получайте 50₽ за каждого приглашенного пользователя, который оплатит подписку.
+        🎁 <strong>Реферальная система:</strong><br>
+        • Приглашенный друг получает <strong style="color: var(--primary);">100₽</strong> на баланс<br>
+        • Вы получаете <strong style="color: var(--primary);">50₽</strong> за каждого друга<br>
+        • Друг должен перейти по вашей ссылке и запустить бота
       </div>
       <div class="ref-link-box">
         <span class="ref-link-text" id="refLink">Загрузка ссылки...</span>
@@ -596,14 +599,14 @@
         name: 'Месячный',
         price: 150,
         dailyCost: 5,
-        description: 'Стоимость списывается с баланса. Ежедневное списание 5₽'
+        description: 'На баланс поступает 150₽. Ежедневное списание 5₽'
       },
       '1year': {
         id: 'year', 
         name: 'Годовой',
         price: 1300,
         dailyCost: 3.56,
-        description: 'Стоимость списывается с баланса. Ежедневное списание 3.56₽'
+        description: 'На баланс поступает 1300₽. Ежедневное списание 3.56₽'
       }
     };
 
@@ -744,23 +747,23 @@
         currentTariff = id;
         const tariff = tariffPlans[id];
         
-        // Показываем информацию о необходимой сумме
+        // Обновляем информацию о тарифе
         const tariffPaymentInfo = document.getElementById('tariffPaymentInfo');
-        const requiredAmount = document.getElementById('requiredAmount');
         const buyTariffBtn = document.getElementById('buyTariffBtn');
         
         if (!hasSubscription) {
             tariffPaymentInfo.style.display = 'block';
-            requiredAmount.textContent = `${tariff.price}₽`;
             
-            // Проверяем достаточно ли средств
-            if (userBalance >= tariff.price) {
-                buyTariffBtn.textContent = `КУПИТЬ ТАРИФ - ${tariff.price}₽`;
-                buyTariffBtn.style.opacity = '1';
-            } else {
-                buyTariffBtn.textContent = `НЕДОСТАТОЧНО СРЕДСТВ`;
-                buyTariffBtn.style.opacity = '0.6';
-            }
+            // Показываем информацию о пополнении баланса
+            tariffPaymentInfo.innerHTML = `
+                <strong>При покупке тарифа:</strong><br>
+                • На баланс поступит: <strong style="color: var(--primary);">${tariff.price}₽</strong><br>
+                • Ежедневное списание: <strong>${tariff.dailyCost}₽</strong><br>
+                • Примерный срок: <strong>${Math.floor(tariff.price / tariff.dailyCost)} дней</strong>
+            `;
+            
+            buyTariffBtn.textContent = `КУПИТЬ ТАРИФ - ${tariff.price}₽`;
+            buyTariffBtn.style.opacity = '1';
         }
         
         // Показываем соответствующую кнопку
@@ -873,7 +876,8 @@
                     user_id: userId,
                     username: userUsername,
                     first_name: userName,
-                    last_name: initData.user?.last_name || ""
+                    last_name: initData.user?.last_name || "",
+                    start_param: initData.start_param || ""
                 })
             });
 
@@ -886,6 +890,9 @@
             
             if (data.success) {
                 console.log('✅ User initialized successfully');
+                if (data.is_referral && data.bonus_applied) {
+                    showSuccess('🎉 Вам начислен реферальный бонус 100₽!');
+                }
             } else {
                 console.warn('⚠️ User init warning:', data.error);
             }
@@ -1020,12 +1027,6 @@
             }
 
             const selectedTariff = tariffPlans[currentTariff];
-            
-            // Проверяем баланс
-            if (userBalance < selectedTariff.price) {
-                showError(`Недостаточно средств! Для покупки тарифа нужно ${selectedTariff.price}₽, на балансе ${userBalance}₽`);
-                return;
-            }
 
             const loadingIndicator = document.getElementById('loadingIndicator');
             const buyTariffBtn = document.getElementById('buyTariffBtn');
@@ -1059,7 +1060,7 @@
             }
 
             if (data.success) {
-                showSuccess(`✅ Тариф "${selectedTariff.name}" успешно активирован!\n💳 Списанно: ${selectedTariff.price}₽\n📅 Ежедневное списание: ${selectedTariff.dailyCost}₽`);
+                showSuccess(`✅ Тариф "${selectedTariff.name}" успешно активирован!\n💳 На баланс добавлено: ${selectedTariff.price}₽\n📅 Ежедневное списание: ${selectedTariff.dailyCost}₽`);
                 // Обновляем данные пользователя
                 await loadUserData();
             } else {
@@ -1087,12 +1088,6 @@
             }
 
             const selectedTariff = tariffPlans[currentTariff];
-            
-            // Проверяем баланс
-            if (userBalance < selectedTariff.price) {
-                showError(`Недостаточно средств! Для смены тарифа нужно ${selectedTariff.price}₽, на балансе ${userBalance}₽`);
-                return;
-            }
 
             const loadingIndicator = document.getElementById('loadingIndicator');
             const changeTariffBtn = document.getElementById('changeTariffBtn');
@@ -1126,7 +1121,7 @@
             }
 
             if (data.success) {
-                showSuccess(`✅ Тариф успешно изменен на "${selectedTariff.name}"!\n💳 Списанно: ${selectedTariff.price}₽\n📅 Ежедневное списание: ${selectedTariff.dailyCost}₽`);
+                showSuccess(`✅ Тариф успешно изменен на "${selectedTariff.name}"!\n📅 Ежедневное списание: ${selectedTariff.dailyCost}₽`);
                 // Обновляем данные пользователя
                 await loadUserData();
             } else {
