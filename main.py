@@ -515,10 +515,18 @@ async def init_user(request: InitUserRequest):
         is_referral = False
         referrer_id = None
         
-        if request.start_param and request.start_param.startswith('ref_'):
-            referrer_id = request.start_param.replace('ref_', '')
-            is_referral = True
-            logger.info(f"🎯 Referral detected: {referrer_id} -> {request.user_id}")
+        if request.start_param:
+            # Обрабатываем разные форматы реферальных ссылок
+            if request.start_param.startswith('ref_'):
+                referrer_id = request.start_param.replace('ref_', '')
+                is_referral = True
+            elif request.start_param.isdigit():
+                # Если start_param это просто ID пользователя
+                referrer_id = request.start_param
+                is_referral = True
+            
+            if is_referral:
+                logger.info(f"🎯 Referral detected: {referrer_id} -> {request.user_id}")
         
         # Создаем пользователя если не существует
         user_ref = db.collection('users').document(request.user_id)
@@ -539,14 +547,22 @@ async def init_user(request: InitUserRequest):
             
             # Если это реферал, начисляем бонусы
             if is_referral and referrer_id:
-                # Проверяем что реферер существует
+                # Проверяем что реферер существует и это не сам пользователь
                 referrer = get_user(referrer_id)
                 if referrer and referrer_id != request.user_id:
-                    user_data['balance'] = 100.0  # Начальный бонус 100₽
-                    user_data['referred_by'] = referrer_id
-                    
-                    # Начисляем бонусы
-                    apply_referral_bonus(request.user_id, referrer_id)
+                    # Проверяем что бонус еще не начислялся
+                    referral_exists = db.collection('referrals').document(f"{referrer_id}_{request.user_id}").get().exists
+                    if not referral_exists:
+                        user_data['balance'] = 100.0  # Начальный бонус 100₽
+                        user_data['referred_by'] = referrer_id
+                        
+                        # Начисляем бонусы
+                        apply_referral_bonus(request.user_id, referrer_id)
+                        logger.info(f"🎁 Referral bonuses applied for new user: {request.user_id}")
+                    else:
+                        logger.info(f"ℹ️ Referral already processed: {request.user_id}")
+                else:
+                    logger.warning(f"⚠️ Invalid referrer: {referrer_id}")
             
             user_ref.set(user_data)
             logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}")
@@ -556,13 +572,19 @@ async def init_user(request: InitUserRequest):
                 "message": "User created", 
                 "user_id": request.user_id,
                 "is_referral": is_referral,
-                "bonus_applied": is_referral
+                "bonus_applied": is_referral and referrer_id and referrer_id != request.user_id
             }
         else:
+            # Пользователь уже существует
+            user_data = user_ref.get().to_dict()
+            has_bonus = user_data.get('referred_by') is not None
+            
             return {
                 "success": True, 
                 "message": "User already exists", 
-                "user_id": request.user_id
+                "user_id": request.user_id,
+                "is_referral": has_bonus,
+                "bonus_applied": has_bonus
             }
             
     except Exception as e:
@@ -963,6 +985,30 @@ async def check_subscription_status(user_id: str):
             "current_tariff": current_tariff,
             "daily_cost": daily_cost,
             "vless_uuid": user.get('vless_uuid')
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/check-referral")
+async def check_referral(user_id: str):
+    """Проверить реферальный статус пользователя"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+            
+        user = get_user(user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        referred_by = user.get('referred_by')
+        has_bonus = referred_by is not None
+        
+        return {
+            "success": True,
+            "has_referral_bonus": has_bonus,
+            "referred_by": referred_by,
+            "bonus_amount": 100.0 if has_bonus else 0
         }
         
     except Exception as e:
