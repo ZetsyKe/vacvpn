@@ -28,34 +28,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ - ОБНОВЛЕНО!
+# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ
 VLESS_SERVERS = [
     {
-        "address": "45.134.13.189",  # Ваш IP сервер
-        "port": 8443,                # Порт который мы настроили
-        "sni": "localhost",          # SNI для TLS
-        "uuid": "f1cc0e69-45b2-43e8-b24f-fd2197615211"  # Ваш UUID
+        "address": "45.134.13.189",
+        "port": 8443,
+        "sni": "localhost",
+        "uuid": "f1cc0e69-45b2-43e8-b24f-fd2197615211"
     }
 ]
 
-# Тарифы (стоимость покупки)
+# Тарифы (сумма которая НАЧИСЛЯЕТСЯ на баланс)
 TARIFFS = {
     "month": {
         "name": "Месячный",
-        "price": 150.0,
-        "daily_cost": 5.0  # 150 / 30 дней
+        "price": 150.0,        # 150₽ НАЧИСЛЯЕТСЯ на баланс
+        "daily_cost": 5.0      # 5₽ в день СПИСЫВАЕТСЯ
     },
     "year": {
         "name": "Годовой", 
-        "price": 1300.0,
-        "daily_cost": 3.56  # 1300 / 365 дней
+        "price": 1300.0,       # 1300₽ НАЧИСЛЯЕТСЯ на баланс
+        "daily_cost": 3.56     # 3.56₽ в день СПИСЫВАЕТСЯ
     }
 }
 
 # Инициализация Firebase
 try:
     if not firebase_admin._apps:
-        # Способ 1: Попробуем загрузить из полного JSON
         firebase_credentials_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
         
         if firebase_credentials_json:
@@ -63,7 +62,6 @@ try:
             firebase_config = json.loads(firebase_credentials_json)
             cred = credentials.Certificate(firebase_config)
         else:
-            # Способ 2: Собираем конфиг из отдельных переменных
             logger.info("🚀 Initializing Firebase from individual environment variables")
             
             private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n')
@@ -110,6 +108,7 @@ class UserCreateRequest(BaseModel):
     username: str = ""
     first_name: str = ""
     last_name: str = ""
+    start_param: str = None  # Для реферальных ссылок
 
 class ActivateTariffRequest(BaseModel):
     user_id: str
@@ -124,6 +123,7 @@ class InitUserRequest(BaseModel):
     username: str = ""
     first_name: str = ""
     last_name: str = ""
+    start_param: str = None  # Для реферальных ссылок
 
 class UpdateBalanceRequest(BaseModel):
     user_id: str
@@ -192,13 +192,12 @@ def generate_vless_uuid():
     """Генерирует UUID для VLESS"""
     return str(uuid.uuid4())
 
-# ОБНОВЛЕННАЯ ФУНКЦИЯ ДЛЯ СОЗДАНИЯ VLESS КОНФИГА
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
     """Создает VLESS конфигурацию"""
     address = server_config["address"]
     port = server_config["port"]
     sni = server_config["sni"]
-    server_uuid = server_config["uuid"]  # Используем статичный UUID сервера
+    server_uuid = server_config["uuid"]
     
     # Создаем VLESS ссылку с правильными параметрами
     vless_link = f"vless://{server_uuid}@{address}:{port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni={sni}&fp=randomized&type=ws&path=%2Fray&host={address}#VAC_VPN_{user_id}"
@@ -231,14 +230,13 @@ def activate_subscription(user_id: str, tariff: str):
         logger.error("❌ Database not connected")
         return None
     try:
-        # Используем статичный UUID сервера вместо генерации нового
+        # Используем статичный UUID сервера
         server_uuid = VLESS_SERVERS[0]["uuid"]
         logger.info(f"🆔 Using static server UUID for user {user_id}: {server_uuid}")
         
         # Обновляем данные пользователя
         user_ref = db.collection('users').document(user_id)
         
-        # Получаем текущие данные пользователя
         user_doc = user_ref.get()
         if not user_doc.exists:
             logger.error(f"❌ User {user_id} not found in database")
@@ -247,7 +245,7 @@ def activate_subscription(user_id: str, tariff: str):
         update_data = {
             'has_subscription': True,
             'current_tariff': tariff,
-            'vless_uuid': server_uuid,  # Сохраняем UUID сервера
+            'vless_uuid': server_uuid,
             'subscription_start': datetime.now().isoformat(),
             'last_deduction_date': datetime.now().isoformat(),
             'updated_at': firestore.SERVER_TIMESTAMP
@@ -256,14 +254,6 @@ def activate_subscription(user_id: str, tariff: str):
         user_ref.update(update_data)
         logger.info(f"✅ Subscription activated for user {user_id}: tariff {tariff}, UUID: {server_uuid}")
         
-        # Проверяем что данные сохранились
-        updated_user = user_ref.get()
-        if updated_user.exists:
-            saved_uuid = updated_user.to_dict().get('vless_uuid')
-            logger.info(f"✅ UUID saved in database: {saved_uuid}")
-        else:
-            logger.error("❌ Failed to verify UUID save")
-            
         return server_uuid
     except Exception as e:
         logger.error(f"❌ Error activating subscription: {e}")
@@ -278,7 +268,6 @@ def change_tariff(user_id: str, new_tariff: str):
     try:
         user_ref = db.collection('users').document(user_id)
         
-        # Получаем текущие данные пользователя
         user_doc = user_ref.get()
         if not user_doc.exists:
             logger.error(f"❌ User {user_id} not found in database")
@@ -307,6 +296,36 @@ def change_tariff(user_id: str, new_tariff: str):
         
     except Exception as e:
         logger.error(f"❌ Error changing tariff: {e}")
+        return False
+
+def apply_referral_bonus(referred_id: str, referrer_id: str):
+    """Начисляет бонусы за реферала"""
+    if not db:
+        return False
+    
+    try:
+        # Начисляем 100₽ новому пользователю
+        update_user_balance(referred_id, 100.0)
+        
+        # Начисляем 50₽ тому, кто пригласил
+        update_user_balance(referrer_id, 50.0)
+        
+        # Сохраняем запись о реферале
+        referral_id = f"{referrer_id}_{referred_id}"
+        db.collection('referrals').document(referral_id).set({
+            'referrer_id': referrer_id,
+            'referred_id': referred_id,
+            'new_user_bonus': 100.0,
+            'referrer_bonus': 50.0,
+            'bonus_paid': True,
+            'created_at': firestore.SERVER_TIMESTAMP
+        })
+        
+        logger.info(f"🎁 Referral bonuses applied: {referred_id} +100₽, {referrer_id} +50₽")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error applying referral bonus: {e}")
         return False
 
 def process_daily_deductions(user_id: str):
@@ -477,7 +496,7 @@ async def health_check():
         "server_config": {
             "address": VLESS_SERVERS[0]["address"],
             "port": VLESS_SERVERS[0]["port"],
-            "uuid": VLESS_SERVERS[0]["uuid"][:8] + "..."  # Показываем только часть UUID
+            "uuid": VLESS_SERVERS[0]["uuid"][:8] + "..."
         }
     }
 
@@ -492,10 +511,19 @@ async def init_user(request: InitUserRequest):
         if not request.user_id or request.user_id == 'unknown':
             return {"error": "Invalid user ID"}
         
+        # Проверяем реферальную ссылку
+        is_referral = False
+        referrer_id = None
+        
+        if request.start_param and request.start_param.startswith('ref_'):
+            referrer_id = request.start_param.replace('ref_', '')
+            is_referral = True
+            logger.info(f"🎯 Referral detected: {referrer_id} -> {request.user_id}")
+        
         # Создаем пользователя если не существует
         user_ref = db.collection('users').document(request.user_id)
         if not user_ref.get().exists:
-            user_ref.set({
+            user_data = {
                 'user_id': request.user_id,
                 'username': request.username,
                 'first_name': request.first_name,
@@ -507,11 +535,35 @@ async def init_user(request: InitUserRequest):
                 'last_deduction_date': None,
                 'vless_uuid': None,
                 'created_at': firestore.SERVER_TIMESTAMP
-            })
-            logger.info(f"✅ User auto-created: {request.user_id}")
-            return {"success": True, "message": "User created", "user_id": request.user_id}
+            }
+            
+            # Если это реферал, начисляем бонусы
+            if is_referral and referrer_id:
+                # Проверяем что реферер существует
+                referrer = get_user(referrer_id)
+                if referrer and referrer_id != request.user_id:
+                    user_data['balance'] = 100.0  # Начальный бонус 100₽
+                    user_data['referred_by'] = referrer_id
+                    
+                    # Начисляем бонусы
+                    apply_referral_bonus(request.user_id, referrer_id)
+            
+            user_ref.set(user_data)
+            logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}")
+            
+            return {
+                "success": True, 
+                "message": "User created", 
+                "user_id": request.user_id,
+                "is_referral": is_referral,
+                "bonus_applied": is_referral
+            }
         else:
-            return {"success": True, "message": "User already exists", "user_id": request.user_id}
+            return {
+                "success": True, 
+                "message": "User already exists", 
+                "user_id": request.user_id
+            }
             
     except Exception as e:
         logger.error(f"❌ Error initializing user: {e}")
@@ -684,7 +736,7 @@ async def check_payment(payment_id: str, user_id: str):
                         update_user_balance(user_id, amount)
                         
                         if payment_type == 'tariff':
-                            # Активируем подписку используя статичный UUID сервера
+                            # Активируем подписку
                             vless_uuid = activate_subscription(user_id, tariff)
                             
                             if not vless_uuid:
@@ -774,17 +826,15 @@ async def activate_tariff(request: ActivateTariffRequest):
         if request.tariff not in TARIFFS:
             return {"error": "Invalid tariff"}
             
-        tariff_price = TARIFFS[request.tariff]["price"]
-        user_balance = user.get('balance', 0)
+        tariff_data = TARIFFS[request.tariff]
+        tariff_price = tariff_data["price"]
+        daily_cost = tariff_data["daily_cost"]
         
-        if user_balance < tariff_price:
-            return {"error": f"Insufficient balance. Need {tariff_price}₽ for {TARIFFS[request.tariff]['name']} tariff"}
+        # НАЧИСЛЯЕМ сумму тарифа на баланс
+        new_balance = user.get('balance', 0) + tariff_price
+        update_user_balance(request.user_id, tariff_price)
         
-        # Списываем стоимость тарифа
-        new_balance = user_balance - tariff_price
-        update_user_balance(request.user_id, -tariff_price)
-        
-        # Активируем подписку используя статичный UUID сервера
+        # Активируем подписку
         vless_uuid = activate_subscription(request.user_id, request.tariff)
         
         if not vless_uuid:
@@ -793,10 +843,12 @@ async def activate_tariff(request: ActivateTariffRequest):
         return {
             "success": True, 
             "tariff": request.tariff,
-            "tariff_name": TARIFFS[request.tariff]['name'],
-            "daily_cost": TARIFFS[request.tariff]['daily_cost'],
+            "tariff_name": tariff_data['name'],
+            "daily_cost": daily_cost,
+            "amount_added": tariff_price,
             "vless_uuid": vless_uuid,
-            "new_balance": new_balance
+            "new_balance": new_balance,
+            "message": f"✅ Тариф активирован! На баланс добавлено {tariff_price}₽. Ежедневное списание: {daily_cost}₽"
         }
         
     except Exception as e:
