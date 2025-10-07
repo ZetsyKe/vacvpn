@@ -633,9 +633,6 @@ async def init_user(request: InitUserRequest):
     except Exception as e:
         logger.error(f"❌ Error initializing user: {e}")
         return {"error": str(e)}
-    except Exception as e:
-        logger.error(f"❌ Error initializing user: {e}")
-        return {"error": str(e)}
 
 @app.get("/user-data")
 async def get_user_info(user_id: str):
