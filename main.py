@@ -677,6 +677,35 @@ async def get_user_info(user_id: str):
     except Exception as e:
         return {"error": f"Error getting user info: {str(e)}"}
 
+# НОВЫЙ ЭНДПОИНТ: Принудительное обновление баланса
+@app.post("/force-refresh-balance")
+async def force_refresh_balance(user_id: str):
+    """Принудительно обновить баланс пользователя"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        if not user_id or user_id == 'unknown':
+            return {"error": "Invalid user ID"}
+            
+        user = get_user(user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "balance": user.get('balance', 0),
+            "has_subscription": user.get('has_subscription', False),
+            "current_tariff": user.get('current_tariff'),
+            "vless_uuid": user.get('vless_uuid'),
+            "daily_cost": TARIFFS[user.get('current_tariff')]["daily_cost"] if user.get('current_tariff') in TARIFFS else 0
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error refreshing balance: {e}")
+        return {"error": str(e)}
+
 @app.post("/create-payment")
 async def create_payment(request: PaymentRequest):
     try:
@@ -1085,33 +1114,6 @@ async def clear_all_referrals():
             
     except Exception as e:
         logger.error(f"❌ Error clearing referrals: {e}")
-        return {"error": str(e)}
-@app.post("/force-refresh-balance")
-async def force_refresh_balance(user_id: str):
-    """Принудительно обновить баланс пользователя"""
-    try:
-        if not db:
-            return {"error": "Database not connected"}
-        
-        if not user_id or user_id == 'unknown':
-            return {"error": "Invalid user ID"}
-            
-        user = get_user(user_id)
-        if not user:
-            return {"error": "User not found"}
-        
-        return {
-            "success": True,
-            "user_id": user_id,
-            "balance": user.get('balance', 0),
-            "has_subscription": user.get('has_subscription', False),
-            "current_tariff": user.get('current_tariff'),
-            "vless_uuid": user.get('vless_uuid'),
-            "daily_cost": TARIFFS[user.get('current_tariff')]["daily_cost"] if user.get('current_tariff') in TARIFFS else 0
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ Error refreshing balance: {e}")
         return {"error": str(e)}
 
 if __name__ == "__main__":
