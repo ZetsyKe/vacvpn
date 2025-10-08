@@ -1203,6 +1203,31 @@ async def debug_referrals():
     except Exception as e:
         return {"error": str(e)}
 
+# НОВЫЙ ЭНДПОИНТ: Принудительное начисление реферального бонуса
+@app.post("/force-referral-bonus")
+async def force_referral_bonus(referrer_id: str, referred_id: str):
+    """Принудительно начислить реферальный бонус (для тестирования)"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        logger.info(f"🎯 FORCE REFERRAL: {referrer_id} -> {referred_id}")
+        
+        # Принудительно применяем бонус
+        success = apply_referral_bonus(referred_id, referrer_id)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Реферальный бонус принудительно начислен: {referred_id} +100₽, {referrer_id} +50₽"
+            }
+        else:
+            return {"error": "Failed to apply referral bonus"}
+            
+    except Exception as e:
+        logger.error(f"❌ Error forcing referral bonus: {e}")
+        return {"error": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
