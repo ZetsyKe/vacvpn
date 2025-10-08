@@ -494,6 +494,49 @@ def mark_referral_bonus_paid(referred_id: str):
     except Exception as e:
         logger.error(f"❌ Error marking referral bonus paid: {e}")
 
+# УЛУЧШЕННАЯ ФУНКЦИЯ: Извлечение referrer_id из start_param
+def extract_referrer_id(start_param: str) -> str:
+    """Извлекает referrer_id из start_param различными способами"""
+    if not start_param:
+        return None
+    
+    logger.info(f"🔍 Extracting referrer_id from: '{start_param}'")
+    
+    # Способ 1: ref_ формат (ref_123456789)
+    if start_param.startswith('ref_'):
+        referrer_id = start_param.replace('ref_', '')
+        logger.info(f"✅ Found ref_ format: {referrer_id}")
+        return referrer_id
+    
+    # Способ 2: Прямой цифровой ID
+    if start_param.isdigit():
+        logger.info(f"✅ Found digit format: {start_param}")
+        return start_param
+    
+    # Способ 3: Пробуем извлечь ID из различных форматов
+    # Например: "startapp_ref_123456789" или "ref123456789"
+    import re
+    patterns = [
+        r'ref_(\d+)',           # ref_123456789
+        r'ref(\d+)',            # ref123456789  
+        r'referral_(\d+)',      # referral_123456789
+        r'referral(\d+)',       # referral123456789
+        r'startapp_(\d+)',      # startapp_123456789
+        r'startapp(\d+)',       # startapp123456789
+        r'(\d{8,})',            # любой длинный цифровой ID
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, start_param)
+        if match:
+            referrer_id = match.group(1)
+            logger.info(f"✅ Found with pattern '{pattern}': {referrer_id}")
+            return referrer_id
+    
+    # Способ 4: Если ничего не нашли, пробуем весь start_param как referrer_id
+    logger.info(f"⚠️ Using raw start_param as referrer_id: {start_param}")
+    return start_param
+
 # Эндпоинты API
 @app.get("/")
 async def root():
@@ -533,60 +576,33 @@ async def init_user(request: InitUserRequest):
         if not request.user_id or request.user_id == 'unknown':
             return {"error": "Invalid user ID"}
         
-        # Проверяем реферальную ссылку - РАСШИРЕННАЯ ОТЛАДКА
-        is_referral = False
+        # УЛУЧШЕННАЯ ЛОГИКА: Извлекаем referrer_id из start_param
         referrer_id = None
+        is_referral = False
         bonus_applied = False
         
-        logger.info(f"🔍 DEBUG: Raw start_param = '{request.start_param}'")
-        logger.info(f"🔍 DEBUG: Type of start_param = {type(request.start_param)}")
-        logger.info(f"🔍 DEBUG: Length of start_param = {len(request.start_param) if request.start_param else 0}")
-        
-        # АЛЬТЕРНАТИВНЫЙ СПОСОБ: проверяем разные форматы
-        potential_referrer_ids = []
-        
         if request.start_param:
-            # Способ 1: ref_ format
-            if request.start_param.startswith('ref_'):
-                test_referrer_id = request.start_param.replace('ref_', '')
-                potential_referrer_ids.append(('ref_', test_referrer_id))
-                logger.info(f"🔍 DEBUG: Found ref_ format: {test_referrer_id}")
+            referrer_id = extract_referrer_id(request.start_param)
+            logger.info(f"🎯 Extracted referrer_id: {referrer_id}")
             
-            # Способ 2: цифровой ID
-            elif request.start_param.isdigit():
-                test_referrer_id = request.start_param
-                potential_referrer_ids.append(('digit', test_referrer_id))
-                logger.info(f"🔍 DEBUG: Found digit format: {test_referrer_id}")
-            
-            # Способ 3: любой текст (может быть ID)
-            else:
-                test_referrer_id = request.start_param
-                potential_referrer_ids.append(('raw', test_referrer_id))
-                logger.info(f"🔍 DEBUG: Using raw start_param as referrer_id: {test_referrer_id}")
-        
-        # Пробуем все возможные форматы
-        for format_type, test_referrer_id in potential_referrer_ids:
-            logger.info(f"🔍 DEBUG: Testing referrer_id format '{format_type}': {test_referrer_id}")
-            
-            # Проверяем что реферер существует и это не сам пользователь
-            referrer = get_user(test_referrer_id)
-            logger.info(f"🔍 DEBUG: Referrer exists: {referrer is not None}")
-            
-            if referrer and test_referrer_id != request.user_id:
-                # Проверяем что бонус еще не начислялся
-                referral_id = f"{test_referrer_id}_{request.user_id}"
-                referral_exists = db.collection('referrals').document(referral_id).get().exists
-                logger.info(f"🔍 DEBUG: Referral already exists: {referral_exists}")
+            if referrer_id:
+                # Проверяем что реферер существует и это не сам пользователь
+                referrer = get_user(referrer_id)
+                logger.info(f"🔍 Referrer exists: {referrer is not None}")
                 
-                if not referral_exists:
-                    is_referral = True
-                    referrer_id = test_referrer_id
-                    logger.info(f"🎯 SUCCESS: Valid referral detected: {referrer_id} -> {request.user_id}")
-                    break
+                if referrer and referrer_id != request.user_id:
+                    # Проверяем что бонус еще не начислялся
+                    referral_id = f"{referrer_id}_{request.user_id}"
+                    referral_exists = db.collection('referrals').document(referral_id).get().exists
+                    logger.info(f"🔍 Referral already exists: {referral_exists}")
+                    
+                    if not referral_exists:
+                        is_referral = True
+                        logger.info(f"🎁 VALID REFERRAL: {referrer_id} -> {request.user_id}")
+                    else:
+                        logger.info(f"ℹ️ Referral already processed: {referral_id}")
                 else:
-                    logger.info(f"ℹ️ Referral already processed: {referral_id}")
-            else:
-                logger.info(f"⚠️ Invalid referrer or self-referral: {test_referrer_id}")
+                    logger.info(f"⚠️ Invalid referrer or self-referral: {referrer_id}")
         
         # Создаем пользователя если не существует
         user_ref = db.collection('users').document(request.user_id)
