@@ -92,6 +92,11 @@
       font-weight: 800;
       color: var(--primary);
       margin-bottom: 4px;
+      transition: all 0.3s ease;
+    }
+    .balance-updated {
+      transform: scale(1.1);
+      color: #B0CB1F;
     }
     .balance-days {
       font-size: 14px;
@@ -537,7 +542,7 @@
     </div>
     
     <button class="button button-yellow" id="buyTariffBtn" style="display:none;" onclick="buyTariff()">КУПИТЬ ТАРИФ</button>
-    <button class="button button-yellow" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИТЬ ТАРИФ</button>
+    <button class="button button-yellow" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИЬ ТАРИФ</button>
   </div>
 
   <div class="card">
@@ -856,7 +861,28 @@
         }
     }
 
-    // Инициализация пользователя при загрузке
+    // НОВАЯ ФУНКЦИЯ: Принудительное обновление баланса
+    async function forceRefreshBalance() {
+        try {
+            console.log('🔄 Force refreshing balance for user:', userId);
+            
+            const response = await fetch(`${API_BASE_URL}/force-refresh-balance?user_id=${userId}`);
+            if (response.ok) {
+                const userData = await response.json();
+                if (!userData.error) {
+                    updateUserInterface(userData);
+                    console.log('✅ Balance force refreshed:', userData.balance);
+                    return true;
+                }
+            }
+            return false;
+        } catch (error) {
+            console.error('❌ Error refreshing balance:', error);
+            return false;
+        }
+    }
+
+    // ОБНОВЛЕННАЯ ФУНКЦИЯ: Инициализация пользователя при загрузке
     async function initUser() {
         try {
             console.log('🔄 Initializing user:', userId);
@@ -921,9 +947,17 @@
                 
                 if (data.is_referral && data.bonus_applied) {
                     showSuccess('🎉 Вам начислен реферальный бонус 100₽!');
-                    // Дополнительно загружаем актуальные данные
-                    await loadUserData();
+                    
+                    // ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ БАЛАНС ЧЕРЕЗ 2 СЕКУНДЫ
+                    setTimeout(async () => {
+                        await forceRefreshBalance();
+                        console.log('💰 Balance updated after referral bonus');
+                    }, 2000);
                 }
+                
+                // Всегда загружаем актуальные данные
+                await loadUserData();
+                
             } else {
                 console.warn('⚠️ User init warning:', data.error);
             }
@@ -933,7 +967,7 @@
         }
     }
 
-    // Загрузка данных пользователя
+    // ОБНОВЛЕННАЯ ФУНКЦИЯ: Загрузка данных пользователя с повторными попытками
     async function loadUserData() {
         try {
             console.log('🔄 Loading user data for:', userId);
@@ -958,16 +992,39 @@
             // Обновляем интерфейс
             updateUserInterface(userData);
             
+            // Если баланс 0, проверяем еще раз через 3 секунды (на случай реферального бонуса)
+            if (userData.balance === 0) {
+                setTimeout(async () => {
+                    console.log('🔄 Re-checking balance for potential referral bonus...');
+                    await forceRefreshBalance();
+                }, 3000);
+            }
+            
         } catch (error) {
             console.error('❌ Ошибка загрузки данных:', error);
             showError('Ошибка загрузки данных: ' + error.message);
         }
     }
 
+    // ОБНОВЛЕННАЯ ФУНКЦИЯ: Обновление интерфейса пользователя с анимацией баланса
     function updateUserInterface(userData) {
+        // Сохраняем старый баланс для сравнения
+        const oldBalance = userBalance;
+        
         // Обновляем баланс
         userBalance = userData.balance || 0;
         document.getElementById('userBalance').textContent = `${userBalance}₽`;
+        
+        // Показываем анимацию изменения баланса
+        if (oldBalance !== userBalance && userBalance > oldBalance) {
+            const balanceElement = document.getElementById('userBalance');
+            balanceElement.style.transform = 'scale(1.1)';
+            balanceElement.style.color = '#B0CB1F';
+            setTimeout(() => {
+                balanceElement.style.transform = 'scale(1)';
+                balanceElement.style.color = '#B0CB1F';
+            }, 500);
+        }
         
         // Сохраняем статус подписки
         hasSubscription = userData.has_subscription || false;
@@ -1217,7 +1274,7 @@
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                },
+                    },
                 body: JSON.stringify({
                     user_id: userId
                 })
@@ -1375,232 +1432,6 @@
             console.log('🎉 Initialization complete!');
         }, 1000);
     });
-
-    // Принудительное обновление баланса
-async function forceRefreshBalance() {
-    try {
-        console.log('🔄 Force refreshing balance for user:', userId);
-        
-        const response = await fetch(`${API_BASE_URL}/force-refresh-balance?user_id=${userId}`);
-        if (response.ok) {
-            const userData = await response.json();
-            if (!userData.error) {
-                updateUserInterface(userData);
-                console.log('✅ Balance force refreshed:', userData.balance);
-                return true;
-            }
-        }
-        return false;
-    } catch (error) {
-        console.error('❌ Error refreshing balance:', error);
-        return false;
-    }
-}
-
-// Обновленная функция initUser с принудительным обновлением
-async function initUser() {
-    try {
-        console.log('🔄 Initializing user:', userId);
-        
-        if (!userId || userId === 'unknown') {
-            console.error('❌ User ID not available from Telegram');
-            showError('Ошибка: Telegram не предоставил данные пользователя. Откройте через бота.');
-            return;
-        }
-        
-        // Получаем start_param из URL или Telegram WebApp
-        let startParam = '';
-        
-        // Способ 1: Пробуем получить из Telegram WebApp
-        if (tg.initData) {
-            const urlParams = new URLSearchParams(tg.initData);
-            startParam = urlParams.get('startapp') || '';
-        }
-        
-        // Способ 2: Пробуем получить из обычного URL параметра
-        if (!startParam) {
-            const urlParams = new URLSearchParams(window.location.search);
-            startParam = urlParams.get('start') || '';
-        }
-        
-        // Способ 3: Пробуем получить из hash
-        if (!startParam && window.location.hash) {
-            const hashParams = new URLSearchParams(window.location.hash.substring(1));
-            startParam = hashParams.get('start') || '';
-        }
-        
-        console.log('🔗 Start param:', startParam);
-        
-        const response = await fetch(`${API_BASE_URL}/init-user`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                user_id: userId,
-                username: userUsername,
-                first_name: userName,
-                last_name: initData.user?.last_name || "",
-                start_param: startParam
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('👤 User init result:', data);
-        
-        if (data.success) {
-            console.log('✅ User initialized successfully');
-            
-            // Если есть данные пользователя в ответе, обновляем интерфейс сразу
-            if (data.user_data) {
-                updateUserInterface(data.user_data);
-            }
-            
-            if (data.is_referral && data.bonus_applied) {
-                showSuccess('🎉 Вам начислен реферальный бонус 100₽!');
-                
-                // ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ БАЛАНС ЧЕРЕЗ 2 СЕКУНДЫ
-                setTimeout(async () => {
-                    await forceRefreshBalance();
-                    console.log('💰 Balance updated after referral bonus');
-                }, 2000);
-            }
-            
-            // Всегда загружаем актуальные данные
-            await loadUserData();
-            
-        } else {
-            console.warn('⚠️ User init warning:', data.error);
-        }
-    } catch (error) {
-        console.error('❌ User init error:', error);
-        showError('Ошибка инициализации: ' + error.message);
-    }
-}
-
-// Обновленная функция loadUserData с повторными попытками
-async function loadUserData() {
-    try {
-        console.log('🔄 Loading user data for:', userId);
-        
-        if (!userId || userId === 'unknown') {
-            return;
-        }
-        
-        const response = await fetch(`${API_BASE_URL}/user-data?user_id=${userId}`);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const userData = await response.json();
-        console.log('📊 User data loaded:', userData);
-        
-        if (userData.error) {
-            throw new Error(userData.error);
-        }
-        
-        // Обновляем интерфейс
-       function updateUserInterface(userData) {
-    // Сохраняем старый баланс для сравнения
-    const oldBalance = userBalance;
-    
-    // Обновляем баланс
-    userBalance = userData.balance || 0;
-    document.getElementById('userBalance').textContent = `${userBalance}₽`;
-    
-    // Показываем анимацию изменения баланса
-    if (oldBalance !== userBalance && userBalance > oldBalance) {
-        const balanceElement = document.getElementById('userBalance');
-        balanceElement.style.transform = 'scale(1.1)';
-        balanceElement.style.color = '#B0CB1F';
-        setTimeout(() => {
-            balanceElement.style.transform = 'scale(1)';
-            balanceElement.style.color = '#B0CB1F';
-        }, 500);
-    }
-    
-    // Остальной код остается без изменений...
-    // Сохраняем статус подписки
-    hasSubscription = userData.has_subscription || false;
-    currentTariff = userData.current_tariff;
-    currentDailyCost = userData.daily_cost || 0;
-    
-    // Обновляем статус подписки
-    const subscriptionBadge = document.getElementById('subscriptionBadge');
-    const balanceDays = document.getElementById('balanceDays');
-    const dailyCostElement = document.getElementById('dailyCost');
-    const vlessConfigContainer = document.getElementById('vlessConfigContainer');
-    const vlessButton = document.getElementById('vlessButton');
-    const buyTariffBtn = document.getElementById('buyTariffBtn');
-    const changeTariffBtn = document.getElementById('changeTariffBtn');
-    const tariffPaymentInfo = document.getElementById('tariffPaymentInfo');
-    
-    if (hasSubscription) {
-        subscriptionBadge.textContent = 'Активна';
-        subscriptionBadge.className = 'badge active-badge';
-        vlessButton.style.display = 'block';
-        buyTariffBtn.style.display = 'none';
-        changeTariffBtn.style.display = 'block';
-        tariffPaymentInfo.style.display = 'none';
-        
-        // Показываем ежедневную стоимость
-        if (currentDailyCost > 0) {
-            dailyCostElement.textContent = `Ежедневное списание: ${currentDailyCost}₽`;
-            dailyCostElement.style.display = 'block';
-        }
-        
-        // Обновляем информацию о тарифе
-        if (currentTariff === 'month') {
-            balanceDays.textContent = `Активен месячный тариф`;
-        } else if (currentTariff === 'year') {
-            balanceDays.textContent = `Активен годовой тариф`;
-        } else {
-            balanceDays.textContent = 'Подписка активна';
-        }
-        
-        // Показываем VLESS UUID если есть
-        if (userData.vless_uuid) {
-            document.getElementById('vlessUuidText').textContent = userData.vless_uuid;
-        }
-        
-        // Выбираем текущий тариф
-        if (currentTariff === 'month') {
-            selectTariff('1month');
-        } else if (currentTariff === 'year') {
-            selectTariff('1year');
-        }
-        
-        // Обновляем информацию о днях по балансу
-        updateBalanceDaysInfo();
-        
-    } else {
-        subscriptionBadge.textContent = 'Неактивна';
-        subscriptionBadge.className = 'badge inactive-badge';
-        balanceDays.textContent = 'Подписка неактивна';
-        dailyCostElement.style.display = 'none';
-        vlessConfigContainer.style.display = 'none';
-        vlessButton.style.display = 'none';
-        buyTariffBtn.style.display = 'block';
-        changeTariffBtn.style.display = 'none';
-        
-        // Сбрасываем выбор тарифов
-        document.querySelectorAll('.tariff-card').forEach(card => {
-            card.classList.remove('selected');
-        });
-        currentTariff = null;
-        tariffPaymentInfo.style.display = 'none';
-        
-        // Скрываем информацию о днях по балансу
-        document.getElementById('balanceInfo').style.display = 'none';
-    }
-}
-
-
   </script>
 </body>
 </html>
