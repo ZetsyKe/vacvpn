@@ -566,8 +566,6 @@ async def init_user(request: InitUserRequest):
     """Автоматическое создание пользователя при заходе на сайт"""
     try:
         logger.info(f"🔍 INIT-USER START: user_id={request.user_id}, start_param='{request.start_param}'")
-        logger.info(f"🔍 DEBUG: username='{request.username}', first_name='{request.first_name}'")
-        logger.info(f"🔍 DEBUG: Full request data: {request.dict()}")
         
         if not db:
             return {"error": "Database not connected"}
@@ -576,7 +574,7 @@ async def init_user(request: InitUserRequest):
         if not request.user_id or request.user_id == 'unknown':
             return {"error": "Invalid user ID"}
         
-        # УЛУЧШЕННАЯ ЛОГИКА: Извлекаем referrer_id из start_param
+        # Извлекаем referrer_id из start_param
         referrer_id = None
         is_referral = False
         bonus_applied = False
@@ -588,21 +586,14 @@ async def init_user(request: InitUserRequest):
             if referrer_id:
                 # Проверяем что реферер существует и это не сам пользователь
                 referrer = get_user(referrer_id)
-                logger.info(f"🔍 Referrer exists: {referrer is not None}")
                 
                 if referrer and referrer_id != request.user_id:
                     # Проверяем что бонус еще не начислялся
                     referral_id = f"{referrer_id}_{request.user_id}"
                     referral_exists = db.collection('referrals').document(referral_id).get().exists
-                    logger.info(f"🔍 Referral already exists: {referral_exists}")
                     
                     if not referral_exists:
                         is_referral = True
-                        logger.info(f"🎁 VALID REFERRAL: {referrer_id} -> {request.user_id}")
-                    else:
-                        logger.info(f"ℹ️ Referral already processed: {referral_id}")
-                else:
-                    logger.info(f"⚠️ Invalid referrer or self-referral: {referrer_id}")
         
         # Создаем пользователя если не существует
         user_ref = db.collection('users').document(request.user_id)
@@ -645,39 +636,17 @@ async def init_user(request: InitUserRequest):
                     'bonus_paid': True,
                     'created_at': firestore.SERVER_TIMESTAMP
                 })
-                
-                logger.info(f"🎁 INIT-USER: Referral bonuses CREATED: {request.user_id} +100₽, {referrer_id} +50₽")
-            else:
-                logger.info(f"ℹ️ No referral bonus applied - is_referral: {is_referral}, referrer_id: {referrer_id}")
             
             user_ref.set(user_data)
             logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}, bonus_applied: {bonus_applied}")
             
-            # Если бонус был начислен, возвращаем обновленные данные пользователя
-            if bonus_applied:
-                user_data_after_bonus = user_ref.get().to_dict()
-                return {
-                    "success": True, 
-                    "message": "User created with referral bonus",
-                    "user_id": request.user_id,
-                    "is_referral": is_referral,
-                    "bonus_applied": bonus_applied,
-                    "user_data": {
-                        "balance": user_data_after_bonus.get('balance', 0),
-                        "has_subscription": user_data_after_bonus.get('has_subscription', False),
-                        "current_tariff": user_data_after_bonus.get('current_tariff'),
-                        "vless_uuid": user_data_after_bonus.get('vless_uuid'),
-                        "daily_cost": 0
-                    }
-                }
-            else:
-                return {
-                    "success": True, 
-                    "message": "User created", 
-                    "user_id": request.user_id,
-                    "is_referral": is_referral,
-                    "bonus_applied": bonus_applied
-                }
+            return {
+                "success": True, 
+                "message": "User created with referral bonus" if bonus_applied else "User created",
+                "user_id": request.user_id,
+                "is_referral": is_referral,
+                "bonus_applied": bonus_applied
+            }
         else:
             # Пользователь уже существует
             user_data = user_doc.to_dict()
@@ -688,14 +657,7 @@ async def init_user(request: InitUserRequest):
                 "message": "User already exists", 
                 "user_id": request.user_id,
                 "is_referral": has_bonus,
-                "bonus_applied": has_bonus,
-                "user_data": {
-                    "balance": user_data.get('balance', 0),
-                    "has_subscription": user_data.get('has_subscription', False),
-                    "current_tariff": user_data.get('current_tariff'),
-                    "vless_uuid": user_data.get('vless_uuid'),
-                    "daily_cost": TARIFFS[user_data.get('current_tariff')]["daily_cost"] if user_data.get('current_tariff') in TARIFFS else 0
-                }
+                "bonus_applied": has_bonus
             }
             
     except Exception as e:
@@ -898,20 +860,13 @@ async def check_payment(payment_id: str, user_id: str):
                         update_user_balance(user_id, amount)
                         
                         if payment_type == 'tariff':
-                            # Активируем подписку
+                            # Активируем подписку ТОЛЬКО ПОСЛЕ ОПЛАТЫ
                             vless_uuid = activate_subscription(user_id, tariff)
                             
                             if not vless_uuid:
                                 logger.error(f"❌ Failed to activate subscription for user {user_id}")
                                 return {"error": "Failed to activate subscription"}
-                            
-                            # Начисляем реферальный бонус
-                            referrals = get_referrals(user_id)
-                            for ref in referrals:
-                                if not ref.get('bonus_paid', False):
-                                    update_user_balance(ref['referrer_id'], 50)
-                                    mark_referral_bonus_paid(user_id)
-                    
+                        
                         return {
                             "success": True,
                             "status": status,
@@ -975,9 +930,16 @@ async def update_balance_endpoint(request: UpdateBalanceRequest):
         logger.error(f"❌ Error updating balance: {e}")
         return {"error": str(e)}
 
+# ИСПРАВЛЕННЫЙ ЭНДПОИНТ: Активация тарифа (теперь требует оплаты)
 @app.post("/activate-tariff")
 async def activate_tariff(request: ActivateTariffRequest):
     try:
+        SHOP_ID = os.getenv("SHOP_ID")
+        API_KEY = os.getenv("API_KEY")
+        
+        if not SHOP_ID or not API_KEY:
+            return {"error": "Payment gateway not configured"}
+        
         if not db:
             return {"error": "Database not connected"}
             
@@ -990,28 +952,53 @@ async def activate_tariff(request: ActivateTariffRequest):
             
         tariff_data = TARIFFS[request.tariff]
         tariff_price = tariff_data["price"]
-        daily_cost = tariff_data["daily_cost"]
         
-        # НАЧИСЛЯЕМ сумму тарифа на баланс
-        new_balance = user.get('balance', 0) + tariff_price
-        update_user_balance(request.user_id, tariff_price)
+        # Создаем платеж через ЮKassa вместо немедленной активации
+        payment_id = str(uuid.uuid4())
+        save_payment(payment_id, request.user_id, tariff_price, request.tariff, "tariff")
         
-        # Активируем подписку
-        vless_uuid = activate_subscription(request.user_id, request.tariff)
-        
-        if not vless_uuid:
-            return {"error": "Failed to generate VLESS configuration"}
-        
-        return {
-            "success": True, 
-            "tariff": request.tariff,
-            "tariff_name": tariff_data['name'],
-            "daily_cost": daily_cost,
-            "amount_added": tariff_price,
-            "vless_uuid": vless_uuid,
-            "new_balance": new_balance,
-            "message": f"✅ Тариф активирован! На баланс добавлено {tariff_price}₽. Ежедневное списание: {daily_cost}₽"
+        # Данные для ЮKassa
+        yookassa_data = {
+            "amount": {"value": f"{tariff_price:.2f}", "currency": "RUB"},
+            "confirmation": {"type": "redirect", "return_url": "https://t.me/vaaaac_bot"},
+            "capture": True,
+            "description": f"Покупка тарифа {tariff_data['name']} - VAC VPN",
+            "metadata": {
+                "payment_id": payment_id,
+                "user_id": request.user_id,
+                "tariff": request.tariff,
+                "payment_type": "tariff"
+            }
         }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.yookassa.ru/v3/payments",
+                auth=(SHOP_ID, API_KEY),
+                headers={
+                    "Content-Type": "application/json",
+                    "Idempotence-Key": payment_id
+                },
+                json=yookassa_data,
+                timeout=30.0
+            )
+        
+        if response.status_code in [200, 201]:
+            payment_data = response.json()
+            update_payment_status(payment_id, "pending", payment_data.get("id"))
+            
+            logger.info(f"💳 Tariff payment created: {payment_id} for user {request.user_id}")
+            
+            return {
+                "success": True,
+                "payment_id": payment_id,
+                "payment_url": payment_data["confirmation"]["confirmation_url"],
+                "amount": tariff_price,
+                "status": "pending",
+                "message": "Перейдите по ссылке для оплаты тарифа"
+            }
+        else:
+            return {"error": f"Payment gateway error: {response.status_code}"}
         
     except Exception as e:
         logger.error(f"❌ Error activating tariff: {e}")
