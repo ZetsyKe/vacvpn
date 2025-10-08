@@ -304,8 +304,26 @@ def apply_referral_bonus(referred_id: str, referrer_id: str):
         return False
     
     try:
-        # Начисляем 100₽ новому пользователю
-        update_user_balance(referred_id, 100.0)
+        # ИСПРАВЛЕНИЕ: Сначала создаем пользователя если не существует
+        user_ref = db.collection('users').document(referred_id)
+        if not user_ref.get().exists:
+            user_ref.set({
+                'user_id': referred_id,
+                'balance': 100.0,  # Сразу начисляем 100₽
+                'has_subscription': False,
+                'current_tariff': None,
+                'subscription_start': None,
+                'last_deduction_date': None,
+                'vless_uuid': None,
+                'referred_by': referrer_id,  # Сохраняем кто пригласил
+                'created_at': firestore.SERVER_TIMESTAMP
+            })
+            logger.info(f"✅ New user created with referral bonus: {referred_id} +100₽")
+        else:
+            # Если пользователь уже существует, начисляем бонус
+            update_user_balance(referred_id, 100.0)
+            user_ref.update({'referred_by': referrer_id})
+            logger.info(f"✅ Referral bonus added to existing user: {referred_id} +100₽")
         
         # Начисляем 50₽ тому, кто пригласил
         update_user_balance(referrer_id, 50.0)
@@ -504,6 +522,8 @@ async def health_check():
 async def init_user(request: InitUserRequest):
     """Автоматическое создание пользователя при заходе на сайт"""
     try:
+        logger.info(f"🔍 INIT-USER START: user_id={request.user_id}, start_param='{request.start_param}'")
+        
         if not db:
             return {"error": "Database not connected"}
         
@@ -516,15 +536,20 @@ async def init_user(request: InitUserRequest):
         referrer_id = None
         bonus_applied = False
         
+        logger.info(f"🔍 DEBUG: Raw start_param = '{request.start_param}'")
+        
         if request.start_param:
+            logger.info(f"🔍 DEBUG: Processing start_param: {request.start_param}")
             # Обрабатываем разные форматы реферальных ссылок
             if request.start_param.startswith('ref_'):
                 referrer_id = request.start_param.replace('ref_', '')
                 is_referral = True
+                logger.info(f"🔍 DEBUG: Referral detected - referrer_id: {referrer_id}")
             elif request.start_param.isdigit():
                 # Если start_param это просто ID пользователя
                 referrer_id = request.start_param
                 is_referral = True
+                logger.info(f"🔍 DEBUG: Referral detected (digit) - referrer_id: {referrer_id}")
             
             if is_referral:
                 logger.info(f"🎯 Referral detected: {referrer_id} -> {request.user_id}")
@@ -558,7 +583,7 @@ async def init_user(request: InitUserRequest):
                     referral_exists = db.collection('referrals').document(referral_id).get().exists
                     
                     if not referral_exists:
-                        # Начисляем 100₽ новому пользователю
+                        # ИСПРАВЛЕНИЕ: Начисляем 100₽ новому пользователю
                         user_data['balance'] = 100.0
                         user_data['referred_by'] = referrer_id
                         bonus_applied = True
@@ -576,14 +601,14 @@ async def init_user(request: InitUserRequest):
                             'created_at': firestore.SERVER_TIMESTAMP
                         })
                         
-                        logger.info(f"🎁 Referral bonuses applied: {request.user_id} +100₽, {referrer_id} +50₽")
+                        logger.info(f"🎁 INIT-USER: Referral bonuses CREATED: {request.user_id} +100₽, {referrer_id} +50₽")
                     else:
-                        logger.info(f"ℹ️ Referral already processed: {request.user_id}")
+                        logger.info(f"ℹ️ INIT-USER: Referral already exists: {referral_id}")
                 else:
-                    logger.warning(f"⚠️ Invalid referrer: {referrer_id}")
+                    logger.warning(f"⚠️ INIT-USER: Invalid referrer: {referrer_id}")
             
             user_ref.set(user_data)
-            logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}")
+            logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}, bonus_applied: {bonus_applied}")
             
             # Если бонус был начислен, возвращаем обновленные данные пользователя
             if bonus_applied:
@@ -1085,7 +1110,7 @@ async def check_referral(user_id: str):
         
     except Exception as e:
         return {"error": str(e)}
-        
+
 @app.delete("/clear-all-referrals")
 async def clear_all_referrals():
     """Полностью очистить всю историю рефералов (админская функция)"""
@@ -1114,6 +1139,41 @@ async def clear_all_referrals():
             
     except Exception as e:
         logger.error(f"❌ Error clearing referrals: {e}")
+        return {"error": str(e)}
+
+# Эндпоинт для отладки рефералов
+@app.get("/debug-referrals")
+async def debug_referrals():
+    """Временный эндпоинт для отладки рефералов"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        # Получаем все рефералы
+        referrals_ref = db.collection('referrals')
+        referrals = referrals_ref.stream()
+        
+        referral_list = []
+        for ref in referrals:
+            referral_data = ref.to_dict()
+            referral_data['id'] = ref.id
+            referral_list.append(referral_data)
+        
+        # Получаем всех пользователей с реферальными бонусами
+        users_with_referrals = db.collection('users').where('referred_by', '!=', None).stream()
+        users_list = []
+        for user in users_with_referrals:
+            user_data = user.to_dict()
+            users_list.append(user_data)
+        
+        return {
+            "total_referrals": len(referral_list),
+            "referrals": referral_list,
+            "users_with_referral_bonus": len(users_list),
+            "users": users_list
+        }
+            
+    except Exception as e:
         return {"error": str(e)}
 
 if __name__ == "__main__":
