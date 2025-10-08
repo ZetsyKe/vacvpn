@@ -304,7 +304,7 @@ def apply_referral_bonus(referred_id: str, referrer_id: str):
         return False
     
     try:
-        # ИСПРАВЛЕНИЕ: Сначала создаем пользователя если не существует
+        # Сначала создаем пользователя если не существует
         user_ref = db.collection('users').document(referred_id)
         if not user_ref.get().exists:
             user_ref.set({
@@ -523,6 +523,8 @@ async def init_user(request: InitUserRequest):
     """Автоматическое создание пользователя при заходе на сайт"""
     try:
         logger.info(f"🔍 INIT-USER START: user_id={request.user_id}, start_param='{request.start_param}'")
+        logger.info(f"🔍 DEBUG: username='{request.username}', first_name='{request.first_name}'")
+        logger.info(f"🔍 DEBUG: Full request data: {request.dict()}")
         
         if not db:
             return {"error": "Database not connected"}
@@ -531,28 +533,60 @@ async def init_user(request: InitUserRequest):
         if not request.user_id or request.user_id == 'unknown':
             return {"error": "Invalid user ID"}
         
-        # Проверяем реферальную ссылку
+        # Проверяем реферальную ссылку - РАСШИРЕННАЯ ОТЛАДКА
         is_referral = False
         referrer_id = None
         bonus_applied = False
         
         logger.info(f"🔍 DEBUG: Raw start_param = '{request.start_param}'")
+        logger.info(f"🔍 DEBUG: Type of start_param = {type(request.start_param)}")
+        logger.info(f"🔍 DEBUG: Length of start_param = {len(request.start_param) if request.start_param else 0}")
+        
+        # АЛЬТЕРНАТИВНЫЙ СПОСОБ: проверяем разные форматы
+        potential_referrer_ids = []
         
         if request.start_param:
-            logger.info(f"🔍 DEBUG: Processing start_param: {request.start_param}")
-            # Обрабатываем разные форматы реферальных ссылок
+            # Способ 1: ref_ format
             if request.start_param.startswith('ref_'):
-                referrer_id = request.start_param.replace('ref_', '')
-                is_referral = True
-                logger.info(f"🔍 DEBUG: Referral detected - referrer_id: {referrer_id}")
-            elif request.start_param.isdigit():
-                # Если start_param это просто ID пользователя
-                referrer_id = request.start_param
-                is_referral = True
-                logger.info(f"🔍 DEBUG: Referral detected (digit) - referrer_id: {referrer_id}")
+                test_referrer_id = request.start_param.replace('ref_', '')
+                potential_referrer_ids.append(('ref_', test_referrer_id))
+                logger.info(f"🔍 DEBUG: Found ref_ format: {test_referrer_id}")
             
-            if is_referral:
-                logger.info(f"🎯 Referral detected: {referrer_id} -> {request.user_id}")
+            # Способ 2: цифровой ID
+            elif request.start_param.isdigit():
+                test_referrer_id = request.start_param
+                potential_referrer_ids.append(('digit', test_referrer_id))
+                logger.info(f"🔍 DEBUG: Found digit format: {test_referrer_id}")
+            
+            # Способ 3: любой текст (может быть ID)
+            else:
+                test_referrer_id = request.start_param
+                potential_referrer_ids.append(('raw', test_referrer_id))
+                logger.info(f"🔍 DEBUG: Using raw start_param as referrer_id: {test_referrer_id}")
+        
+        # Пробуем все возможные форматы
+        for format_type, test_referrer_id in potential_referrer_ids:
+            logger.info(f"🔍 DEBUG: Testing referrer_id format '{format_type}': {test_referrer_id}")
+            
+            # Проверяем что реферер существует и это не сам пользователь
+            referrer = get_user(test_referrer_id)
+            logger.info(f"🔍 DEBUG: Referrer exists: {referrer is not None}")
+            
+            if referrer and test_referrer_id != request.user_id:
+                # Проверяем что бонус еще не начислялся
+                referral_id = f"{test_referrer_id}_{request.user_id}"
+                referral_exists = db.collection('referrals').document(referral_id).get().exists
+                logger.info(f"🔍 DEBUG: Referral already exists: {referral_exists}")
+                
+                if not referral_exists:
+                    is_referral = True
+                    referrer_id = test_referrer_id
+                    logger.info(f"🎯 SUCCESS: Valid referral detected: {referrer_id} -> {request.user_id}")
+                    break
+                else:
+                    logger.info(f"ℹ️ Referral already processed: {referral_id}")
+            else:
+                logger.info(f"⚠️ Invalid referrer or self-referral: {test_referrer_id}")
         
         # Создаем пользователя если не существует
         user_ref = db.collection('users').document(request.user_id)
@@ -575,37 +609,30 @@ async def init_user(request: InitUserRequest):
             
             # Если это реферал, начисляем бонусы
             if is_referral and referrer_id:
-                # Проверяем что реферер существует и это не сам пользователь
-                referrer = get_user(referrer_id)
-                if referrer and referrer_id != request.user_id:
-                    # Проверяем что бонус еще не начислялся
-                    referral_id = f"{referrer_id}_{request.user_id}"
-                    referral_exists = db.collection('referrals').document(referral_id).get().exists
-                    
-                    if not referral_exists:
-                        # ИСПРАВЛЕНИЕ: Начисляем 100₽ новому пользователю
-                        user_data['balance'] = 100.0
-                        user_data['referred_by'] = referrer_id
-                        bonus_applied = True
-                        
-                        # Начисляем 50₽ тому, кто пригласил
-                        update_user_balance(referrer_id, 50.0)
-                        
-                        # Сохраняем запись о реферале
-                        db.collection('referrals').document(referral_id).set({
-                            'referrer_id': referrer_id,
-                            'referred_id': request.user_id,
-                            'new_user_bonus': 100.0,
-                            'referrer_bonus': 50.0,
-                            'bonus_paid': True,
-                            'created_at': firestore.SERVER_TIMESTAMP
-                        })
-                        
-                        logger.info(f"🎁 INIT-USER: Referral bonuses CREATED: {request.user_id} +100₽, {referrer_id} +50₽")
-                    else:
-                        logger.info(f"ℹ️ INIT-USER: Referral already exists: {referral_id}")
-                else:
-                    logger.warning(f"⚠️ INIT-USER: Invalid referrer: {referrer_id}")
+                logger.info(f"💰 APPLYING BONUS: New user {request.user_id} gets 100₽, referrer {referrer_id} gets 50₽")
+                
+                # Начисляем 100₽ новому пользователю
+                user_data['balance'] = 100.0
+                user_data['referred_by'] = referrer_id
+                bonus_applied = True
+                
+                # Начисляем 50₽ тому, кто пригласил
+                update_user_balance(referrer_id, 50.0)
+                
+                # Сохраняем запись о реферале
+                referral_id = f"{referrer_id}_{request.user_id}"
+                db.collection('referrals').document(referral_id).set({
+                    'referrer_id': referrer_id,
+                    'referred_id': request.user_id,
+                    'new_user_bonus': 100.0,
+                    'referrer_bonus': 50.0,
+                    'bonus_paid': True,
+                    'created_at': firestore.SERVER_TIMESTAMP
+                })
+                
+                logger.info(f"🎁 INIT-USER: Referral bonuses CREATED: {request.user_id} +100₽, {referrer_id} +50₽")
+            else:
+                logger.info(f"ℹ️ No referral bonus applied - is_referral: {is_referral}, referrer_id: {referrer_id}")
             
             user_ref.set(user_data)
             logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}, bonus_applied: {bonus_applied}")
