@@ -542,7 +542,7 @@
     </div>
     
     <button class="button button-yellow" id="buyTariffBtn" style="display:none;" onclick="buyTariff()">КУПИТЬ ТАРИФ</button>
-    <button class="button button-yellow" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИЬ ТАРИФ</button>
+    <button class="button button-yellow" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИТЬ ТАРИФ</button>
   </div>
 
   <div class="card">
@@ -578,6 +578,21 @@
     let tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
+
+    // Отладка Telegram WebApp данных
+    console.log('🔍 Telegram WebApp Debug:');
+    console.log('initDataUnsafe:', tg.initDataUnsafe);
+    console.log('initData:', tg.initData);
+    console.log('start_param from initDataUnsafe:', tg.initDataUnsafe?.start_param);
+
+    // Проверяем все возможные места где может быть start_param
+    if (tg.initData) {
+        const params = new URLSearchParams(tg.initData);
+        console.log('All initData params:');
+        for (let [key, value] of params) {
+            console.log(`  ${key}: ${value}`);
+        }
+    }
 
     // Данные пользователя
     const initData = tg.initDataUnsafe;
@@ -651,6 +666,36 @@
                 }
             }
         );
+    }
+
+    // ПРАВИЛЬНОЕ извлечение start_param из Telegram WebApp
+    function getStartParam() {
+        // Способ 1: Из initDataUnsafe
+        if (tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
+            console.log('🔗 Found start_param in initDataUnsafe:', tg.initDataUnsafe.start_param);
+            return tg.initDataUnsafe.start_param;
+        }
+        
+        // Способ 2: Разбор initData
+        if (tg.initData) {
+            const urlParams = new URLSearchParams(tg.initData);
+            const startParam = urlParams.get('start_param') || '';
+            if (startParam) {
+                console.log('🔗 Found start_param in initData:', startParam);
+                return startParam;
+            }
+        }
+        
+        // Способ 3: Из URL (последняя попытка)
+        const urlParams = new URLSearchParams(window.location.search);
+        const startParam = urlParams.get('start') || '';
+        if (startParam) {
+            console.log('🔗 Found start_param in URL:', startParam);
+            return startParam;
+        }
+        
+        console.log('🔗 No start_param found');
+        return '';
     }
 
     // Простые функции для пополнения баланса
@@ -866,7 +911,9 @@
         try {
             console.log('🔄 Force refreshing balance for user:', userId);
             
-            const response = await fetch(`${API_BASE_URL}/force-refresh-balance?user_id=${userId}`);
+            const response = await fetch(`${API_BASE_URL}/force-refresh-balance?user_id=${userId}`, {
+                method: 'POST'
+            });
             if (response.ok) {
                 const userData = await response.json();
                 if (!userData.error) {
@@ -893,28 +940,9 @@
                 return;
             }
             
-            // Получаем start_param из URL или Telegram WebApp
-            let startParam = '';
-            
-            // Способ 1: Пробуем получить из Telegram WebApp
-            if (tg.initData) {
-                const urlParams = new URLSearchParams(tg.initData);
-                startParam = urlParams.get('startapp') || '';
-            }
-            
-            // Способ 2: Пробуем получить из обычного URL параметра
-            if (!startParam) {
-                const urlParams = new URLSearchParams(window.location.search);
-                startParam = urlParams.get('start') || '';
-            }
-            
-            // Способ 3: Пробуем получить из hash
-            if (!startParam && window.location.hash) {
-                const hashParams = new URLSearchParams(window.location.hash.substring(1));
-                startParam = hashParams.get('start') || '';
-            }
-            
-            console.log('🔗 Start param:', startParam);
+            // ПРАВИЛЬНОЕ извлечение start_param
+            const startParam = getStartParam();
+            console.log('🔗 Final start_param:', startParam);
             
             const response = await fetch(`${API_BASE_URL}/init-user`, {
                 method: "POST",
