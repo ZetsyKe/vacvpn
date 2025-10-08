@@ -579,19 +579,25 @@
     tg.ready();
     tg.expand();
 
-    // Отладка Telegram WebApp данных
-    console.log('🔍 Telegram WebApp Debug:');
-    console.log('initDataUnsafe:', tg.initDataUnsafe);
+    // Расширенная отладка Telegram WebApp
+    console.log('=== TELEGRAM WEBAPP DEBUG INFO ===');
+    console.log('initDataUnsafe:', JSON.stringify(tg.initDataUnsafe, null, 2));
     console.log('initData:', tg.initData);
-    console.log('start_param from initDataUnsafe:', tg.initDataUnsafe?.start_param);
+    console.log('Platform:', tg.platform);
+    console.log('Version:', tg.version);
 
-    // Проверяем все возможные места где может быть start_param
     if (tg.initData) {
+        console.log('=== INIT DATA PARAMS ===');
         const params = new URLSearchParams(tg.initData);
-        console.log('All initData params:');
         for (let [key, value] of params) {
-            console.log(`  ${key}: ${value}`);
+            console.log(`${key}: ${value}`);
         }
+    }
+
+    console.log('=== URL PARAMS ===');
+    const urlParams = new URLSearchParams(window.location.search);
+    for (let [key, value] of urlParams) {
+        console.log(`${key}: ${value}`);
     }
 
     // Данные пользователя
@@ -668,33 +674,54 @@
         );
     }
 
-    // ПРАВИЛЬНОЕ извлечение start_param из Telegram WebApp
+    // РЕШЕНИЕ 1: Улучшенная функция получения start_param
     function getStartParam() {
-        // Способ 1: Из initDataUnsafe
+        console.log('🔍 DEBUG: Searching for start_param...');
+        
+        // Способ 1: Из initDataUnsafe (основной способ)
         if (tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
-            console.log('🔗 Found start_param in initDataUnsafe:', tg.initDataUnsafe.start_param);
+            console.log('✅ Found start_param in initDataUnsafe:', tg.initDataUnsafe.start_param);
             return tg.initDataUnsafe.start_param;
         }
         
-        // Способ 2: Разбор initData
+        // Способ 2: Из query параметров initData
         if (tg.initData) {
             const urlParams = new URLSearchParams(tg.initData);
-            const startParam = urlParams.get('start_param') || '';
+            const startParam = urlParams.get('start_param');
             if (startParam) {
-                console.log('🔗 Found start_param in initData:', startParam);
+                console.log('✅ Found start_param in initData query:', startParam);
                 return startParam;
             }
         }
         
-        // Способ 3: Из URL (последняя попытка)
+        // Способ 3: Из самого initData (парсим как строку)
+        if (tg.initData && tg.initData.includes('start_param=')) {
+            const match = tg.initData.match(/start_param=([^&]*)/);
+            if (match && match[1]) {
+                console.log('✅ Found start_param in initData string:', match[1]);
+                return decodeURIComponent(match[1]);
+            }
+        }
+        
+        // Способ 4: Из window.location (последняя попытка)
         const urlParams = new URLSearchParams(window.location.search);
-        const startParam = urlParams.get('start') || '';
+        const startParam = urlParams.get('start') || urlParams.get('start_param');
         if (startParam) {
-            console.log('🔗 Found start_param in URL:', startParam);
+            console.log('✅ Found start_param in URL:', startParam);
             return startParam;
         }
         
-        console.log('🔗 No start_param found');
+        // Способ 5: Из window.location.hash
+        if (window.location.hash) {
+            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            const startParam = hashParams.get('start') || hashParams.get('start_param');
+            if (startParam) {
+                console.log('✅ Found start_param in hash:', startParam);
+                return startParam;
+            }
+        }
+        
+        console.log('❌ No start_param found in any location');
         return '';
     }
 
