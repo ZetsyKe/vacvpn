@@ -511,38 +511,40 @@
     <div class="tariff-info">
       💡 <strong>Как работает подписка:</strong><br>
       1. Выбираете тариф и нажимаете "КУПИТЬ ТАРИФ"<br>
-      2. <strong>Сумма тарифа поступает на ваш баланс</strong><br>
-      3. Ежедневно списывается стоимость дня с баланса<br>
-      4. При нулевом балансе подписка приостанавливается<br>
-      5. Можно пополнять баланс дополнительно
+      2. <strong>Переходите по ссылке для оплаты</strong><br>
+      3. После успешной оплаты сумма тарифа поступает на ваш баланс<br>
+      4. Ежедневно списывается стоимость дня с баланса<br>
+      5. При нулевом балансе подписка приостанавливается<br>
+      6. Можно пополнять баланс дополнительно
     </div>
     
     <div class="tariff-grid">
       <div class="tariff-card" id="tariff1month" onclick="selectTariff('1month')">
         <div class="tariff-dot"></div>
         <div class="tariff-label">Месячный</div>
-        <div class="tariff-price">+150₽ на баланс</div>
+        <div class="tariff-price">150₽</div>
         <div class="tariff-trial">5₽ в день</div>
-        <div class="tariff-description">На баланс поступает 150₽. Ежедневное списание 5₽</div>
+        <div class="tariff-description">После оплаты на баланс поступит 150₽. Ежедневное списание 5₽</div>
       </div>
       <div class="tariff-card" id="tariff1year" onclick="selectTariff('1year')">
         <div class="tariff-dot"></div>
         <div class="tariff-label">Годовой</div>
-        <div class="tariff-price">+1300₽ на баланс</div>
+        <div class="tariff-price">1300₽</div>
         <div class="tariff-trial">3.56₽ в день</div>
-        <div class="tariff-description">На баланс поступает 1300₽. Ежедневное списание 3.56₽</div>
+        <div class="tariff-description">После оплаты на баланс поступит 1300₽. Ежедневное списание 3.56₽</div>
       </div>
     </div>
     
     <div id="tariffPaymentInfo" style="display: none; margin: 12px 0; padding: 12px; background: rgba(176, 203, 31, 0.1); border-radius: 8px;">
       <strong>При покупке тарифа:</strong><br>
-      • На баланс поступит: <strong style="color: var(--primary);">150₽</strong><br>
+      • Стоимость тарифа: <strong style="color: var(--primary);">150₽</strong><br>
+      • После оплаты на баланс поступит: <strong style="color: var(--primary);">150₽</strong><br>
       • Ежедневное списание: <strong>5₽</strong><br>
       • Примерный срок: <strong>30 дней</strong>
     </div>
     
     <button class="button button-yellow" id="buyTariffBtn" style="display:none;" onclick="buyTariff()">КУПИТЬ ТАРИФ</button>
-    <button class="button button-yellow" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИТЬ ТАРИФ</button>
+    <button class="button button-yellow" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИЬ ТАРИФ</button>
   </div>
 
   <div class="card">
@@ -625,14 +627,14 @@
         name: 'Месячный',
         price: 150,
         dailyCost: 5,
-        description: 'На баланс поступает 150₽. Ежедневное списание 5₽'
+        description: 'После оплаты на баланс поступит 150₽. Ежедневное списание 5₽'
       },
       '1year': {
         id: 'year', 
         name: 'Годовой',
         price: 1300,
         dailyCost: 3.56,
-        description: 'На баланс поступает 1300₽. Ежедневное списание 3.56₽'
+        description: 'После оплаты на баланс поступит 1300₽. Ежедневное списание 3.56₽'
       }
     };
 
@@ -674,57 +676,56 @@
         );
     }
 
-    // РЕШЕНИЕ 1: Улучшенная функция получения start_param
-// УЛУЧШЕННАЯ ФУНКЦИЯ: Получение start_param
-function getStartParam() {
-    console.log('🔍 DEBUG: Searching for start_param...');
-    
-    // Способ 1: Из initDataUnsafe (основной способ)
-    if (tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
-        console.log('✅ Found start_param in initDataUnsafe:', tg.initDataUnsafe.start_param);
-        return tg.initDataUnsafe.start_param;
-    }
-    
-    // Способ 2: Из query параметров initData
-    if (tg.initData) {
-        const urlParams = new URLSearchParams(tg.initData);
-        const startParam = urlParams.get('start_param');
+    // УЛУЧШЕННАЯ ФУНКЦИЯ: Получение start_param
+    function getStartParam() {
+        console.log('🔍 DEBUG: Searching for start_param...');
+        
+        // Способ 1: Из initDataUnsafe (основной способ)
+        if (tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
+            console.log('✅ Found start_param in initDataUnsafe:', tg.initDataUnsafe.start_param);
+            return tg.initDataUnsafe.start_param;
+        }
+        
+        // Способ 2: Из query параметров initData
+        if (tg.initData) {
+            const urlParams = new URLSearchParams(tg.initData);
+            const startParam = urlParams.get('start_param');
+            if (startParam) {
+                console.log('✅ Found start_param in initData query:', startParam);
+                return startParam;
+            }
+        }
+        
+        // Способ 3: Из самого initData (парсим как строку)
+        if (tg.initData && tg.initData.includes('start_param=')) {
+            const match = tg.initData.match(/start_param=([^&]*)/);
+            if (match && match[1]) {
+                console.log('✅ Found start_param in initData string:', match[1]);
+                return decodeURIComponent(match[1]);
+            }
+        }
+        
+        // Способ 4: Из window.location (последняя попытка)
+        const urlParams = new URLSearchParams(window.location.search);
+        const startParam = urlParams.get('start') || urlParams.get('start_param');
         if (startParam) {
-            console.log('✅ Found start_param in initData query:', startParam);
+            console.log('✅ Found start_param in URL:', startParam);
             return startParam;
         }
-    }
-    
-    // Способ 3: Из самого initData (парсим как строку)
-    if (tg.initData && tg.initData.includes('start_param=')) {
-        const match = tg.initData.match(/start_param=([^&]*)/);
-        if (match && match[1]) {
-            console.log('✅ Found start_param in initData string:', match[1]);
-            return decodeURIComponent(match[1]);
+        
+        // Способ 5: Из window.location.hash
+        if (window.location.hash) {
+            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            const startParam = hashParams.get('start') || hashParams.get('start_param');
+            if (startParam) {
+                console.log('✅ Found start_param in hash:', startParam);
+                return startParam;
+            }
         }
+        
+        console.log('❌ No start_param found in any location');
+        return '';
     }
-    
-    // Способ 4: Из window.location (последняя попытка)
-    const urlParams = new URLSearchParams(window.location.search);
-    const startParam = urlParams.get('start') || urlParams.get('start_param');
-    if (startParam) {
-        console.log('✅ Found start_param in URL:', startParam);
-        return startParam;
-    }
-    
-    // Способ 5: Из window.location.hash
-    if (window.location.hash) {
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const startParam = hashParams.get('start') || hashParams.get('start_param');
-        if (startParam) {
-            console.log('✅ Found start_param in hash:', startParam);
-            return startParam;
-        }
-    }
-    
-    console.log('❌ No start_param found in any location');
-    return '';
-}
 
     // Простые функции для пополнения баланса
     function setAmount(amount) {
@@ -832,10 +833,11 @@ function getStartParam() {
         if (!hasSubscription) {
             tariffPaymentInfo.style.display = 'block';
             
-            // Показываем информацию о пополнении баланса
+            // Показываем информацию о тарифе
             tariffPaymentInfo.innerHTML = `
                 <strong>При покупке тарифа:</strong><br>
-                • На баланс поступит: <strong style="color: var(--primary);">${tariff.price}₽</strong><br>
+                • Стоимость тарифа: <strong style="color: var(--primary);">${tariff.price}₽</strong><br>
+                • После оплаты на баланс поступит: <strong style="color: var(--primary);">${tariff.price}₽</strong><br>
                 • Ежедневное списание: <strong>${tariff.dailyCost}₽</strong><br>
                 • Примерный срок: <strong>${Math.floor(tariff.price / tariff.dailyCost)} дней</strong>
             `;
@@ -1157,7 +1159,7 @@ function getStartParam() {
         }
     }
 
-    // Покупка тарифа
+    // ИСПРАВЛЕННАЯ ФУНКЦИЯ: Покупка тарифа (теперь требует оплаты)
     async function buyTariff() {
         if (!currentTariff) {
             showError("Пожалуйста, выберите тарифный план");
@@ -1203,18 +1205,60 @@ function getStartParam() {
                 throw new Error(data.error);
             }
 
-            if (data.success) {
-                showSuccess(`✅ Тариф "${selectedTariff.name}" успешно активирован!\n💳 На баланс добавлено: ${selectedTariff.price}₽\n📅 Ежедневное списание: ${selectedTariff.dailyCost}₽`);
-                // Обновляем данные пользователя
-                await loadUserData();
+            if (data.success && data.payment_url) {
+                // Открываем ссылку для оплаты
+                tg.openLink(data.payment_url);
+                
+                // Сохраняем ID платежа
+                currentPaymentId = data.payment_id;
+                
+                // Запускаем проверку статуса платежа
+                checkTariffPaymentStatus(data.payment_id);
+                
+                showSuccess('Перейдите по ссылке для оплаты тарифа');
             } else {
-                showError(data.error || "Ошибка покупки тарифа");
+                showError(data.error || "Ошибка создания платежа для тарифа");
             }
         } catch (error) {
             showError(error.message);
         } finally {
             document.getElementById('loadingIndicator').style.display = 'none';
             document.getElementById('buyTariffBtn').disabled = false;
+        }
+    }
+
+    // НОВАЯ ФУНКЦИЯ: Проверка статуса платежа для тарифа
+    async function checkTariffPaymentStatus(paymentId) {
+        try {
+            if (!paymentId) {
+                console.error('❌ No payment ID provided');
+                return;
+            }
+            
+            console.log('🔄 Checking tariff payment status:', paymentId);
+            
+            const response = await fetch(`${API_BASE_URL}/payment-status?payment_id=${paymentId}&user_id=${userId}`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log('📊 Tariff payment status:', data);
+            
+            if (data.status === 'succeeded') {
+                showSuccess('✅ Тариф успешно оплачен и активирован!');
+                // Обновляем данные пользователя
+                await loadUserData();
+            } else if (data.status === 'pending') {
+                // Продолжаем проверять каждые 3 секунды
+                setTimeout(() => checkTariffPaymentStatus(paymentId), 3000);
+            } else if (data.status === 'canceled') {
+                showError('❌ Платеж за тариф отменен');
+            }
+        } catch (error) {
+            console.error('❌ Tariff payment status check error:', error);
+            setTimeout(() => checkTariffPaymentStatus(paymentId), 3000);
         }
     }
 
@@ -1279,7 +1323,7 @@ function getStartParam() {
         }
     }
 
-    // Проверка статуса платежа
+    // Проверка статуса платежа (для пополнения баланса)
     async function checkPaymentStatus(paymentId) {
         try {
             if (!paymentId) {
