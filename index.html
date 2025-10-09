@@ -87,13 +87,6 @@
       margin-bottom: 16px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.2);
     }
-    .balance {
-      font-size: 32px;
-      font-weight: 800;
-      color: var(--primary);
-      margin-bottom: 4px;
-      transition: all 0.3s ease;
-    }
     .subscription-days {
       font-size: 14px;
       opacity: 0.8;
@@ -394,7 +387,6 @@
   </div>
 
   <div class="card">
-    <div class="balance" id="userBalance">0₽</div>
     <div class="subscription-days" id="subscriptionDays">Подписка неактивна</div>
     
     <div class="subscription-info" id="subscriptionInfo" style="display: none;">
@@ -449,7 +441,7 @@
       2. Переходите по ссылке для оплаты<br>
       3. После успешной оплаты подписка активируется на указанный период<br>
       4. Рефералы продлевают вашу подписку на +7 дней<br>
-      5. Можно купить несколько тарифов - они суммируются<br>
+      5. Можно купить несколько тарифов - дни суммируются<br>
       6. Подписка работает пока не закончатся дни
     </div>
     
@@ -531,7 +523,6 @@
     let currentPaymentId = null;
     let currentTariff = null;
     let hasSubscription = false;
-    let userBalance = 0;
     let subscriptionDays = 0;
 
     // Тарифные планы (фиксированная подписка на период)
@@ -774,9 +765,6 @@
 
     // Обновление интерфейса пользователя
     function updateUserInterface(userData) {
-        userBalance = userData.balance || 0;
-        document.getElementById('userBalance').textContent = `${userBalance}₽`;
-        
         hasSubscription = userData.has_subscription || false;
         subscriptionDays = userData.subscription_days || 0;
         
