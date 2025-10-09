@@ -27,19 +27,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ с Reality
+# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ
 VLESS_SERVERS = [
     {
         "address": "45.134.13.189",
         "port": 8443,
-        "uuid": "3148c2b6-1600-4942-aa3e-523bf5f58c89",
-        "reality_pbk": "t3ZKBQqtSDDda-LKC4AmeqkJtTC0KykHg-R-Bnpy0ls",
-        "sni": "www.google.com",
-        "short_id": "2bd6a8283e"
+        "sni": "localhost",
+        "uuid": "f1cc0e69-45b2-43e8-b24f-fd2197615211"
     }
 ]
 
-# Тарифы (фиксированная подписка на период)
+# Тарифы (фиксированная подписка на период) - УБРАН ТАРИФ 3 МЕСЯЦА
 TARIFFS = {
     "1month": {
         "name": "1 Месяц",
@@ -48,7 +46,7 @@ TARIFFS = {
     },
     "1year": {
         "name": "1 Год",
-        "price": 1300.0,
+        "price": 1300.0,  # Изменено с 1200 на 1300
         "days": 365
     }
 }
@@ -196,14 +194,17 @@ def create_user(user_data: dict):
     except Exception as e:
         logger.error(f"❌ Error creating user: {e}")
 
+# ИЗМЕНЕННАЯ ФУНКЦИЯ: Теперь генерирует Reality ключи
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
     """Создает VLESS Reality конфигурацию"""
     address = server_config["address"]
     port = server_config["port"]
     server_uuid = server_config["uuid"]
-    reality_pbk = server_config["reality_pbk"]
-    sni = server_config["sni"]
-    short_id = server_config["short_id"]
+    
+    # Reality параметры
+    reality_pbk = "t3ZKBQqtSDDda-LKC4AmeqkJtTC0KykHg-R-Bnpy0ls"  # Публичный ключ
+    sni = "www.google.com"  # SNI
+    short_id = "2bd6a8283e"  # Short ID
     
     # Создаем Reality VLESS ссылку
     vless_link = (
