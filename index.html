@@ -94,10 +94,6 @@
       margin-bottom: 4px;
       transition: all 0.3s ease;
     }
-    .balance-updated {
-      transform: scale(1.1);
-      color: #B0CB1F;
-    }
     .subscription-days {
       font-size: 14px;
       opacity: 0.8;
@@ -378,38 +374,6 @@
       margin: 12px 0;
       font-size: 14px;
     }
-    .payment-input {
-      background: #2A2A2A;
-      border: 2px solid var(--primary);
-      border-radius: 8px;
-      padding: 12px;
-      color: var(--text);
-      font-size: 16px;
-      width: 100%;
-      margin: 10px 0;
-      text-align: center;
-    }
-    .payment-input::placeholder {
-      color: #888;
-    }
-    .payment-suggestions {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin: 12px 0;
-    }
-    .suggestion-amount {
-      background: rgba(176, 203, 31, 0.1);
-      border: 1px solid var(--primary);
-      border-radius: 6px;
-      padding: 8px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .suggestion-amount:hover {
-      background: rgba(176, 203, 31, 0.2);
-    }
   </style>
 </head>
 <body>
@@ -497,17 +461,10 @@
         <div class="tariff-trial">30 дней</div>
         <div class="tariff-description">Доступ к VPN на 30 дней. Реферал продлевает на +7 дней</div>
       </div>
-      <div class="tariff-card" id="tariff3month" onclick="selectTariff('3month')">
-        <div class="tariff-dot"></div>
-        <div class="tariff-label">3 Месяца</div>
-        <div class="tariff-price">400₽</div>
-        <div class="tariff-trial">90 дней</div>
-        <div class="tariff-description">Доступ к VPN на 90 дней. Реферал продлевает на +7 дней</div>
-      </div>
       <div class="tariff-card" id="tariff1year" onclick="selectTariff('1year')">
         <div class="tariff-dot"></div>
         <div class="tariff-label">1 Год</div>
-        <div class="tariff-price">1200₽</div>
+        <div class="tariff-price">1300₽</div>
         <div class="tariff-trial">365 дней</div>
         <div class="tariff-description">Доступ к VPN на 365 дней. Реферал продлевает на +7 дней</div>
       </div>
@@ -586,17 +543,10 @@
         days: 30,
         description: 'Доступ к VPN на 30 дней. Реферал продлевает на +7 дней'
       },
-      '3month': {
-        id: '3month',
-        name: '3 Месяца',
-        price: 400,
-        days: 90,
-        description: 'Доступ к VPN на 90 дней. Реферал продлевает на +7 дней'
-      },
       '1year': {
         id: '1year', 
         name: '1 Год',
-        price: 1200,
+        price: 1300,
         days: 365,
         description: 'Доступ к VPN на 365 дней. Реферал продлевает на +7 дней'
       }
@@ -658,23 +608,6 @@
                 console.log('✅ Found start_param in initData query:', startParam);
                 return startParam;
             }
-        }
-        
-        // Способ 3: Из самого initData (парсим как строку)
-        if (tg.initData && tg.initData.includes('start_param=')) {
-            const match = tg.initData.match(/start_param=([^&]*)/);
-            if (match && match[1]) {
-                console.log('✅ Found start_param in initData string:', match[1]);
-                return decodeURIComponent(match[1]);
-            }
-        }
-        
-        // Способ 4: Из window.location (последняя попытка)
-        const urlParams = new URLSearchParams(window.location.search);
-        const startParam = urlParams.get('start') || urlParams.get('start_param');
-        if (startParam) {
-            console.log('✅ Found start_param in URL:', startParam);
-            return startParam;
         }
         
         console.log('❌ No start_param found in any location');
@@ -989,7 +922,7 @@
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    },
+                },
                 body: JSON.stringify({
                     user_id: userId
                 })
