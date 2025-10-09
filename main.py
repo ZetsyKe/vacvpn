@@ -9,7 +9,8 @@ from firebase_admin import credentials, firestore
 from pydantic import BaseModel
 import logging
 import re
-import json  # Добавлен импорт json
+import json
+import urllib.parse
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -26,17 +27,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ
+# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ с Reality
 VLESS_SERVERS = [
     {
         "address": "45.134.13.189",
         "port": 8443,
-        "sni": "localhost",
-        "uuid": "f1cc0e69-45b2-43e8-b24f-fd2197615211"
+        "uuid": "3148c2b6-1600-4942-aa3e-523bf5f58c89",
+        "reality_pbk": "t3ZKBQqtSDDda-LKC4AmeqkJtTC0KykHg-R-Bnpy0ls",
+        "sni": "www.google.com",
+        "short_id": "2bd6a8283e"
     }
 ]
 
-# Тарифы (фиксированная подписка на период) - УБРАН ТАРИФ 3 МЕСЯЦА
+# Тарифы (фиксированная подписка на период)
 TARIFFS = {
     "1month": {
         "name": "1 Месяц",
@@ -45,7 +48,7 @@ TARIFFS = {
     },
     "1year": {
         "name": "1 Год",
-        "price": 1300.0,  # Изменено с 1200 на 1300
+        "price": 1300.0,
         "days": 365
     }
 }
@@ -194,34 +197,50 @@ def create_user(user_data: dict):
         logger.error(f"❌ Error creating user: {e}")
 
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
-    """Создает VLESS конфигурацию"""
+    """Создает VLESS Reality конфигурацию"""
     address = server_config["address"]
     port = server_config["port"]
-    sni = server_config["sni"]
     server_uuid = server_config["uuid"]
+    reality_pbk = server_config["reality_pbk"]
+    sni = server_config["sni"]
+    short_id = server_config["short_id"]
     
-    vless_link = f"vless://{server_uuid}@{address}:{port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni={sni}&fp=randomized&type=ws&path=%2Fray&host={address}#VAC_VPN_{user_id}"
+    # Создаем Reality VLESS ссылку
+    vless_link = (
+        f"vless://{server_uuid}@{address}:{port}?"
+        f"type=tcp&"
+        f"security=reality&"
+        f"pbk={reality_pbk}&"
+        f"fp=chrome&"
+        f"sni={sni}&"
+        f"sid={short_id}&"
+        f"spx=%2F&"
+        f"flow=xtls-rprx-vision"
+        f"#VAC_VPN_{user_id}"
+    )
     
     config = {
         "protocol": "vless",
         "uuid": server_uuid,
         "server": address,
         "port": port,
-        "encryption": "none",
-        "flow": "xtls-rprx-vision",
-        "security": "tls",
+        "security": "reality",
+        "reality_pbk": reality_pbk,
         "sni": sni,
-        "fingerprint": "randomized",
-        "type": "ws",
-        "path": "/ray",
-        "host": address,
-        "remark": f"VAC VPN - {user_id}"
+        "short_id": short_id,
+        "fingerprint": "chrome",
+        "flow": "xtls-rprx-vision",
+        "type": "tcp",
+        "remark": f"VAC VPN Reality - {user_id}"
     }
+    
+    # Кодируем ссылку для QR кода
+    encoded_vless_link = urllib.parse.quote(vless_link)
     
     return {
         "vless_link": vless_link,
         "config": config,
-        "qr_code": f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={vless_link}"
+        "qr_code": f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={encoded_vless_link}"
     }
 
 def process_subscription_days(user_id: str):
@@ -695,7 +714,7 @@ async def check_payment(payment_id: str, user_id: str):
 
 @app.post("/vless-config")
 async def get_vless_config(request: VlessConfigRequest):
-    """Получить VLESS конфигурацию для пользователя"""
+    """Получить VLESS Reality конфигурацию для пользователя"""
     try:
         if not db:
             return {"error": "Database not connected"}
