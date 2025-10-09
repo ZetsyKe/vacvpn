@@ -9,6 +9,7 @@ from firebase_admin import credentials, firestore
 from pydantic import BaseModel
 import logging
 import re
+import json  # Добавлен импорт json
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -35,21 +36,16 @@ VLESS_SERVERS = [
     }
 ]
 
-# Тарифы (фиксированная подписка на период)
+# Тарифы (фиксированная подписка на период) - УБРАН ТАРИФ 3 МЕСЯЦА
 TARIFFS = {
     "1month": {
         "name": "1 Месяц",
         "price": 150.0,
         "days": 30
     },
-    "3month": {
-        "name": "3 Месяца", 
-        "price": 400.0,
-        "days": 90
-    },
     "1year": {
         "name": "1 Год",
-        "price": 1200.0,
+        "price": 1300.0,  # Изменено с 1200 на 1300
         "days": 365
     }
 }
@@ -125,6 +121,7 @@ class VlessConfigRequest(BaseModel):
 # Функции работы с Firebase
 def get_user(user_id: str):
     if not db: 
+        logger.error("❌ Database not connected")
         return None
     try:
         doc = db.collection('users').document(user_id).get()
@@ -136,6 +133,7 @@ def get_user(user_id: str):
 def update_subscription_days(user_id: str, additional_days: int):
     """Обновляет количество дней подписки"""
     if not db: 
+        logger.error("❌ Database not connected")
         return False
     try:
         user_ref = db.collection('users').document(user_id)
@@ -174,6 +172,7 @@ def update_subscription_days(user_id: str, additional_days: int):
 
 def create_user(user_data: dict):
     if not db: 
+        logger.error("❌ Database not connected")
         return
     try:
         user_ref = db.collection('users').document(user_data['user_id'])
@@ -228,6 +227,7 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
 def process_subscription_days(user_id: str):
     """Обрабатывает списание дней подписки"""
     if not db:
+        logger.error("❌ Database not connected")
         return False
     
     try:
@@ -263,6 +263,7 @@ def process_subscription_days(user_id: str):
                     # Если дни закончились - деактивируем подписку
                     if new_days == 0:
                         update_data['has_subscription'] = False
+                        update_data['vless_uuid'] = None  # Убираем UUID при деактивации
                     
                     db.collection('users').document(user_id).update(update_data)
                     logger.info(f"✅ Subscription days processed for user {user_id}: {subscription_days} -> {new_days} (-{days_passed} days)")
@@ -278,6 +279,7 @@ def process_subscription_days(user_id: str):
 
 def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_type: str = "tariff"):
     if not db: 
+        logger.error("❌ Database not connected")
         return
     try:
         db.collection('payments').document(payment_id).set({
@@ -296,6 +298,7 @@ def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, paym
 
 def update_payment_status(payment_id: str, status: str, yookassa_id: str = None):
     if not db: 
+        logger.error("❌ Database not connected")
         return
     try:
         update_data = {
@@ -312,6 +315,7 @@ def update_payment_status(payment_id: str, status: str, yookassa_id: str = None)
 
 def get_payment(payment_id: str):
     if not db: 
+        logger.error("❌ Database not connected")
         return None
     try:
         doc = db.collection('payments').document(payment_id).get()
@@ -322,6 +326,7 @@ def get_payment(payment_id: str):
 
 def add_referral(referrer_id: str, referred_id: str):
     if not db: 
+        logger.error("❌ Database not connected")
         return False
     try:
         referral_id = f"{referrer_id}_{referred_id}"
@@ -340,6 +345,7 @@ def add_referral(referrer_id: str, referred_id: str):
 
 def get_referrals(referrer_id: str):
     if not db: 
+        logger.error("❌ Database not connected")
         return []
     try:
         referrals = db.collection('referrals').where('referrer_id', '==', referrer_id).stream()
@@ -390,7 +396,17 @@ async def root():
     return {
         "message": "VAC VPN API is running", 
         "status": "ok", 
-        "firebase": "connected" if db else "disconnected"
+        "firebase": "connected" if db else "disconnected",
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy", 
+        "timestamp": datetime.now().isoformat(), 
+        "firebase": "connected" if db else "disconnected",
+        "database_connected": db is not None
     }
 
 @app.post("/init-user")
