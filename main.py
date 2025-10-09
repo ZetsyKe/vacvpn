@@ -37,7 +37,7 @@ VLESS_SERVERS = [
     }
 ]
 
-# Тарифы (фиксированная подписка на период) - УБРАН ТАРИФ 3 МЕСЯЦА
+# Тарифы (фиксированная подписка на период)
 TARIFFS = {
     "1month": {
         "name": "1 Месяц",
@@ -46,13 +46,17 @@ TARIFFS = {
     },
     "1year": {
         "name": "1 Год",
-        "price": 1300.0,  # Изменено с 1200 на 1300
+        "price": 1300.0,
         "days": 365
     }
 }
 
-# Реферальные бонусы (в днях)
-REFERRAL_BONUS_DAYS = 7
+# Новая реферальная система (в рублях)
+REFERRAL_BONUS_REFERRER = 50  # Тот кто пригласил получает 50₽
+REFERRAL_BONUS_REFERRED = 100  # Тот кого пригласили получает 100₽
+
+# Стоимость одного дня подписки (рассчитываем из тарифов)
+DAY_PRICE = TARIFFS["1month"]["price"] / TARIFFS["1month"]["days"]  # 150₽ / 30 дней = 5₽ за день
 
 # Инициализация Firebase
 try:
@@ -171,6 +175,44 @@ def update_subscription_days(user_id: str, additional_days: int):
         logger.error(f"❌ Error updating subscription days: {e}")
         return False
 
+def add_referral_bonus(referrer_id: str, referred_id: str, tariff_price: float):
+    """Начисляет реферальные бонусы после покупки тарифа"""
+    if not db: 
+        logger.error("❌ Database not connected")
+        return False
+    
+    try:
+        # Рассчитываем дни бонусов
+        referrer_bonus_days = int(REFERRAL_BONUS_REFERRER / DAY_PRICE)  # 50₽ / 5₽ = 10 дней
+        referred_bonus_days = int(REFERRAL_BONUS_REFERRED / DAY_PRICE)  # 100₽ / 5₽ = 20 дней
+        
+        logger.info(f"💰 Referral bonuses: referrer {referrer_id} gets {referrer_bonus_days} days, referred {referred_id} gets {referred_bonus_days} days")
+        
+        # Начисляем бонус пригласившему
+        update_subscription_days(referrer_id, referrer_bonus_days)
+        
+        # Начисляем бонус приглашенному
+        update_subscription_days(referred_id, referred_bonus_days)
+        
+        # Сохраняем запись о реферале
+        referral_id = f"{referrer_id}_{referred_id}"
+        db.collection('referrals').document(referral_id).set({
+            'referrer_id': referrer_id,
+            'referred_id': referred_id,
+            'referrer_bonus_days': referrer_bonus_days,
+            'referred_bonus_days': referred_bonus_days,
+            'tariff_price': tariff_price,
+            'bonus_paid': True,
+            'created_at': firestore.SERVER_TIMESTAMP
+        })
+        
+        logger.info(f"✅ Referral bonuses applied: {referrer_id} +{referrer_bonus_days} days, {referred_id} +{referred_bonus_days} days")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error adding referral bonus: {e}")
+        return False
+
 def create_user(user_data: dict):
     if not db: 
         logger.error("❌ Database not connected")
@@ -194,7 +236,6 @@ def create_user(user_data: dict):
     except Exception as e:
         logger.error(f"❌ Error creating user: {e}")
 
-# ИЗМЕНЕННАЯ ФУНКЦИЯ: Теперь генерирует Reality ключи
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
     """Создает VLESS Reality конфигурацию"""
     address = server_config["address"]
@@ -344,25 +385,6 @@ def get_payment(payment_id: str):
         logger.error(f"❌ Error getting payment: {e}")
         return None
 
-def add_referral(referrer_id: str, referred_id: str):
-    if not db: 
-        logger.error("❌ Database not connected")
-        return False
-    try:
-        referral_id = f"{referrer_id}_{referred_id}"
-        db.collection('referrals').document(referral_id).set({
-            'referrer_id': referrer_id,
-            'referred_id': referred_id,
-            'bonus_paid': True,
-            'bonus_days': REFERRAL_BONUS_DAYS,
-            'created_at': firestore.SERVER_TIMESTAMP
-        })
-        logger.info(f"✅ Referral added: {referrer_id} -> {referred_id}")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Error adding referral: {e}")
-        return False
-
 def get_referrals(referrer_id: str):
     if not db: 
         logger.error("❌ Database not connected")
@@ -444,7 +466,6 @@ async def init_user(request: InitUserRequest):
         # Извлекаем referrer_id из start_param
         referrer_id = None
         is_referral = False
-        bonus_applied = False
         
         if request.start_param:
             referrer_id = extract_referrer_id(request.start_param)
@@ -478,52 +499,31 @@ async def init_user(request: InitUserRequest):
                 'created_at': firestore.SERVER_TIMESTAMP
             }
             
-            # Если это реферал, начисляем бонусы
+            # Если это реферал, сохраняем информацию о пригласившем
             if is_referral and referrer_id:
-                logger.info(f"💰 APPLYING REFERRAL BONUS: New user {request.user_id} gets {REFERRAL_BONUS_DAYS} days, referrer {referrer_id} gets +{REFERRAL_BONUS_DAYS} days")
-                
-                # Новый пользователь получает 7 дней подписки
-                user_data['subscription_days'] = REFERRAL_BONUS_DAYS
-                user_data['has_subscription'] = True
-                user_data['vless_uuid'] = VLESS_SERVERS[0]["uuid"]
-                user_data['subscription_start'] = datetime.now().isoformat()
                 user_data['referred_by'] = referrer_id
-                bonus_applied = True
-                
-                # Пригласивший получает +7 дней к своей подписке
-                update_subscription_days(referrer_id, REFERRAL_BONUS_DAYS)
-                
-                # Сохраняем запись о реферале
-                referral_id = f"{referrer_id}_{request.user_id}"
-                db.collection('referrals').document(referral_id).set({
-                    'referrer_id': referrer_id,
-                    'referred_id': request.user_id,
-                    'new_user_bonus_days': REFERRAL_BONUS_DAYS,
-                    'referrer_bonus_days': REFERRAL_BONUS_DAYS,
-                    'bonus_paid': True,
-                    'created_at': firestore.SERVER_TIMESTAMP
-                })
+                logger.info(f"🔗 User {request.user_id} referred by {referrer_id}")
             
             user_ref.set(user_data)
-            logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}, bonus_applied: {bonus_applied}")
+            logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}")
             
             return {
                 "success": True, 
-                "message": "User created with referral bonus" if bonus_applied else "User created",
+                "message": "User created",
                 "user_id": request.user_id,
                 "is_referral": is_referral,
-                "bonus_applied": bonus_applied
+                "bonus_applied": False  # Бонусы теперь начисляются только после покупки
             }
         else:
             user_data = user_doc.to_dict()
-            has_bonus = user_data.get('referred_by') is not None
+            has_referrer = user_data.get('referred_by') is not None
             
             return {
                 "success": True, 
                 "message": "User already exists", 
                 "user_id": request.user_id,
-                "is_referral": has_bonus,
-                "bonus_applied": has_bonus
+                "is_referral": has_referrer,
+                "bonus_applied": False
             }
             
     except Exception as e:
@@ -556,12 +556,25 @@ async def get_user_info(user_id: str):
         subscription_days = user.get('subscription_days', 0)
         vless_uuid = user.get('vless_uuid')
         
+        # Получаем реферальную статистику
+        referrals = get_referrals(user_id)
+        referral_count = len(referrals)
+        total_bonus_days = sum([ref.get('referrer_bonus_days', 0) for ref in referrals])
+        
         return {
             "user_id": user_id,
             "balance": user.get('balance', 0),
             "has_subscription": has_subscription,
             "subscription_days": subscription_days,
-            "vless_uuid": vless_uuid
+            "vless_uuid": vless_uuid,
+            "referral_stats": {
+                "total_referrals": referral_count,
+                "total_bonus_days": total_bonus_days,
+                "referrer_bonus": REFERRAL_BONUS_REFERRER,
+                "referred_bonus": REFERRAL_BONUS_REFERRED,
+                "referrer_bonus_days": int(REFERRAL_BONUS_REFERRER / DAY_PRICE),
+                "referred_bonus_days": int(REFERRAL_BONUS_REFERRED / DAY_PRICE)
+            }
         }
         
     except Exception as e:
@@ -685,6 +698,7 @@ async def check_payment(payment_id: str, user_id: str):
                         user_id = payment['user_id']
                         tariff = payment['tariff']
                         tariff_days = TARIFFS[tariff]["days"]
+                        tariff_price = TARIFFS[tariff]["price"]
                         
                         # Активируем подписку - добавляем дни
                         success = update_subscription_days(user_id, tariff_days)
@@ -692,6 +706,19 @@ async def check_payment(payment_id: str, user_id: str):
                         if not success:
                             logger.error(f"❌ Failed to activate subscription for user {user_id}")
                             return {"error": "Failed to activate subscription"}
+                        
+                        # Проверяем реферальную систему и начисляем бонусы
+                        user = get_user(user_id)
+                        if user and user.get('referred_by'):
+                            referrer_id = user['referred_by']
+                            referral_id = f"{referrer_id}_{user_id}"
+                            
+                            # Проверяем, что бонус еще не начислялся
+                            referral_exists = db.collection('referrals').document(referral_id).get().exists
+                            
+                            if not referral_exists:
+                                logger.info(f"🎁 Applying referral bonus for {user_id} referred by {referrer_id}")
+                                add_referral_bonus(referrer_id, user_id, tariff_price)
                         
                         logger.info(f"✅ Subscription activated for user {user_id}: +{tariff_days} days")
                         
