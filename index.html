@@ -98,29 +98,18 @@
       transform: scale(1.1);
       color: #B0CB1F;
     }
-    .balance-days {
+    .subscription-days {
       font-size: 14px;
       opacity: 0.8;
       margin-bottom: 16px;
       font-weight: 500;
     }
-    .daily-cost {
-      font-size: 14px;
-      color: var(--primary);
-      margin-bottom: 10px;
-      font-weight: 600;
-    }
-    .balance-info {
+    .subscription-info {
       background: rgba(176, 203, 31, 0.1);
       border-radius: 8px;
       padding: 12px;
       margin: 12px 0;
       font-size: 14px;
-    }
-    .balance-days-left {
-      color: var(--primary);
-      font-weight: 600;
-      margin-top: 4px;
     }
     .days-counter {
       display: flex;
@@ -442,20 +431,17 @@
 
   <div class="card">
     <div class="balance" id="userBalance">0₽</div>
-    <div class="balance-days" id="balanceDays">Обновите данные</div>
-    <div class="daily-cost" id="dailyCost" style="display: none;"></div>
+    <div class="subscription-days" id="subscriptionDays">Подписка неактивна</div>
     
-    <div class="balance-info" id="balanceInfo" style="display: none;">
-      <div>💰 <strong>Информация о балансе:</strong></div>
-      <div class="balance-days-left" id="balanceDaysLeft">Загрузка...</div>
-      
-      <div class="days-counter" id="daysCounter" style="display: none;">
+    <div class="subscription-info" id="subscriptionInfo" style="display: none;">
+      <div>💰 <strong>Информация о подписке:</strong></div>
+      <div class="days-counter" id="daysCounter">
         <div class="days-number" id="daysNumber">0</div>
-        <div class="days-label" id="daysLabel">дней</div>
+        <div class="days-label" id="daysLabel">дней осталось</div>
       </div>
       
       <div style="font-size: 13px; opacity: 0.8; margin-top: 4px;">
-        Расчет основан на текущем тарифе и ежедневном списании
+        Подписка активна до: <strong id="subscriptionEndDate">-</strong>
       </div>
     </div>
     
@@ -484,22 +470,7 @@
       </div>
     </div>
     
-    <!-- Простая форма для пополнения баланса -->
-    <div style="margin: 16px 0;">
-      <input type="number" id="paymentAmount" class="payment-input" placeholder="Введите сумму в рублях" min="10" max="10000">
-      
-      <div class="payment-suggestions">
-        <div class="suggestion-amount" onclick="setAmount(100)">100₽</div>
-        <div class="suggestion-amount" onclick="setAmount(300)">300₽</div>
-        <div class="suggestion-amount" onclick="setAmount(500)">500₽</div>
-        <div class="suggestion-amount" onclick="setAmount(1000)">1000₽</div>
-        <div class="suggestion-amount" onclick="setAmount(1500)">1500₽</div>
-        <div class="suggestion-amount" onclick="setAmount(2000)">2000₽</div>
-      </div>
-    </div>
-    
-    <button class="button button-yellow" onclick="createPayment()">ПОПОЛНИТЬ БАЛАНС</button>
-    <button class="button button-yellow" onclick="scrollToTariffs()">КУПИТЬ/СМЕНИТЬ ТАРИФ</button>
+    <button class="button button-yellow" onclick="scrollToTariffs()">КУПИТЬ/ПРОДЛИТЬ ПОДПИСКУ</button>
     <button class="button button-outline" id="vlessButton" onclick="getVlessConfig()" style="display: none;">ПОЛУЧИТЬ VLESS КОНФИГ</button>
     
     <div class="loading" id="loadingIndicator">Подождите, идет обработка...</div>
@@ -510,50 +481,57 @@
   <div class="card" id="tariffBlock">
     <div class="tariff-info">
       💡 <strong>Как работает подписка:</strong><br>
-      1. Выбираете тариф и нажимаете "КУПИТЬ ТАРИФ"<br>
-      2. <strong>Переходите по ссылке для оплаты</strong><br>
-      3. После успешной оплаты сумма тарифа поступает на ваш баланс<br>
-      4. Ежедневно списывается стоимость дня с баланса<br>
-      5. При нулевом балансе подписка приостанавливается<br>
-      6. Можно пополнять баланс дополнительно
+      1. Выбираете тариф и нажимаете "КУПИТЬ ПОДПИСКУ"<br>
+      2. Переходите по ссылке для оплаты<br>
+      3. После успешной оплаты подписка активируется на указанный период<br>
+      4. Рефералы продлевают вашу подписку на +7 дней<br>
+      5. Можно купить несколько тарифов - они суммируются<br>
+      6. Подписка работает пока не закончатся дни
     </div>
     
     <div class="tariff-grid">
       <div class="tariff-card" id="tariff1month" onclick="selectTariff('1month')">
         <div class="tariff-dot"></div>
-        <div class="tariff-label">Месячный</div>
+        <div class="tariff-label">1 Месяц</div>
         <div class="tariff-price">150₽</div>
-        <div class="tariff-trial">5₽ в день</div>
-        <div class="tariff-description">После оплаты на баланс поступит 150₽. Ежедневное списание 5₽</div>
+        <div class="tariff-trial">30 дней</div>
+        <div class="tariff-description">Доступ к VPN на 30 дней. Реферал продлевает на +7 дней</div>
+      </div>
+      <div class="tariff-card" id="tariff3month" onclick="selectTariff('3month')">
+        <div class="tariff-dot"></div>
+        <div class="tariff-label">3 Месяца</div>
+        <div class="tariff-price">400₽</div>
+        <div class="tariff-trial">90 дней</div>
+        <div class="tariff-description">Доступ к VPN на 90 дней. Реферал продлевает на +7 дней</div>
       </div>
       <div class="tariff-card" id="tariff1year" onclick="selectTariff('1year')">
         <div class="tariff-dot"></div>
-        <div class="tariff-label">Годовой</div>
-        <div class="tariff-price">1300₽</div>
-        <div class="tariff-trial">3.56₽ в день</div>
-        <div class="tariff-description">После оплаты на баланс поступит 1300₽. Ежедневное списание 3.56₽</div>
+        <div class="tariff-label">1 Год</div>
+        <div class="tariff-price">1200₽</div>
+        <div class="tariff-trial">365 дней</div>
+        <div class="tariff-description">Доступ к VPN на 365 дней. Реферал продлевает на +7 дней</div>
       </div>
     </div>
     
     <div id="tariffPaymentInfo" style="display: none; margin: 12px 0; padding: 12px; background: rgba(176, 203, 31, 0.1); border-radius: 8px;">
-      <strong>При покупке тарифа:</strong><br>
-      • Стоимость тарифа: <strong style="color: var(--primary);">150₽</strong><br>
-      • После оплаты на баланс поступит: <strong style="color: var(--primary);">150₽</strong><br>
-      • Ежедневное списание: <strong>5₽</strong><br>
-      • Примерный срок: <strong>30 дней</strong>
+      <strong>При покупке подписки:</strong><br>
+      • Стоимость: <strong style="color: var(--primary);" id="tariffPrice">150₽</strong><br>
+      • Период: <strong id="tariffPeriod">30 дней</strong><br>
+      • Реферал: <strong>+7 дней к вашей подписке</strong><br>
+      • После оплаты: <strong>Подписка активируется сразу</strong>
     </div>
     
-    <button class="button button-yellow" id="buyTariffBtn" style="display:none;" onclick="buyTariff()">КУПИТЬ ТАРИФ</button>
-    <button class="button button-yellow" id="changeTariffBtn" style="display:none;" onclick="changeTariff()">СМЕНИЬ ТАРИФ</button>
+    <button class="button button-yellow" id="buyTariffBtn" style="display:none;" onclick="buyTariff()">КУПИТЬ ПОДПИСКУ</button>
   </div>
 
   <div class="card">
     <div class="referral-block">
       <div class="referral-description">
         🎁 <strong>Реферальная система:</strong><br>
-        • Приглашенный друг получает <strong style="color: var(--primary);">100₽</strong> на баланс<br>
-        • Вы получаете <strong style="color: var(--primary);">50₽</strong> за каждого друга<br>
-        • Друг должен перейти по вашей ссылке и запустить бота
+        • Приглашенный друг получает <strong style="color: var(--primary);">7 дней</strong> подписки<br>
+        • Вы получаете <strong style="color: var(--primary);">+7 дней</strong> к своей подписке за каждого друга<br>
+        • Друг должен перейти по вашей ссылке и запустить бота<br>
+        • Реферальные дни суммируются с текущей подпиской
       </div>
       <div class="ref-link-box">
         <span class="ref-link-text" id="refLink">Загрузка ссылки...</span>
@@ -581,27 +559,6 @@
     tg.ready();
     tg.expand();
 
-    // Расширенная отладка Telegram WebApp
-    console.log('=== TELEGRAM WEBAPP DEBUG INFO ===');
-    console.log('initDataUnsafe:', JSON.stringify(tg.initDataUnsafe, null, 2));
-    console.log('initData:', tg.initData);
-    console.log('Platform:', tg.platform);
-    console.log('Version:', tg.version);
-
-    if (tg.initData) {
-        console.log('=== INIT DATA PARAMS ===');
-        const params = new URLSearchParams(tg.initData);
-        for (let [key, value] of params) {
-            console.log(`${key}: ${value}`);
-        }
-    }
-
-    console.log('=== URL PARAMS ===');
-    const urlParams = new URLSearchParams(window.location.search);
-    for (let [key, value] of urlParams) {
-        console.log(`${key}: ${value}`);
-    }
-
     // Данные пользователя
     const initData = tg.initDataUnsafe;
     const userId = initData.user?.id?.toString() || 'unknown';
@@ -618,23 +575,30 @@
     let currentTariff = null;
     let hasSubscription = false;
     let userBalance = 0;
-    let currentDailyCost = 0;
+    let subscriptionDays = 0;
 
-    // Тарифные планы
+    // Тарифные планы (фиксированная подписка на период)
     const tariffPlans = {
       '1month': {
-        id: 'month',
-        name: 'Месячный',
+        id: '1month',
+        name: '1 Месяц',
         price: 150,
-        dailyCost: 5,
-        description: 'После оплаты на баланс поступит 150₽. Ежедневное списание 5₽'
+        days: 30,
+        description: 'Доступ к VPN на 30 дней. Реферал продлевает на +7 дней'
+      },
+      '3month': {
+        id: '3month',
+        name: '3 Месяца',
+        price: 400,
+        days: 90,
+        description: 'Доступ к VPN на 90 дней. Реферал продлевает на +7 дней'
       },
       '1year': {
-        id: 'year', 
-        name: 'Годовой',
-        price: 1300,
-        dailyCost: 3.56,
-        description: 'После оплаты на баланс поступит 1300₽. Ежедневное списание 3.56₽'
+        id: '1year', 
+        name: '1 Год',
+        price: 1200,
+        days: 365,
+        description: 'Доступ к VPN на 365 дней. Реферал продлевает на +7 дней'
       }
     };
 
@@ -660,7 +624,7 @@
             '2. Нельзя передавать аккаунт третьим лицам\n' +
             '3. Возврат средств возможен в течение 3 дней\n' +
             '4. VLESS ключ выдается только при активной подписке\n' +
-            '5. Подписка работает по принципу ежедневного списания с баланса'
+            '5. Подписка работает по принципу накопления дней'
         );
         toggleMenu();
     }
@@ -713,107 +677,8 @@
             return startParam;
         }
         
-        // Способ 5: Из window.location.hash
-        if (window.location.hash) {
-            const hashParams = new URLSearchParams(window.location.hash.substring(1));
-            const startParam = hashParams.get('start') || hashParams.get('start_param');
-            if (startParam) {
-                console.log('✅ Found start_param in hash:', startParam);
-                return startParam;
-            }
-        }
-        
         console.log('❌ No start_param found in any location');
         return '';
-    }
-
-    // Простые функции для пополнения баланса
-    function setAmount(amount) {
-        document.getElementById('paymentAmount').value = amount;
-    }
-
-    // Основная функция оплаты (пополнение баланса)
-    async function createPayment() {
-        try {
-            hideError();
-            hideSuccess();
-            
-            if (!userId || userId === 'unknown') {
-                showError('Ошибка: откройте приложение через Telegram бота');
-                return;
-            }
-            
-            const amountInput = document.getElementById('paymentAmount');
-            const amount = parseInt(amountInput.value);
-            
-            if (!amount || amount < 10) {
-                showError('Введите сумму не менее 10₽');
-                return;
-            }
-            
-            if (amount > 10000) {
-                showError('Максимальная сумма пополнения 10,000₽');
-                return;
-            }
-            
-            const paymentButton = document.querySelector('.button-yellow');
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            
-            paymentButton.disabled = true;
-            loadingIndicator.style.display = 'block';
-            
-            console.log('💳 Creating payment for amount:', amount);
-
-            const response = await fetch(`${API_BASE_URL}/create-payment`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    user_id: userId,
-                    amount: amount,
-                    payment_type: "balance"
-                })
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('❌ Payment creation failed:', errorText);
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            console.log('💳 Payment creation response:', data);
-            
-            if (data.error) {
-                throw new Error(data.error);
-            }
-
-            if (!data.payment_url) {
-                throw new Error("Не удалось получить ссылку для оплаты");
-            }
-
-            // Сохраняем ID платежа
-            currentPaymentId = data.payment_id;
-            console.log('📝 Payment ID saved:', currentPaymentId);
-            
-            // Очищаем поле ввода
-            amountInput.value = '';
-            
-            // Открываем ссылку для оплаты
-            tg.openLink(data.payment_url);
-            
-            // Запускаем проверку статуса платежа
-            checkPaymentStatus(data.payment_id);
-            
-        } catch (error) {
-            console.error('❌ Payment creation error:', error);
-            showError('Ошибка создания платежа: ' + error.message);
-        } finally {
-            const paymentButton = document.querySelector('.button-yellow');
-            paymentButton.disabled = false;
-            document.getElementById('loadingIndicator').style.display = 'none';
-        }
     }
 
     // Функции тарифов
@@ -830,56 +695,28 @@
         const tariffPaymentInfo = document.getElementById('tariffPaymentInfo');
         const buyTariffBtn = document.getElementById('buyTariffBtn');
         
-        if (!hasSubscription) {
-            tariffPaymentInfo.style.display = 'block';
-            
-            // Показываем информацию о тарифе
-            tariffPaymentInfo.innerHTML = `
-                <strong>При покупке тарифа:</strong><br>
-                • Стоимость тарифа: <strong style="color: var(--primary);">${tariff.price}₽</strong><br>
-                • После оплаты на баланс поступит: <strong style="color: var(--primary);">${tariff.price}₽</strong><br>
-                • Ежедневное списание: <strong>${tariff.dailyCost}₽</strong><br>
-                • Примерный срок: <strong>${Math.floor(tariff.price / tariff.dailyCost)} дней</strong>
-            `;
-            
-            buyTariffBtn.textContent = `КУПИТЬ ТАРИФ - ${tariff.price}₽`;
-            buyTariffBtn.style.opacity = '1';
-        }
+        tariffPaymentInfo.style.display = 'block';
+        tariffPaymentInfo.innerHTML = `
+            <strong>При покупке подписки:</strong><br>
+            • Стоимость: <strong style="color: var(--primary);">${tariff.price}₽</strong><br>
+            • Период: <strong>${tariff.days} дней</strong><br>
+            • Реферал: <strong>+7 дней к вашей подписке</strong><br>
+            • После оплаты: <strong>Подписка активируется сразу</strong>
+        `;
         
-        // Показываем соответствующую кнопку
-        if (hasSubscription) {
-            document.getElementById('changeTariffBtn').style.display = 'block';
-            document.getElementById('buyTariffBtn').style.display = 'none';
-            tariffPaymentInfo.style.display = 'none';
-        } else {
-            document.getElementById('buyTariffBtn').style.display = 'block';
-            document.getElementById('changeTariffBtn').style.display = 'none';
-        }
-    }
-
-    // Расчет дней по балансу
-    function calculateBalanceDays(balance, dailyCost) {
-        if (!dailyCost || dailyCost <= 0) return 0;
-        return Math.floor(balance / dailyCost);
-    }
-
-    // Получение правильного склонения для дней
-    function getDaysText(days) {
-        if (days === 1) return 'день';
-        if (days >= 2 && days <= 4) return 'дня';
-        return 'дней';
+        buyTariffBtn.textContent = `КУПИТЬ ПОДПИСКУ - ${tariff.price}₽`;
+        buyTariffBtn.style.display = 'block';
     }
 
     // Анимация счетчика
     function animateCounter(element, targetValue, duration = 1000) {
-        const startValue = 0;
+        const startValue = parseInt(element.textContent) || 0;
         const startTime = performance.now();
         
         function updateCounter(currentTime) {
             const elapsedTime = currentTime - startTime;
             const progress = Math.min(elapsedTime / duration, 1);
             
-            // Используем easeOutQuad для плавной анимации
             const easeProgress = 1 - (1 - progress) * (1 - progress);
             const currentValue = Math.floor(startValue + (targetValue - startValue) * easeProgress);
             
@@ -895,71 +732,31 @@
         requestAnimationFrame(updateCounter);
     }
 
-    // Обновление информации о днях по балансу
-    function updateBalanceDaysInfo() {
-        const balanceInfo = document.getElementById('balanceInfo');
-        const balanceDaysLeft = document.getElementById('balanceDaysLeft');
+    // Обновление информации о подписке
+    function updateSubscriptionInfo() {
+        const subscriptionInfo = document.getElementById('subscriptionInfo');
         const daysCounter = document.getElementById('daysCounter');
         const daysNumber = document.getElementById('daysNumber');
         const daysLabel = document.getElementById('daysLabel');
+        const subscriptionEndDate = document.getElementById('subscriptionEndDate');
         
-        if (hasSubscription && currentDailyCost > 0) {
-            const daysLeft = calculateBalanceDays(userBalance, currentDailyCost);
+        if (hasSubscription && subscriptionDays > 0) {
+            subscriptionInfo.style.display = 'block';
             
-            if (daysLeft > 0) {
-                balanceInfo.style.display = 'block';
-                daysCounter.style.display = 'flex';
-                
-                // Обновляем текстовую информацию
-                let daysText = '';
-                if (daysLeft === 1) {
-                    daysText = '1 день';
-                } else if (daysLeft >= 2 && daysLeft <= 4) {
-                    daysText = `${daysLeft} дня`;
-                } else {
-                    daysText = `${daysLeft} дней`;
-                }
-                
-                balanceDaysLeft.textContent = `💰 На балансе хватит примерно на:`;
-                
-                // Анимируем счетчик
-                animateCounter(daysNumber, daysLeft);
-                daysLabel.textContent = getDaysText(daysLeft);
-                
-            } else {
-                balanceInfo.style.display = 'block';
-                daysCounter.style.display = 'none';
-                balanceDaysLeft.textContent = '💰 Баланс почти исчерпан';
-            }
+            // Анимируем счетчик
+            animateCounter(daysNumber, subscriptionDays);
+            
+            // Обновляем дату окончания
+            const endDate = new Date();
+            endDate.setDate(endDate.getDate() + subscriptionDays);
+            subscriptionEndDate.textContent = endDate.toLocaleDateString('ru-RU');
+            
         } else {
-            balanceInfo.style.display = 'none';
+            subscriptionInfo.style.display = 'none';
         }
     }
 
-    // НОВАЯ ФУНКЦИЯ: Принудительное обновление баланса
-    async function forceRefreshBalance() {
-        try {
-            console.log('🔄 Force refreshing balance for user:', userId);
-            
-            const response = await fetch(`${API_BASE_URL}/force-refresh-balance?user_id=${userId}`, {
-                method: 'POST'
-            });
-            if (response.ok) {
-                const userData = await response.json();
-                if (!userData.error) {
-                    updateUserInterface(userData);
-                    console.log('✅ Balance force refreshed:', userData.balance);
-                    return true;
-                }
-            }
-            return false;
-        } catch (error) {
-            console.error('❌ Error refreshing balance:', error);
-            return false;
-        }
-    }
-
-    // ОБНОВЛЕННАЯ ФУНКЦИЯ: Инициализация пользователя при загрузке
+    // Инициализация пользователя
     async function initUser() {
         try {
             console.log('🔄 Initializing user:', userId);
@@ -970,7 +767,6 @@
                 return;
             }
             
-            // ПРАВИЛЬНОЕ извлечение start_param
             const startParam = getStartParam();
             console.log('🔗 Final start_param:', startParam);
             
@@ -998,22 +794,10 @@
             if (data.success) {
                 console.log('✅ User initialized successfully');
                 
-                // Если есть данные пользователя в ответе, обновляем интерфейс сразу
-                if (data.user_data) {
-                    updateUserInterface(data.user_data);
-                }
-                
                 if (data.is_referral && data.bonus_applied) {
-                    showSuccess('🎉 Вам начислен реферальный бонус 100₽!');
-                    
-                    // ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ БАЛАНС ЧЕРЕЗ 2 СЕКУНДЫ
-                    setTimeout(async () => {
-                        await forceRefreshBalance();
-                        console.log('💰 Balance updated after referral bonus');
-                    }, 2000);
+                    showSuccess('🎉 Вам начислен реферальный бонус 7 дней подписки!');
                 }
                 
-                // Всегда загружаем актуальные данные
                 await loadUserData();
                 
             } else {
@@ -1025,7 +809,7 @@
         }
     }
 
-    // ОБНОВЛЕННАЯ ФУНКЦИЯ: Загрузка данных пользователя с повторными попытками
+    // Загрузка данных пользователя
     async function loadUserData() {
         try {
             console.log('🔄 Loading user data for:', userId);
@@ -1047,16 +831,7 @@
                 throw new Error(userData.error);
             }
             
-            // Обновляем интерфейс
             updateUserInterface(userData);
-            
-            // Если баланс 0, проверяем еще раз через 3 секунды (на случай реферального бонуса)
-            if (userData.balance === 0) {
-                setTimeout(async () => {
-                    console.log('🔄 Re-checking balance for potential referral bonus...');
-                    await forceRefreshBalance();
-                }, 3000);
-            }
             
         } catch (error) {
             console.error('❌ Ошибка загрузки данных:', error);
@@ -1064,102 +839,46 @@
         }
     }
 
-    // ОБНОВЛЕННАЯ ФУНКЦИЯ: Обновление интерфейса пользователя с анимацией баланса
+    // Обновление интерфейса пользователя
     function updateUserInterface(userData) {
-        // Сохраняем старый баланс для сравнения
-        const oldBalance = userBalance;
-        
-        // Обновляем баланс
         userBalance = userData.balance || 0;
         document.getElementById('userBalance').textContent = `${userBalance}₽`;
         
-        // Показываем анимацию изменения баланса
-        if (oldBalance !== userBalance && userBalance > oldBalance) {
-            const balanceElement = document.getElementById('userBalance');
-            balanceElement.style.transform = 'scale(1.1)';
-            balanceElement.style.color = '#B0CB1F';
-            setTimeout(() => {
-                balanceElement.style.transform = 'scale(1)';
-                balanceElement.style.color = '#B0CB1F';
-            }, 500);
-        }
-        
-        // Сохраняем статус подписки
         hasSubscription = userData.has_subscription || false;
-        currentTariff = userData.current_tariff;
-        currentDailyCost = userData.daily_cost || 0;
+        subscriptionDays = userData.subscription_days || 0;
         
-        // Обновляем статус подписки
         const subscriptionBadge = document.getElementById('subscriptionBadge');
-        const balanceDays = document.getElementById('balanceDays');
-        const dailyCostElement = document.getElementById('dailyCost');
+        const subscriptionDaysElement = document.getElementById('subscriptionDays');
         const vlessConfigContainer = document.getElementById('vlessConfigContainer');
         const vlessButton = document.getElementById('vlessButton');
         const buyTariffBtn = document.getElementById('buyTariffBtn');
-        const changeTariffBtn = document.getElementById('changeTariffBtn');
-        const tariffPaymentInfo = document.getElementById('tariffPaymentInfo');
         
-        if (hasSubscription) {
+        if (hasSubscription && subscriptionDays > 0) {
             subscriptionBadge.textContent = 'Активна';
             subscriptionBadge.className = 'badge active-badge';
+            subscriptionDaysElement.textContent = `Осталось дней: ${subscriptionDays}`;
             vlessButton.style.display = 'block';
-            buyTariffBtn.style.display = 'none';
-            changeTariffBtn.style.display = 'block';
-            tariffPaymentInfo.style.display = 'none';
-            
-            // Показываем ежедневную стоимость
-            if (currentDailyCost > 0) {
-                dailyCostElement.textContent = `Ежедневное списание: ${currentDailyCost}₽`;
-                dailyCostElement.style.display = 'block';
-            }
-            
-            // Обновляем информацию о тарифе
-            if (currentTariff === 'month') {
-                balanceDays.textContent = `Активен месячный тариф`;
-            } else if (currentTariff === 'year') {
-                balanceDays.textContent = `Активен годовой тариф`;
-            } else {
-                balanceDays.textContent = 'Подписка активна';
-            }
             
             // Показываем VLESS UUID если есть
             if (userData.vless_uuid) {
                 document.getElementById('vlessUuidText').textContent = userData.vless_uuid;
             }
             
-            // Выбираем текущий тариф
-            if (currentTariff === 'month') {
-                selectTariff('1month');
-            } else if (currentTariff === 'year') {
-                selectTariff('1year');
-            }
-            
-            // Обновляем информацию о днях по балансу
-            updateBalanceDaysInfo();
+            updateSubscriptionInfo();
             
         } else {
             subscriptionBadge.textContent = 'Неактивна';
             subscriptionBadge.className = 'badge inactive-badge';
-            balanceDays.textContent = 'Подписка неактивна';
-            dailyCostElement.style.display = 'none';
+            subscriptionDaysElement.textContent = 'Подписка неактивна';
             vlessConfigContainer.style.display = 'none';
             vlessButton.style.display = 'none';
-            buyTariffBtn.style.display = 'block';
-            changeTariffBtn.style.display = 'none';
-            
-            // Сбрасываем выбор тарифов
-            document.querySelectorAll('.tariff-card').forEach(card => {
-                card.classList.remove('selected');
-            });
-            currentTariff = null;
-            tariffPaymentInfo.style.display = 'none';
-            
-            // Скрываем информацию о днях по балансу
-            document.getElementById('balanceInfo').style.display = 'none';
         }
+        
+        // Всегда показываем кнопку покупки
+        buyTariffBtn.style.display = 'block';
     }
 
-    // ИСПРАВЛЕННАЯ ФУНКЦИЯ: Покупка тарифа (теперь требует оплаты)
+    // Покупка тарифа
     async function buyTariff() {
         if (!currentTariff) {
             showError("Пожалуйста, выберите тарифный план");
@@ -1206,18 +925,12 @@
             }
 
             if (data.success && data.payment_url) {
-                // Открываем ссылку для оплаты
                 tg.openLink(data.payment_url);
-                
-                // Сохраняем ID платежа
                 currentPaymentId = data.payment_id;
-                
-                // Запускаем проверку статуса платежа
                 checkTariffPaymentStatus(data.payment_id);
-                
-                showSuccess('Перейдите по ссылке для оплаты тарифа');
+                showSuccess('Перейдите по ссылке для оплаты подписки');
             } else {
-                showError(data.error || "Ошибка создания платежа для тарифа");
+                showError(data.error || "Ошибка создания платежа для подписки");
             }
         } catch (error) {
             showError(error.message);
@@ -1227,7 +940,7 @@
         }
     }
 
-    // НОВАЯ ФУНКЦИЯ: Проверка статуса платежа для тарифа
+    // Проверка статуса платежа для тарифа
     async function checkTariffPaymentStatus(paymentId) {
         try {
             if (!paymentId) {
@@ -1247,114 +960,16 @@
             console.log('📊 Tariff payment status:', data);
             
             if (data.status === 'succeeded') {
-                showSuccess('✅ Тариф успешно оплачен и активирован!');
-                // Обновляем данные пользователя
+                showSuccess('✅ Подписка успешно оплачена и активирована!');
                 await loadUserData();
             } else if (data.status === 'pending') {
-                // Продолжаем проверять каждые 3 секунды
                 setTimeout(() => checkTariffPaymentStatus(paymentId), 3000);
             } else if (data.status === 'canceled') {
-                showError('❌ Платеж за тариф отменен');
+                showError('❌ Платеж за подписку отменен');
             }
         } catch (error) {
             console.error('❌ Tariff payment status check error:', error);
             setTimeout(() => checkTariffPaymentStatus(paymentId), 3000);
-        }
-    }
-
-    // Смена тарифа
-    async function changeTariff() {
-        if (!currentTariff) {
-            showError("Пожалуйста, выберите новый тарифный план");
-            return;
-        }
-
-        try {
-            if (!userId || userId === 'unknown') {
-                showError('Ошибка: откройте приложение через Telegram бота');
-                return;
-            }
-
-            const selectedTariff = tariffPlans[currentTariff];
-
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            const changeTariffBtn = document.getElementById('changeTariffBtn');
-
-            loadingIndicator.style.display = 'block';
-            changeTariffBtn.disabled = true;
-            hideError();
-
-            console.log('🔄 Changing tariff to:', selectedTariff);
-
-            const response = await fetch(`${API_BASE_URL}/change-tariff`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    user_id: userId,
-                    new_tariff: selectedTariff.id
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            console.log('🔧 Tariff change response:', data);
-            
-            if (data.error) {
-                throw new Error(data.error);
-            }
-
-            if (data.success) {
-                showSuccess(`✅ Тариф успешно изменен на "${selectedTariff.name}"!\n📅 Ежедневное списание: ${selectedTariff.dailyCost}₽`);
-                // Обновляем данные пользователя
-                await loadUserData();
-            } else {
-                showError(data.error || "Ошибка смены тарифа");
-            }
-        } catch (error) {
-            showError(error.message);
-        } finally {
-            document.getElementById('loadingIndicator').style.display = 'none';
-            document.getElementById('changeTariffBtn').disabled = false;
-        }
-    }
-
-    // Проверка статуса платежа (для пополнения баланса)
-    async function checkPaymentStatus(paymentId) {
-        try {
-            if (!paymentId) {
-                console.error('❌ No payment ID provided');
-                return;
-            }
-            
-            console.log('🔄 Checking payment status:', paymentId);
-            
-            const response = await fetch(`${API_BASE_URL}/payment-status?payment_id=${paymentId}&user_id=${userId}`);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            console.log('📊 Payment status:', data);
-            
-            if (data.status === 'succeeded') {
-                showSuccess('✅ Оплата прошла успешно! Баланс пополнен.');
-                // Обновляем данные пользователя
-                await loadUserData();
-            } else if (data.status === 'pending') {
-                // Продолжаем проверять каждые 3 секунды
-                setTimeout(() => checkPaymentStatus(paymentId), 3000);
-            } else if (data.status === 'canceled') {
-                showError('❌ Платеж отменен');
-            }
-        } catch (error) {
-            console.error('❌ Payment status check error:', error);
-            setTimeout(() => checkPaymentStatus(paymentId), 3000);
         }
     }
 
@@ -1391,7 +1006,6 @@
                 throw new Error(data.error);
             }
 
-            // Показываем VLESS конфигурацию
             showVlessConfig(data);
             
         } catch (error) {
@@ -1406,13 +1020,10 @@
         const vlessConfigContainer = document.getElementById('vlessConfigContainer');
         const vlessServersList = document.getElementById('vlessServersList');
         
-        // Обновляем UUID
         document.getElementById('vlessUuidText').textContent = configData.vless_uuid;
         
-        // Очищаем список серверов
         vlessServersList.innerHTML = '';
         
-        // Добавляем конфиги для каждого сервера
         configData.configs.forEach((serverConfig, index) => {
             const serverDiv = document.createElement('div');
             serverDiv.className = 'server-config';
@@ -1430,10 +1041,7 @@
             vlessServersList.appendChild(serverDiv);
         });
         
-        // Показываем контейнер
         vlessConfigContainer.style.display = 'block';
-        
-        // Прокручиваем к конфигурации
         vlessConfigContainer.scrollIntoView({ behavior: 'smooth' });
     }
 
@@ -1523,14 +1131,7 @@
     // Инициализация при загрузке
     document.addEventListener('DOMContentLoaded', async () => {
         console.log('🚀 Starting initialization...');
-        console.log('👤 User data:', { userId, userName, userUsername });
         await initUser();
-        
-        // Дополнительная загрузка данных для гарантии
-        setTimeout(async () => {
-            await loadUserData();
-            console.log('🎉 Initialization complete!');
-        }, 1000);
     });
   </script>
 </body>
