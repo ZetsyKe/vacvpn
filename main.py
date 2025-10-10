@@ -11,6 +11,7 @@ import logging
 import re
 import json
 import urllib.parse
+import asyncio
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -27,15 +28,95 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Класс для управления Xray
+class XrayManager:
+    def __init__(self):
+        self.api_url = os.getenv("XRAY_API_URL", "http://localhost:8080")
+        self.api_key = os.getenv("XRAY_API_KEY", "")
+        self.inbound_tag = os.getenv("XRAY_INBOUND_TAG", "inbound-1")
+        
+    async def add_user(self, email: str, uuid: str) -> bool:
+        """Добавляет пользователя в Xray"""
+        try:
+            payload = {
+                "email": email,
+                "uuid": uuid,
+                "level": 0,
+                "inboundTag": self.inbound_tag
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.api_url}/xray/api/users",
+                    headers={"X-API-KEY": self.api_key},
+                    json=payload,
+                    timeout=10.0
+                )
+                
+                if response.status_code in [200, 201]:
+                    logger.info(f"✅ User {email} added to Xray")
+                    return True
+                else:
+                    logger.error(f"❌ Failed to add user to Xray: {response.status_code} - {response.text}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"❌ Error adding user to Xray: {e}")
+            return False
+    
+    async def remove_user(self, email: str) -> bool:
+        """Удаляет пользователя из Xray"""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.delete(
+                    f"{self.api_url}/xray/api/users/{email}",
+                    headers={"X-API-KEY": self.api_key},
+                    timeout=10.0
+                )
+                
+                if response.status_code in [200, 204]:
+                    logger.info(f"✅ User {email} removed from Xray")
+                    return True
+                else:
+                    logger.error(f"❌ Failed to remove user from Xray: {response.status_code} - {response.text}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"❌ Error removing user from Xray: {e}")
+            return False
+    
+    async def get_user_stats(self, email: str) -> dict:
+        """Получает статистику пользователя"""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.api_url}/xray/api/users/{email}",
+                    headers={"X-API-KEY": self.api_key},
+                    timeout=10.0
+                )
+                
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    logger.error(f"❌ Failed to get user stats: {response.status_code}")
+                    return {}
+                    
+        except Exception as e:
+            logger.error(f"❌ Error getting user stats: {e}")
+            return {}
+
+# Инициализация Xray менеджера
+xray_manager = XrayManager()
+
 # КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ - ПРАВИЛЬНЫЕ НАСТРОЙКИ REALITY
 VLESS_SERVERS = [
     {
         "name": "🇷🇺 Москва #1",
-        "address": "45.134.13.189",  # Ваш IP сервера
-        "port": 8443,  # Правильный порт Reality
+        "address": "45.134.13.189",
+        "port": 8443,
         "sni": "www.google.com",
-        "uuid": "3148c2b6-1600-4942-aa3e-523bf5f58c89",  # Общий UUID из вашего Xray
-        "reality_pbk": "sDwKcWtG67OSTE48iq_1XysyHtimL7jckacPZSNadlE",  # Public Key из privateKey
+        "uuid": "3148c2b6-1600-4942-aa3e-523bf5f58c89",
+        "reality_pbk": "sDwKcWtG67OSTE48iq_1XysyHtimL7jckacPZSNadlE",
         "short_id": "2bd6a8283e",
         "flow": "xtls-rprx-vision",
         "security": "reality"
@@ -104,7 +185,7 @@ except Exception as e:
     logger.error(traceback.format_exc())
     db = None
 
-# Модели данных (остаются без изменений)
+# Модели данных
 class PaymentRequest(BaseModel):
     user_id: str
     amount: float
@@ -174,7 +255,9 @@ def update_user_balance(user_id: str, amount: float):
 def generate_user_uuid():
     return str(uuid.uuid4())
 
-def update_subscription_days(user_id: str, additional_days: int):
+# Обновленная функция активации подписки с Xray интеграцией
+async def update_subscription_days(user_id: str, additional_days: int):
+    """Обновляет количество дней подписки и добавляет пользователя в Xray"""
     if not db: 
         logger.error("❌ Database not connected")
         return False
@@ -197,11 +280,19 @@ def update_subscription_days(user_id: str, additional_days: int):
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
             
+            # Генерируем уникальный UUID для пользователя
             if has_subscription and not user_data.get('vless_uuid'):
                 user_uuid = generate_user_uuid()
                 update_data['vless_uuid'] = user_uuid
                 update_data['subscription_start'] = datetime.now().isoformat()
                 logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
+                
+                # Добавляем пользователя в Xray
+                email = f"user_{user_id}@vacvpn.com"
+                success = await xray_manager.add_user(email, user_uuid)
+                if not success:
+                    logger.error(f"❌ Failed to add user {user_id} to Xray")
+                    return False
             
             user_ref.update(update_data)
             logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
@@ -211,6 +302,27 @@ def update_subscription_days(user_id: str, additional_days: int):
             return False
     except Exception as e:
         logger.error(f"❌ Error updating subscription days: {e}")
+        return False
+
+# Функция для деактивации пользователя
+async def deactivate_user_subscription(user_id: str):
+    """Деактивирует подписку пользователя и удаляет из Xray"""
+    try:
+        user_ref = db.collection('users').document(user_id)
+        user_ref.update({
+            'has_subscription': False,
+            'subscription_days': 0,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        })
+        
+        # Удаляем пользователя из Xray
+        email = f"user_{user_id}@vacvpn.com"
+        await xray_manager.remove_user(email)
+        
+        logger.info(f"✅ User {user_id} deactivated and removed from Xray")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error deactivating user: {e}")
         return False
 
 def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
@@ -322,6 +434,9 @@ def process_subscription_days(user_id: str):
                     
                     if new_days == 0:
                         update_data['has_subscription'] = False
+                        # Удаляем пользователя из Xray при истечении подписки
+                        email = f"user_{user_id}@vacvpn.com"
+                        asyncio.create_task(xray_manager.remove_user(email))
                     
                     db.collection('users').document(user_id).update(update_data)
                     logger.info(f"✅ Subscription days processed for user {user_id}: {subscription_days} -> {new_days} (-{days_passed} days)")
@@ -429,7 +544,7 @@ def extract_referrer_id(start_param: str) -> str:
     logger.info(f"⚠️ Using raw start_param as referrer_id: {start_param}")
     return start_param
 
-# Эндпоинты API (остаются без изменений)
+# Эндпоинты API
 @app.get("/")
 async def root():
     return {
@@ -623,7 +738,7 @@ async def buy_with_balance(request: BuyWithBalanceRequest):
         
         update_user_balance(request.user_id, -request.tariff_price)
         
-        success = update_subscription_days(request.user_id, request.tariff_days)
+        success = await update_subscription_days(request.user_id, request.tariff_days)
         
         if not success:
             return {"error": "Ошибка активации подписки"}
@@ -683,7 +798,7 @@ async def activate_tariff(request: ActivateTariffRequest):
             
             update_user_balance(request.user_id, -tariff_price)
             
-            success = update_subscription_days(request.user_id, tariff_days)
+            success = await update_subscription_days(request.user_id, tariff_days)
             
             if not success:
                 return {"error": "Ошибка активации подписки"}
@@ -818,7 +933,7 @@ async def check_payment(payment_id: str, user_id: str):
                             tariff_days = TARIFFS[tariff]["days"]
                             tariff_price = TARIFFS[tariff]["price"]
                             
-                            success = update_subscription_days(user_id, tariff_days)
+                            success = await update_subscription_days(user_id, tariff_days)
                             
                             if not success:
                                 logger.error(f"❌ Failed to activate subscription for user {user_id}")
@@ -922,6 +1037,10 @@ async def admin_reset_user(user_id: str):
             'updated_at': firestore.SERVER_TIMESTAMP
         })
         
+        # Удаляем пользователя из Xray
+        email = f"user_{user_id}@vacvpn.com"
+        await xray_manager.remove_user(email)
+        
         referrals_ref = db.collection('referrals').where('referrer_id', '==', user_id)
         referrals = referrals_ref.stream()
         for ref in referrals:
@@ -936,6 +1055,38 @@ async def admin_reset_user(user_id: str):
         
     except Exception as e:
         logger.error(f"❌ Error resetting user: {e}")
+        return {"error": str(e)}
+
+@app.post("/deactivate-user")
+async def deactivate_user(user_id: str):
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        success = await deactivate_user_subscription(user_id)
+        if success:
+            return {"success": True, "message": f"Пользователь {user_id} деактивирован"}
+        else:
+            return {"error": "Не удалось деактивировать пользователя"}
+            
+    except Exception as e:
+        logger.error(f"❌ Error deactivating user: {e}")
+        return {"error": str(e)}
+
+@app.get("/xray-stats/{user_id}")
+async def get_xray_stats(user_id: str):
+    try:
+        email = f"user_{user_id}@vacvpn.com"
+        stats = await xray_manager.get_user_stats(email)
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "stats": stats
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting Xray stats: {e}")
         return {"error": str(e)}
 
 if __name__ == "__main__":
