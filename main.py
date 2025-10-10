@@ -33,16 +33,11 @@ app.add_middleware(
 class XrayManager:
     def __init__(self):
         self.script_path = "/usr/local/bin/add_vpn_user"
-        self.config_path = "/usr/local/etc/xray/config.json"
         
     async def add_user(self, email: str, uuid_str: str = None) -> bool:
         """Добавляет пользователя через скрипт"""
         try:
             logger.info(f"🔄 Adding user via script: {email}")
-            
-            # Если UUID не передан, генерируем его
-            if not uuid_str:
-                uuid_str = str(uuid.uuid4())
             
             # Вызываем скрипт добавления пользователя
             result = subprocess.run(
@@ -54,53 +49,13 @@ class XrayManager:
             
             if result.returncode == 0:
                 logger.info(f"✅ User {email} successfully added via script")
-                # Извлекаем UUID из вывода скрипта
-                output_lines = result.stdout.split('\n')
-                for line in output_lines:
-                    if 'UUID:' in line:
-                        actual_uuid = line.split('UUID:')[1].strip()
-                        logger.info(f"🔑 Actual UUID assigned: {actual_uuid}")
-                        break
                 return True
             else:
                 logger.error(f"❌ Script failed: {result.stderr}")
-                # Fallback на прямое редактирование конфига
-                return await self.add_user_direct(email, uuid_str)
+                return False
                 
         except Exception as e:
             logger.error(f"❌ Error adding user via script: {e}")
-            return await self.add_user_direct(email, uuid_str)
-    
-    async def add_user_direct(self, email: str, uuid_str: str) -> bool:
-        """Добавляет пользователя напрямую в конфиг"""
-        try:
-            logger.info(f"🔄 Adding user directly to config: {email}")
-            
-            # Читаем конфиг
-            with open(self.config_path, 'r') as f:
-                config = json.load(f)
-            
-            new_user = {
-                "id": uuid_str,
-                "email": email,
-                "flow": ""
-            }
-            
-            # Добавляем пользователя в первый inbound
-            config['inbounds'][0]['settings']['clients'].append(new_user)
-            
-            # Сохраняем конфиг
-            with open(self.config_path, 'w') as f:
-                json.dump(config, f, indent=2)
-            
-            # Перезапускаем Xray
-            subprocess.run(["systemctl", "restart", "xray"], check=True, timeout=30)
-            
-            logger.info(f"✅ User {email} successfully added directly to config")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Error adding user directly: {e}")
             return False
     
     async def remove_user(self, email: str) -> bool:
@@ -108,8 +63,10 @@ class XrayManager:
         try:
             logger.info(f"🔄 Removing user from config: {email}")
             
+            config_path = "/usr/local/etc/xray/config.json"
+            
             # Читаем конфиг
-            with open(self.config_path, 'r') as f:
+            with open(config_path, 'r') as f:
                 config = json.load(f)
             
             # Удаляем пользователя
@@ -124,12 +81,10 @@ class XrayManager:
                     
                     if new_count < original_count:
                         logger.info(f"✅ Removed user {email} from config")
-                    else:
-                        logger.info(f"⚠️ User {email} not found in config")
                     break
             
             # Сохраняем конфиг
-            with open(self.config_path, 'w') as f:
+            with open(config_path, 'w') as f:
                 json.dump(config, f, indent=2)
             
             # Перезапускаем Xray
@@ -140,23 +95,6 @@ class XrayManager:
         except Exception as e:
             logger.error(f"❌ Error removing user: {e}")
             return False
-
-    async def get_user_uuid(self, email: str) -> str:
-        """Получает UUID пользователя из конфига"""
-        try:
-            with open(self.config_path, 'r') as f:
-                config = json.load(f)
-            
-            for inbound in config['inbounds']:
-                if inbound.get('tag') == 'inbound-1':
-                    for client in inbound['settings'].get('clients', []):
-                        if client.get('email') == email:
-                            return client['id']
-            return None
-            
-        except Exception as e:
-            logger.error(f"❌ Error getting user UUID: {e}")
-            return None
 
 # Инициализация Xray менеджера
 xray_manager = XrayManager()
@@ -307,7 +245,7 @@ def update_user_balance(user_id: str, amount: float):
 def generate_user_uuid():
     return str(uuid.uuid4())
 
-# Обновленная функция активации подписки с Xray интеграцией
+# Функция активации подписки с Xray интеграцией
 async def update_subscription_days(user_id: str, additional_days: int):
     """Обновляет количество дней подписки и добавляет пользователя в Xray"""
     if not db: 
@@ -339,7 +277,7 @@ async def update_subscription_days(user_id: str, additional_days: int):
                 update_data['subscription_start'] = datetime.now().isoformat()
                 logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
                 
-                # Добавляем пользователя в Xray
+                # Добавляем пользователя в Xray через наш скрипт
                 email = f"user_{user_id}@vacvpn.com"
                 success = await xray_manager.add_user(email, user_uuid)
                 if not success:
@@ -1110,7 +1048,7 @@ async def admin_reset_user(user_id: str):
         
         # Удаляем пользователя из Xray
         email = f"user_{user_id}@vacvpn.com"
-        await xray_manager.remove_user(email)
+        asyncio.create_task(xray_manager.remove_user(email))
         
         referrals_ref = db.collection('referrals').where('referrer_id', '==', user_id)
         referrals = referrals_ref.stream()
@@ -1142,24 +1080,6 @@ async def deactivate_user(user_id: str):
             
     except Exception as e:
         logger.error(f"❌ Error deactivating user: {e}")
-        return {"error": str(e)}
-
-@app.get("/xray-stats/{user_id}")
-async def get_xray_stats(user_id: str):
-    try:
-        email = f"user_{user_id}@vacvpn.com"
-        user_uuid = await xray_manager.get_user_uuid(email)
-        
-        return {
-            "success": True,
-            "user_id": user_id,
-            "email": email,
-            "uuid": user_uuid,
-            "status": "active" if user_uuid else "not_found"
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ Error getting Xray stats: {e}")
         return {"error": str(e)}
 
 if __name__ == "__main__":
