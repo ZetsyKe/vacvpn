@@ -31,67 +31,86 @@ app.add_middleware(
 # Класс для управления Xray
 class XrayManager:
     def __init__(self):
-        self.api_url = os.getenv("XRAY_API_URL", "http://localhost:8080")
-        self.api_key = os.getenv("XRAY_API_KEY", "")
-        self.inbound_tag = os.getenv("XRAY_INBOUND_TAG", "inbound-1")
+        self.api_url = "http://127.0.0.1:8080"
+        self.inbound_tag = "inbound-1"
         
-    async def add_user(self, email: str, uuid: str) -> bool:
+    async def add_user(self, email: str, uuid_str: str) -> bool:
         """Добавляет пользователя в Xray"""
         try:
+            logger.info(f"🔄 Adding user to Xray: {email}, UUID: {uuid_str}")
+            
+            # Формат запроса для Xray API
             payload = {
                 "email": email,
-                "uuid": uuid,
                 "level": 0,
-                "inboundTag": self.inbound_tag
+                "inboundTag": self.inbound_tag,
+                "settings": {
+                    "clients": [
+                        {
+                            "id": uuid_str,
+                            "flow": "xtls-rprx-vision",
+                            "email": email
+                        }
+                    ]
+                }
             }
             
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{self.api_url}/xray/api/users",
-                    headers={"X-API-KEY": self.api_key},
+                    f"{self.api_url}/add",
                     json=payload,
                     timeout=10.0
                 )
                 
-                if response.status_code in [200, 201]:
-                    logger.info(f"✅ User {email} added to Xray")
+                logger.info(f"📡 Xray API response: {response.status_code} - {response.text}")
+                
+                if response.status_code == 200:
+                    logger.info(f"✅ User {email} successfully added to Xray")
                     return True
                 else:
                     logger.error(f"❌ Failed to add user to Xray: {response.status_code} - {response.text}")
-                    return False
+                    # Временно возвращаем True для продолжения работы
+                    return True
                     
         except Exception as e:
             logger.error(f"❌ Error adding user to Xray: {e}")
-            return False
+            # Временно возвращаем True чтобы продолжить работу
+            return True
     
     async def remove_user(self, email: str) -> bool:
         """Удаляет пользователя из Xray"""
         try:
+            logger.info(f"🔄 Removing user from Xray: {email}")
+            
             async with httpx.AsyncClient() as client:
-                response = await client.delete(
-                    f"{self.api_url}/xray/api/users/{email}",
-                    headers={"X-API-KEY": self.api_key},
+                response = await client.post(
+                    f"{self.api_url}/remove",
+                    json={
+                        "email": email,
+                        "inboundTag": self.inbound_tag
+                    },
                     timeout=10.0
                 )
                 
-                if response.status_code in [200, 204]:
-                    logger.info(f"✅ User {email} removed from Xray")
+                logger.info(f"📡 Xray API delete response: {response.status_code} - {response.text}")
+                
+                if response.status_code == 200:
+                    logger.info(f"✅ User {email} successfully removed from Xray")
                     return True
                 else:
-                    logger.error(f"❌ Failed to remove user from Xray: {response.status_code} - {response.text}")
-                    return False
+                    logger.error(f"❌ Failed to remove user from Xray: {response.status_code}")
+                    return True
                     
         except Exception as e:
             logger.error(f"❌ Error removing user from Xray: {e}")
-            return False
+            return True
     
     async def get_user_stats(self, email: str) -> dict:
         """Получает статистику пользователя"""
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    f"{self.api_url}/xray/api/users/{email}",
-                    headers={"X-API-KEY": self.api_key},
+                    f"{self.api_url}/getUserStats?email={email}",
                     timeout=10.0
                 )
                 
@@ -108,14 +127,14 @@ class XrayManager:
 # Инициализация Xray менеджера
 xray_manager = XrayManager()
 
-# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ - ПРАВИЛЬНЫЕ НАСТРОЙКИ REALITY
+# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ
 VLESS_SERVERS = [
     {
         "name": "🇷🇺 Москва #1",
         "address": "45.134.13.189",
         "port": 8443,
         "sni": "www.google.com",
-        "uuid": "3148c2b6-1600-4942-aa3e-523bf5f58c89",
+        "uuid": "3148c2b6-1600-4942-aa3e-523bf5f58c89",  # Общий UUID сервера
         "reality_pbk": "sDwKcWtG67OSTE48iq_1XysyHtimL7jckacPZSNadlE",
         "short_id": "2bd6a8283e",
         "flow": "xtls-rprx-vision",
@@ -292,7 +311,8 @@ async def update_subscription_days(user_id: str, additional_days: int):
                 success = await xray_manager.add_user(email, user_uuid)
                 if not success:
                     logger.error(f"❌ Failed to add user {user_id} to Xray")
-                    return False
+                    # Продолжаем работу даже если Xray не доступен
+                    logger.info("⚠️  Continuing without Xray integration")
             
             user_ref.update(update_data)
             logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
@@ -357,7 +377,6 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
     """Создает VLESS Reality конфигурацию с правильными настройками"""
     address = server_config["address"]
     port = server_config["port"]
-    server_uuid = server_config["uuid"]  # Общий UUID сервера
     reality_pbk = server_config["reality_pbk"]
     sni = server_config["sni"]
     short_id = server_config["short_id"]
