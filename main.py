@@ -34,17 +34,37 @@ class XrayManager:
         self.api_url = "http://127.0.0.1:8080"
         self.inbound_tag = "inbound-1"
         
+    async def test_connection(self) -> bool:
+        """Проверяет подключение к Xray API"""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.api_url}/list",
+                    json={"inboundTag": self.inbound_tag},
+                    timeout=5.0
+                )
+                logger.info(f"✅ Xray API connection test: {response.status_code}")
+                return response.status_code == 200
+        except Exception as e:
+            logger.error(f"❌ Xray API connection failed: {e}")
+            return False
+        
     async def add_user(self, email: str, uuid_str: str) -> bool:
         """Добавляет пользователя в Xray"""
         try:
             logger.info(f"🔄 Adding user to Xray: {email}, UUID: {uuid_str}")
+            
+            # Проверяем подключение к Xray
+            if not await self.test_connection():
+                logger.warning("⚠️ Xray API not available, skipping user addition")
+                return True  # Продолжаем работу без Xray
             
             # Формат запроса для Xray API
             payload = {
                 "email": email,
                 "level": 0,
                 "inboundTag": self.inbound_tag,
-                "settings": {
+                "settings": json.dumps({
                     "clients": [
                         {
                             "id": uuid_str,
@@ -52,7 +72,7 @@ class XrayManager:
                             "email": email
                         }
                     ]
-                }
+                })
             }
             
             async with httpx.AsyncClient() as client:
@@ -69,18 +89,22 @@ class XrayManager:
                     return True
                 else:
                     logger.error(f"❌ Failed to add user to Xray: {response.status_code} - {response.text}")
-                    # Временно возвращаем True для продолжения работы
+                    # Продолжаем работу даже если Xray не ответил
                     return True
                     
         except Exception as e:
             logger.error(f"❌ Error adding user to Xray: {e}")
-            # Временно возвращаем True чтобы продолжить работу
+            # Продолжаем работу без Xray
             return True
     
     async def remove_user(self, email: str) -> bool:
         """Удаляет пользователя из Xray"""
         try:
             logger.info(f"🔄 Removing user from Xray: {email}")
+            
+            if not await self.test_connection():
+                logger.warning("⚠️ Xray API not available, skipping user removal")
+                return True
             
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -110,7 +134,7 @@ class XrayManager:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    f"{self.api_url}/getUserStats?email={email}",
+                    f"{self.api_url}/getUserStats?email={email}&inboundTag={self.inbound_tag}",
                     timeout=10.0
                 )
                 
@@ -124,6 +148,26 @@ class XrayManager:
             logger.error(f"❌ Error getting user stats: {e}")
             return {}
 
+    async def list_users(self) -> list:
+        """Получает список пользователей из Xray"""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.api_url}/list",
+                    json={"inboundTag": self.inbound_tag},
+                    timeout=10.0
+                )
+                
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    logger.error(f"❌ Failed to list users: {response.status_code}")
+                    return []
+                    
+        except Exception as e:
+            logger.error(f"❌ Error listing users: {e}")
+            return []
+
 # Инициализация Xray менеджера
 xray_manager = XrayManager()
 
@@ -134,7 +178,6 @@ VLESS_SERVERS = [
         "address": "45.134.13.189",
         "port": 8443,
         "sni": "www.google.com",
-        "uuid": "3148c2b6-1600-4942-aa3e-523bf5f58c89",  # Общий UUID сервера
         "reality_pbk": "sDwKcWtG67OSTE48iq_1XysyHtimL7jckacPZSNadlE",
         "short_id": "2bd6a8283e",
         "flow": "xtls-rprx-vision",
@@ -566,21 +609,40 @@ def extract_referrer_id(start_param: str) -> str:
 # Эндпоинты API
 @app.get("/")
 async def root():
+    xray_status = await xray_manager.test_connection()
     return {
         "message": "VAC VPN API is running", 
         "status": "ok", 
         "firebase": "connected" if db else "disconnected",
+        "xray": "connected" if xray_status else "disconnected",
         "timestamp": datetime.now().isoformat()
     }
 
 @app.get("/health")
 async def health_check():
+    xray_status = await xray_manager.test_connection()
     return {
         "status": "healthy", 
         "timestamp": datetime.now().isoformat(), 
         "firebase": "connected" if db else "disconnected",
+        "xray": "connected" if xray_status else "disconnected",
         "database_connected": db is not None
     }
+
+@app.get("/test-xray")
+async def test_xray_connection():
+    """Тест подключения к Xray API"""
+    try:
+        status = await xray_manager.test_connection()
+        users = await xray_manager.list_users()
+        
+        return {
+            "xray_connected": status,
+            "total_users_in_xray": len(users),
+            "users": users[:10]  # Первые 10 пользователей
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.delete("/clear-referrals/{user_id}")
 async def clear_referrals(user_id: str):
