@@ -374,6 +374,42 @@
       margin: 8px 0;
       font-size: 14px;
     }
+    .payment-methods {
+      display: flex;
+      gap: 8px;
+      margin: 12px 0;
+    }
+    .payment-method {
+      flex: 1;
+      padding: 12px;
+      border: 2px solid rgba(176, 203, 31, 0.3);
+      border-radius: 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .payment-method.selected {
+      border-color: var(--primary);
+      background: rgba(176, 203, 31, 0.1);
+    }
+    .payment-method.disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .payment-icon {
+      font-size: 24px;
+      margin-bottom: 4px;
+    }
+    .payment-label {
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .balance-sufficient {
+      color: var(--primary);
+    }
+    .balance-insufficient {
+      color: #ff4444;
+    }
   </style>
 </head>
 <body>
@@ -448,12 +484,11 @@
   <div class="card" id="tariffBlock">
     <div class="tariff-info">
       💡 <strong>Как работает подписка:</strong><br>
-      1. Выбираете тариф и нажимаете "КУПИТЬ ПОДПИСКУ"<br>
-      2. Переходите по ссылке для оплаты<br>
-      3. После успешной оплаты подписка активируется на указанный период<br>
+      1. Выбираете тариф и способ оплаты<br>
+      2. Оплачиваете через ЮKassa или с баланса<br>
+      3. После успешной оплаты подписка активируется<br>
       4. Рефералы пополняют ваш баланс<br>
-      5. Можно купить несколько тарифов - дни суммируются<br>
-      6. Подписка работает пока не закончатся дни
+      5. Можно купить несколько тарифов - дни суммируются
     </div>
     
     <div class="tariff-grid">
@@ -479,6 +514,22 @@
       • Период: <strong id="tariffPeriod">30 дней</strong><br>
       • Реферал: <strong>+50₽ на ваш баланс</strong><br>
       • После оплаты: <strong>Подписка активируется сразу</strong>
+    </div>
+
+    <div id="paymentMethods" style="display: none; margin: 12px 0;">
+      <div style="margin-bottom: 8px; font-weight: 600;">Способ оплаты:</div>
+      <div class="payment-methods">
+        <div class="payment-method" id="paymentBalance" onclick="selectPaymentMethod('balance')">
+          <div class="payment-icon">💰</div>
+          <div class="payment-label">С баланса</div>
+          <div class="payment-details" id="balanceDetails" style="font-size: 11px; margin-top: 4px;"></div>
+        </div>
+        <div class="payment-method selected" id="paymentYookassa" onclick="selectPaymentMethod('yookassa')">
+          <div class="payment-icon">💳</div>
+          <div class="payment-label">Картой</div>
+          <div style="font-size: 11px; margin-top: 4px;">ЮKassa</div>
+        </div>
+      </div>
     </div>
     
     <button class="button button-yellow" id="buyTariffBtn" style="display:none;" onclick="buyTariff()">КУПИТЬ ПОДПИСКУ</button>
@@ -510,7 +561,6 @@
     <button class="button-help" onclick="showHelp()">Помощь</button>
   </div>
 
-  <!-- QR Code Modal -->
   <div class="qr-modal" id="qrModal">
     <div class="qr-content">
       <h3 style="color: var(--primary); margin-bottom: 10px;">📱 QR код для импорта</h3>
@@ -539,6 +589,7 @@
     // Переменные для хранения данных
     let currentPaymentId = null;
     let currentTariff = null;
+    let currentPaymentMethod = 'yookassa';
     let hasSubscription = false;
     let subscriptionDays = 0;
     let userBalance = 0;
@@ -637,8 +688,11 @@
         // Обновляем информацию о тарифе
         const tariffPaymentInfo = document.getElementById('tariffPaymentInfo');
         const buyTariffBtn = document.getElementById('buyTariffBtn');
+        const paymentMethods = document.getElementById('paymentMethods');
         
         tariffPaymentInfo.style.display = 'block';
+        paymentMethods.style.display = 'block';
+        
         tariffPaymentInfo.innerHTML = `
             <strong>При покупке подписки:</strong><br>
             • Стоимость: <strong style="color: var(--primary);">${tariff.price}₽</strong><br>
@@ -647,8 +701,68 @@
             • После оплаты: <strong>Подписка активируется сразу</strong>
         `;
         
-        buyTariffBtn.textContent = `КУПИТЬ ПОДПИСКУ - ${tariff.price}₽`;
+        // Обновляем информацию о балансе
+        updateBalanceInfo();
+        
+        // Обновляем текст кнопки
+        if (currentPaymentMethod === 'balance') {
+            buyTariffBtn.textContent = `ОПЛАТИТЬ С БАЛАНСА - ${tariff.price}₽`;
+        } else {
+            buyTariffBtn.textContent = `КУПИТЬ ПОДПИСКУ - ${tariff.price}₽`;
+        }
+        
         buyTariffBtn.style.display = 'block';
+    }
+
+    // Функция выбора способа оплаты
+    function selectPaymentMethod(method) {
+        if (method === 'balance' && document.getElementById('paymentBalance').classList.contains('disabled')) {
+            return; // Не позволяем выбрать недоступный способ
+        }
+        
+        currentPaymentMethod = method;
+        
+        // Снимаем выделение со всех способов
+        document.querySelectorAll('.payment-method').forEach(el => {
+            el.classList.remove('selected');
+        });
+        
+        // Выделяем выбранный способ
+        document.getElementById(`payment${method.charAt(0).toUpperCase() + method.slice(1)}`).classList.add('selected');
+        
+        // Обновляем текст кнопки в зависимости от способа оплаты
+        const buyTariffBtn = document.getElementById('buyTariffBtn');
+        if (method === 'balance') {
+            buyTariffBtn.textContent = `ОПЛАТИТЬ С БАЛАНСА - ${getSelectedTariffPrice()}₽`;
+        } else {
+            buyTariffBtn.textContent = `КУПИТЬ ПОДПИСКУ - ${getSelectedTariffPrice()}₽`;
+        }
+    }
+
+    // Функция для получения цены выбранного тарифа
+    function getSelectedTariffPrice() {
+        if (!currentTariff) return 0;
+        return tariffPlans[currentTariff].price;
+    }
+
+    // Функция обновления информации о балансе
+    function updateBalanceInfo() {
+        const tariffPrice = getSelectedTariffPrice();
+        const balanceElement = document.getElementById('balanceDetails');
+        const balanceMethod = document.getElementById('paymentBalance');
+        
+        if (userBalance >= tariffPrice) {
+            balanceElement.innerHTML = `<span class="balance-sufficient">Достаточно</span>`;
+            balanceMethod.classList.remove('disabled');
+        } else {
+            balanceElement.innerHTML = `<span class="balance-insufficient">Недостаточно</span>`;
+            balanceMethod.classList.add('disabled');
+            
+            // Если выбран способ оплаты с баланса, но средств недостаточно, переключаем на карту
+            if (currentPaymentMethod === 'balance') {
+                selectPaymentMethod('yookassa');
+            }
+        }
     }
 
     // Анимация счетчика
@@ -696,6 +810,241 @@
             
         } else {
             subscriptionInfo.style.display = 'none';
+        }
+    }
+
+    // Функция покупки тарифа
+    async function buyTariff() {
+        try {
+            if (!currentTariff) {
+                showError('Пожалуйста, выберите тариф');
+                return;
+            }
+
+            const tariff = tariffPlans[currentTariff];
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const errorMessage = document.getElementById('errorMessage');
+            const successMessage = document.getElementById('successMessage');
+            
+            // Скрываем предыдущие сообщения
+            errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
+            loadingIndicator.style.display = 'block';
+
+            console.log('🛒 Buying tariff:', {
+                tariff: currentTariff,
+                paymentMethod: currentPaymentMethod,
+                userId: userId,
+                price: tariff.price
+            });
+
+            let response;
+            
+            if (currentPaymentMethod === 'balance') {
+                // Оплата с баланса
+                response = await fetch(`${API_BASE_URL}/buy-with-balance`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        tariff_id: currentTariff,
+                        tariff_price: tariff.price,
+                        tariff_days: tariff.days
+                    })
+                });
+            } else {
+                // Оплата через ЮKassa
+                response = await fetch(`${API_BASE_URL}/create-payment`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        tariff_id: currentTariff,
+                        tariff_price: tariff.price,
+                        tariff_days: tariff.days
+                    })
+                });
+            }
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('💰 Payment result:', result);
+
+            if (result.success) {
+                if (currentPaymentMethod === 'balance') {
+                    // Успешная оплата с баланса
+                    showSuccess('✅ Подписка успешно активирована с баланса!');
+                    await loadUserData(); // Обновляем данные пользователя
+                    
+                    // Показываем конфигурацию сразу
+                    setTimeout(() => {
+                        getVlessConfig();
+                    }, 2000);
+                    
+                } else {
+                    // Оплата через ЮKassa
+                    currentPaymentId = result.payment_id;
+                    
+                    // Открываем платежную ссылку в WebApp
+                    tg.openInvoice(result.payment_link, function(status) {
+                        console.log('💳 Payment status:', status);
+                        
+                        if (status === 'paid') {
+                            showSuccess('✅ Платеж успешно завершен! Активируем подписку...');
+                            
+                            // Проверяем статус платежа
+                            checkPaymentStatus();
+                        } else if (status === 'failed') {
+                            showError('❌ Платеж не прошел. Попробуйте еще раз.');
+                        } else if (status === 'cancelled') {
+                            showError('⚠️ Платеж отменен.');
+                        }
+                    });
+                }
+            } else {
+                throw new Error(result.error || 'Ошибка при создании платежа');
+            }
+
+        } catch (error) {
+            console.error('❌ Buy tariff error:', error);
+            showError('Ошибка при покупке: ' + error.message);
+        } finally {
+            document.getElementById('loadingIndicator').style.display = 'none';
+        }
+    }
+
+    // Функция проверки статуса платежа
+    async function checkPaymentStatus() {
+        try {
+            if (!currentPaymentId) {
+                console.error('No payment ID available');
+                return;
+            }
+
+            console.log('🔍 Checking payment status:', currentPaymentId);
+
+            const response = await fetch(`${API_BASE_URL}/check-payment?payment_id=${currentPaymentId}`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('📊 Payment status result:', result);
+
+            if (result.success) {
+                if (result.payment_status === 'succeeded') {
+                    showSuccess('✅ Платеж подтвержден! Обновляем данные...');
+                    
+                    // Ждем немного перед обновлением данных
+                    setTimeout(async () => {
+                        await loadUserData();
+                        
+                        // Показываем конфигурацию после успешной оплаты
+                        setTimeout(() => {
+                            getVlessConfig();
+                        }, 1000);
+                        
+                    }, 2000);
+                    
+                } else if (result.payment_status === 'pending') {
+                    showSuccess('⏳ Платеж обрабатывается... Проверим через пару секунд');
+                    
+                    // Повторяем проверку через 3 секунды
+                    setTimeout(checkPaymentStatus, 3000);
+                    
+                } else if (result.payment_status === 'waiting_for_capture') {
+                    showSuccess('⏳ Платеж ожидает подтверждения...');
+                    setTimeout(checkPaymentStatus, 3000);
+                    
+                } else {
+                    showError('❌ Платеж не прошел: ' + (result.error || 'Неизвестная ошибка'));
+                }
+            } else {
+                showError('❌ Ошибка проверки платежа: ' + (result.error || 'Неизвестная ошибка'));
+            }
+
+        } catch (error) {
+            console.error('❌ Check payment error:', error);
+            showError('Ошибка проверки платежа: ' + error.message);
+        }
+    }
+
+    // Функция получения VLESS конфигурации
+    async function getVlessConfig() {
+        try {
+            if (!hasSubscription || subscriptionDays <= 0) {
+                showError('❌ У вас нет активной подписки');
+                return;
+            }
+
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const errorMessage = document.getElementById('errorMessage');
+            const successMessage = document.getElementById('successMessage');
+            
+            errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
+            loadingIndicator.style.display = 'block';
+
+            console.log('🔧 Getting VLESS config for user:', userId);
+
+            const response = await fetch(`${API_BASE_URL}/get-vless-config?user_id=${userId}`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('🔧 VLESS config result:', result);
+
+            if (result.success) {
+                const vlessConfigContainer = document.getElementById('vlessConfigContainer');
+                const vlessUuidText = document.getElementById('vlessUuidText');
+                const vlessServersList = document.getElementById('vlessServersList');
+                
+                // Обновляем UUID
+                vlessUuidText.textContent = result.vless_uuid;
+                
+                // Обновляем список серверов
+                if (result.servers && result.servers.length > 0) {
+                    vlessServersList.innerHTML = '<strong>🌐 Доступные серверы:</strong>';
+                    
+                    result.servers.forEach((server, index) => {
+                        const serverElement = document.createElement('div');
+                        serverElement.className = 'server-config';
+                        serverElement.innerHTML = `
+                            <div><strong>Сервер ${index + 1}:</strong> ${server.address}</div>
+                            <div><strong>Порт:</strong> ${server.port}</div>
+                            <div style="margin-top: 8px; font-size: 11px; opacity: 0.8;">
+                                <strong>VLESS URL:</strong><br>
+                                <div style="word-break: break-all; background: rgba(0,0,0,0.3); padding: 6px; border-radius: 4px; margin-top: 4px;">
+                                    ${server.vless_url}
+                                </div>
+                            </div>
+                        `;
+                        vlessServersList.appendChild(serverElement);
+                    });
+                }
+                
+                vlessConfigContainer.style.display = 'block';
+                showSuccess('✅ Конфигурация загружена!');
+                
+            } else {
+                throw new Error(result.error || 'Ошибка при получении конфигурации');
+            }
+
+        } catch (error) {
+            console.error('❌ Get VLESS config error:', error);
+            showError('Ошибка получения конфигурации: ' + error.message);
+        } finally {
+            document.getElementById('loadingIndicator').style.display = 'none';
         }
     }
 
@@ -804,7 +1153,6 @@
             subscriptionDaysElement.textContent = `Осталось дней: ${subscriptionDays}`;
             vlessButton.style.display = 'block';
             
-            // Показываем VLESS UUID если есть
             if (userData.vless_uuid) {
                 document.getElementById('vlessUuidText').textContent = userData.vless_uuid;
             }
@@ -822,267 +1170,82 @@
         // Обновляем реферальную статистику
         if (userData.referral_stats) {
             document.getElementById('referralCount').textContent = userData.referral_stats.total_referrals;
-            document.getElementById('totalBonusMoney').textContent = userData.referral_stats.total_bonus_money.toFixed(2);
+            document.getElementById('totalBonusMoney').textContent = userData.referral_stats.total_bonus_money;
         }
         
-        // Всегда показываем кнопку покупки
-        buyTariffBtn.style.display = 'block';
-    }
-
-    // Покупка тарифа
-    async function buyTariff() {
-        if (!currentTariff) {
-            showError("Пожалуйста, выберите тарифный план");
-            return;
+        // Обновляем информацию о балансе для выбранного тарифа
+        if (currentTariff) {
+            updateBalanceInfo();
         }
-
-        try {
-            if (!userId || userId === 'unknown') {
-                showError('Ошибка: откройте приложение через Telegram бота');
-                return;
-            }
-
-            const selectedTariff = tariffPlans[currentTariff];
-
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            const buyTariffBtn = document.getElementById('buyTariffBtn');
-
-            loadingIndicator.style.display = 'block';
-            buyTariffBtn.disabled = true;
-            hideError();
-
-            console.log('🎯 Buying tariff:', selectedTariff);
-
-            const response = await fetch(`${API_BASE_URL}/activate-tariff`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    user_id: userId,
-                    tariff: selectedTariff.id
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            console.log('🔧 Tariff purchase response:', data);
-            
-            if (data.error) {
-                throw new Error(data.error);
-            }
-
-            if (data.success && data.payment_url) {
-                tg.openLink(data.payment_url);
-                currentPaymentId = data.payment_id;
-                checkTariffPaymentStatus(data.payment_id);
-                showSuccess('Перейдите по ссылке для оплаты подписки');
-            } else {
-                showError(data.error || "Ошибка создания платежа для подписки");
-            }
-        } catch (error) {
-            showError(error.message);
-        } finally {
-            document.getElementById('loadingIndicator').style.display = 'none';
-            document.getElementById('buyTariffBtn').disabled = false;
-        }
-    }
-
-    // Проверка статуса платежа для тарифа
-    async function checkTariffPaymentStatus(paymentId) {
-        try {
-            if (!paymentId) {
-                console.error('❌ No payment ID provided');
-                return;
-            }
-            
-            console.log('🔄 Checking tariff payment status:', paymentId);
-            
-            const response = await fetch(`${API_BASE_URL}/payment-status?payment_id=${paymentId}&user_id=${userId}`);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            console.log('📊 Tariff payment status:', data);
-            
-            if (data.status === 'succeeded') {
-                showSuccess('✅ Подписка успешно оплачена и активирована! Реферальные бонусы начислены на баланс.');
-                await loadUserData();
-            } else if (data.status === 'pending') {
-                setTimeout(() => checkTariffPaymentStatus(paymentId), 3000);
-            } else if (data.status === 'canceled') {
-                showError('❌ Платеж за подписку отменен');
-            }
-        } catch (error) {
-            console.error('❌ Tariff payment status check error:', error);
-            setTimeout(() => checkTariffPaymentStatus(paymentId), 3000);
-        }
-    }
-
-    // Функции для работы с VLESS
-    async function getVlessConfig() {
-        try {
-            if (!userId || userId === 'unknown') {
-                showError('Ошибка: откройте приложение через Telegram бота');
-                return;
-            }
-
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            loadingIndicator.style.display = 'block';
-            hideError();
-
-            const response = await fetch(`${API_BASE_URL}/vless-config`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    user_id: userId
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            console.log('🔧 VLESS config response:', data);
-            
-            if (data.error) {
-                throw new Error(data.error);
-            }
-
-            showVlessConfig(data);
-            
-        } catch (error) {
-            console.error('❌ Error getting VLESS config:', error);
-            showError('Ошибка получения VLESS конфигурации: ' + error.message);
-        } finally {
-            document.getElementById('loadingIndicator').style.display = 'none';
-        }
-    }
-
-    function showVlessConfig(configData) {
-        const vlessConfigContainer = document.getElementById('vlessConfigContainer');
-        const vlessServersList = document.getElementById('vlessServersList');
-        
-        document.getElementById('vlessUuidText').textContent = configData.vless_uuid;
-        
-        vlessServersList.innerHTML = '';
-        
-        configData.configs.forEach((serverConfig, index) => {
-            const serverDiv = document.createElement('div');
-            serverDiv.className = 'server-config';
-            serverDiv.innerHTML = `
-                <strong>Сервер ${index + 1}:</strong> ${serverConfig.config.server}
-                <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
-                    <button class="copy-btn" onclick="copyVlessLink('${serverConfig.vless_link}')">
-                        📋 Скопировать ссылку
-                    </button>
-                    <button class="copy-btn" onclick="showVlessQR('${serverConfig.qr_code}')">
-                        📱 Показать QR
-                    </button>
-                </div>
-            `;
-            vlessServersList.appendChild(serverDiv);
-        });
-        
-        vlessConfigContainer.style.display = 'block';
-        vlessConfigContainer.scrollIntoView({ behavior: 'smooth' });
-    }
-
-    function copyVlessLink(link) {
-        navigator.clipboard.writeText(link)
-            .then(() => {
-                tg.showAlert('VLESS ссылка скопирована в буфер обмена!');
-            })
-            .catch(err => {
-                tg.showAlert('Не удалось скопировать ссылку');
-            });
-    }
-
-    function showVlessQR(qrUrl) {
-        const qrModal = document.getElementById('qrModal');
-        const qrImage = document.getElementById('qrImage');
-        
-        qrImage.src = qrUrl;
-        qrModal.style.display = 'flex';
-    }
-
-    function closeQRModal() {
-        const qrModal = document.getElementById('qrModal');
-        qrModal.style.display = 'none';
     }
 
     // Вспомогательные функции
     function scrollToTariffs() {
-        document.getElementById('tariffBlock').scrollIntoView({
-            behavior: 'smooth'
-        });
+        document.getElementById('tariffBlock').scrollIntoView({ behavior: 'smooth' });
     }
 
     function copyRef() {
-        const link = document.getElementById('refLink').textContent;
-        navigator.clipboard.writeText(link)
-            .then(() => {
-                tg.showAlert('Ссылка скопирована в буфер обмена!');
-            })
-            .catch(err => {
-                tg.showAlert('Не удалось скопировать ссылку');
-            });
+        const refLink = document.getElementById('refLink').textContent;
+        navigator.clipboard.writeText(refLink).then(() => {
+            showSuccess('Ссылка скопирована в буфер обмена!');
+        }).catch(err => {
+            showError('Ошибка копирования: ' + err);
+        });
     }
 
     function showHelp() {
-        tg.openTelegramLink('https://t.me/vacvpn_support');
+        tg.showAlert(
+            '📱 Помощь по VAC VPN:\n\n' +
+            '1. Как купить подписку?\n' +
+            '   - Выберите тариф и способ оплаты\n' +
+            '   - Оплатите картой или с баланса\n' +
+            '   - После оплаты получите VLESS конфиг\n\n' +
+            '2. Как настроить VPN?\n' +
+            '   - Скачайте приложение для вашего устройства\n' +
+            '   - Импортируйте конфигурацию или QR код\n' +
+            '   - Включите VPN соединение\n\n' +
+            '3. Проблемы с подключением?\n' +
+            '   - Проверьте активность подписки\n' +
+            '   - Попробуйте другой сервер\n' +
+            '   - Обратитесь в поддержку'
+        );
     }
 
     function showError(message) {
         const errorElement = document.getElementById('errorMessage');
         errorElement.textContent = message;
         errorElement.style.display = 'block';
-        setTimeout(() => errorElement.style.display = 'none', 5000);
-    }
-
-    function hideError() {
-        document.getElementById('errorMessage').style.display = 'none';
+        setTimeout(() => {
+            errorElement.style.display = 'none';
+        }, 5000);
     }
 
     function showSuccess(message) {
         const successElement = document.getElementById('successMessage');
         successElement.textContent = message;
         successElement.style.display = 'block';
-        setTimeout(() => successElement.style.display = 'none', 5000);
+        setTimeout(() => {
+            successElement.style.display = 'none';
+        }, 5000);
     }
 
-    function hideSuccess() {
-        document.getElementById('successMessage').style.display = 'none';
+    function closeQRModal() {
+        document.getElementById('qrModal').style.display = 'none';
     }
 
-    // Закрытие меню при клике вне его
-    document.addEventListener('click', function(e) {
-        const menu = document.getElementById('menuDropdown');
-        const menuBtn = document.querySelector('.menu-btn');
-        if (menu && menuBtn && !menu.contains(e.target) && !menuBtn.contains(e.target)) {
-            menu.style.display = 'none';
-        }
-    });
-
-    // Закрытие QR модального окна при клике вне его
-    document.getElementById('qrModal').addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeQRModal();
-        }
-    });
-
-    // Инициализация при загрузке
-    document.addEventListener('DOMContentLoaded', async () => {
-        console.log('🚀 Starting initialization...');
-        await initUser();
+    // Инициализация при загрузке страницы
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('🚀 Starting VAC VPN WebApp...');
+        initUser();
+        
+        // Закрываем меню при клике вне его
+        document.addEventListener('click', function(event) {
+            const menu = document.getElementById('menuDropdown');
+            const menuBtn = document.querySelector('.menu-btn');
+            if (menu.style.display === 'block' && !menu.contains(event.target) && !menuBtn.contains(event.target)) {
+                menu.style.display = 'none';
+            }
+        });
     });
   </script>
 </body>
