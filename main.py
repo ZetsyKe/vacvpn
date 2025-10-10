@@ -27,20 +27,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ - ПРАВИЛЬНЫЕ НАСТРОЙКИ ПОД ВАШ XRAY
+# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ - ПРАВИЛЬНЫЕ НАСТРОЙКИ REALITY
 VLESS_SERVERS = [
     {
         "name": "🇷🇺 Москва #1",
         "address": "45.134.13.189",  # Ваш IP сервера
-        "port": 2053,  # Ваш порт Xray
+        "port": 8443,  # Правильный порт Reality
         "sni": "www.google.com",
-        "uuid": "f1cc0e69-45b2-43e8-b24f-fd2197615211",  # Общий UUID из вашего Xray
+        "uuid": "3148c2b6-1600-4942-aa3e-523bf5f58c89",  # Общий UUID из вашего Xray
+        "reality_pbk": "sDwKcWtG67OSTE48iq_1XysyHtimL7jckacPZSNadlE",  # Public Key из privateKey
+        "short_id": "2bd6a8283e",
         "flow": "xtls-rprx-vision",
-        "security": "tls"  # У вас TLS, а не Reality
+        "security": "reality"
     }
 ]
 
-# Тарифы (фиксированная подписка на период)
+# Тарифы
 TARIFFS = {
     "1month": {
         "name": "1 Месяц",
@@ -48,13 +50,13 @@ TARIFFS = {
         "days": 30
     },
     "1year": {
-        "name": "1 Год",
+        "name": "1 Год", 
         "price": 1300.0,
         "days": 365
     }
 }
 
-# Реферальная система (денежные бонусы)
+# Реферальная система
 REFERRAL_BONUS_REFERRER = 50.0
 REFERRAL_BONUS_REFERRED = 100.0
 
@@ -102,7 +104,7 @@ except Exception as e:
     logger.error(traceback.format_exc())
     db = None
 
-# Модели данных
+# Модели данных (остаются без изменений)
 class PaymentRequest(BaseModel):
     user_id: str
     amount: float
@@ -143,7 +145,6 @@ def get_user(user_id: str):
         return None
 
 def update_user_balance(user_id: str, amount: float):
-    """Обновляет баланс пользователя"""
     if not db: 
         logger.error("❌ Database not connected")
         return False
@@ -171,11 +172,9 @@ def update_user_balance(user_id: str, amount: float):
         return False
 
 def generate_user_uuid():
-    """Генерирует уникальный UUID для пользователя"""
     return str(uuid.uuid4())
 
 def update_subscription_days(user_id: str, additional_days: int):
-    """Обновляет количество дней подписки"""
     if not db: 
         logger.error("❌ Database not connected")
         return False
@@ -198,7 +197,6 @@ def update_subscription_days(user_id: str, additional_days: int):
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
             
-            # Если это первая активация подписки, генерируем уникальный UUID
             if has_subscription and not user_data.get('vless_uuid'):
                 user_uuid = generate_user_uuid()
                 update_data['vless_uuid'] = user_uuid
@@ -216,7 +214,6 @@ def update_subscription_days(user_id: str, additional_days: int):
         return False
 
 def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
-    """Начисляет реферальные бонусы сразу при регистрации"""
     if not db: 
         logger.error("❌ Database not connected")
         return False
@@ -245,22 +242,25 @@ def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
         return False
 
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
-    """Создает VLESS конфигурацию с TLS (а не Reality)"""
+    """Создает VLESS Reality конфигурацию с правильными настройками"""
     address = server_config["address"]
     port = server_config["port"]
     server_uuid = server_config["uuid"]  # Общий UUID сервера
+    reality_pbk = server_config["reality_pbk"]
     sni = server_config["sni"]
+    short_id = server_config["short_id"]
     flow = server_config["flow"]
     
-    # Создаем VLESS ссылку с TLS (правильная конфигурация для вашего Xray)
+    # ПРАВИЛЬНАЯ VLESS REALITY ССЫЛКА
     vless_link = (
         f"vless://{vless_uuid}@{address}:{port}?"
-        f"security=tls&"
-        f"flow={flow}&"
         f"type=tcp&"
-        f"encryption=none&"
+        f"security=reality&"
+        f"flow={flow}&"
+        f"pbk={reality_pbk}&"
         f"fp=chrome&"
-        f"sni={sni}#"
+        f"sni={sni}&"
+        f"sid={short_id}#"
         f"VAC-VPN-{user_id}"
     )
     
@@ -270,16 +270,16 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
         "uuid": vless_uuid,
         "server": address,
         "port": port,
-        "security": "tls",
+        "security": "reality",
+        "reality_pbk": reality_pbk,
         "sni": sni,
+        "short_id": short_id,
         "flow": flow,
         "type": "tcp",
-        "encryption": "none",
         "fingerprint": "chrome",
-        "remark": f"VAC VPN TLS - {user_id}"
+        "remark": f"VAC VPN Reality - {user_id}"
     }
     
-    # Кодируем ссылку для QR кода
     encoded_vless_link = urllib.parse.quote(vless_link)
     
     return {
@@ -289,7 +289,6 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
     }
 
 def process_subscription_days(user_id: str):
-    """Обрабатывает списание дней подписки"""
     if not db:
         logger.error("❌ Database not connected")
         return False
@@ -395,7 +394,6 @@ def get_referrals(referrer_id: str):
         logger.error(f"❌ Error getting referrals: {e}")
         return []
 
-# Извлечение referrer_id из start_param
 def extract_referrer_id(start_param: str) -> str:
     if not start_param:
         return None
@@ -431,7 +429,7 @@ def extract_referrer_id(start_param: str) -> str:
     logger.info(f"⚠️ Using raw start_param as referrer_id: {start_param}")
     return start_param
 
-# Эндпоинты API
+# Эндпоинты API (остаются без изменений)
 @app.get("/")
 async def root():
     return {
@@ -452,7 +450,6 @@ async def health_check():
 
 @app.delete("/clear-referrals/{user_id}")
 async def clear_referrals(user_id: str):
-    """Очищает реферальную историю пользователя (для тестирования)"""
     try:
         if not db:
             return {"error": "Database not connected"}
@@ -476,7 +473,6 @@ async def clear_referrals(user_id: str):
 
 @app.post("/init-user")
 async def init_user(request: InitUserRequest):
-    """Автоматическое создание пользователя при заходе на сайт"""
     try:
         logger.info(f"🔍 INIT-USER START: user_id={request.user_id}, start_param='{request.start_param}'")
         
@@ -604,7 +600,6 @@ async def get_user_info(user_id: str):
 
 @app.post("/buy-with-balance")
 async def buy_with_balance(request: BuyWithBalanceRequest):
-    """Покупка тарифа с баланса пользователя"""
     try:
         logger.info(f"💰 BUY-WITH-BALANCE START: user_id={request.user_id}, tariff={request.tariff_id}, price={request.tariff_price}")
         
@@ -862,7 +857,6 @@ async def check_payment(payment_id: str, user_id: str):
 
 @app.get("/get-vless-config")
 async def get_vless_config(user_id: str):
-    """Получить VLESS конфигурацию для пользователя"""
     try:
         if not db:
             return {"error": "Database not connected"}
@@ -880,7 +874,6 @@ async def get_vless_config(user_id: str):
         if not user.get('has_subscription', False):
             return {"error": "No active subscription"}
         
-        # Создаем конфиги для всех серверов
         configs = []
         for server in VLESS_SERVERS:
             config = create_vless_config(user_id, vless_uuid, server)
@@ -897,10 +890,8 @@ async def get_vless_config(user_id: str):
         logger.error(f"❌ Error getting VLESS config: {e}")
         return {"error": f"Error getting VLESS config: {str(e)}"}
 
-# АДМИНИСТРАТИВНЫЕ ФУНКЦИИ
 @app.post("/admin/add-balance")
 async def admin_add_balance(user_id: str, amount: float):
-    """Добавить баланс пользователю (для тестирования)"""
     try:
         if not db:
             return {"error": "Database not connected"}
@@ -917,7 +908,6 @@ async def admin_add_balance(user_id: str, amount: float):
 
 @app.post("/admin/reset-user")
 async def admin_reset_user(user_id: str):
-    """Сбросить данные пользователя (для тестирования)"""
     try:
         if not db:
             return {"error": "Database not connected"}
