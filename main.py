@@ -109,6 +109,7 @@ class PaymentRequest(BaseModel):
 class ActivateTariffRequest(BaseModel):
     user_id: str
     tariff: str
+    payment_method: str = "yookassa"  # yookassa или balance
 
 class InitUserRequest(BaseModel):
     user_id: str
@@ -359,7 +360,7 @@ def process_subscription_days(user_id: str):
         logger.error(f"❌ Error processing subscription: {e}")
         return False
 
-def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_type: str = "tariff"):
+def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_type: str = "tariff", payment_method: str = "yookassa"):
     if not db: 
         logger.error("❌ Database not connected")
         return
@@ -371,6 +372,7 @@ def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, paym
             'tariff': tariff,
             'status': 'pending',
             'payment_type': payment_type,
+            'payment_method': payment_method,
             'created_at': firestore.SERVER_TIMESTAMP,
             'yookassa_id': None
         })
@@ -471,6 +473,33 @@ async def health_check():
         "firebase": "connected" if db else "disconnected",
         "database_connected": db is not None
     }
+
+# Эндпоинт для очистки рефералов (только для тестирования)
+@app.delete("/clear-referrals/{user_id}")
+async def clear_referrals(user_id: str):
+    """Очищает реферальную историю пользователя (для тестирования)"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        # Удаляем рефералы где пользователь является referrer
+        referrals_ref = db.collection('referrals').where('referrer_id', '==', user_id)
+        referrals = referrals_ref.stream()
+        for ref in referrals:
+            ref.reference.delete()
+        
+        # Удаляем поле referred_by у пользователя
+        user_ref = db.collection('users').document(user_id)
+        user_ref.update({
+            'referred_by': firestore.DELETE_FIELD
+        })
+        
+        logger.info(f"🧹 Cleared referrals for user {user_id}")
+        return {"success": True, "message": "Referrals cleared"}
+        
+    except Exception as e:
+        logger.error(f"❌ Error clearing referrals: {e}")
+        return {"error": str(e)}
 
 @app.post("/init-user")
 async def init_user(request: InitUserRequest):
@@ -603,12 +632,6 @@ async def get_user_info(user_id: str):
 @app.post("/activate-tariff")
 async def activate_tariff(request: ActivateTariffRequest):
     try:
-        SHOP_ID = os.getenv("SHOP_ID")
-        API_KEY = os.getenv("API_KEY")
-        
-        if not SHOP_ID or not API_KEY:
-            return {"error": "Payment gateway not configured"}
-        
         if not db:
             return {"error": "Database not connected"}
             
@@ -623,53 +646,110 @@ async def activate_tariff(request: ActivateTariffRequest):
         tariff_price = tariff_data["price"]
         tariff_days = tariff_data["days"]
         
-        # Создаем платеж через ЮKassa
-        payment_id = str(uuid.uuid4())
-        save_payment(payment_id, request.user_id, tariff_price, request.tariff, "tariff")
-        
-        yookassa_data = {
-            "amount": {"value": f"{tariff_price:.2f}", "currency": "RUB"},
-            "confirmation": {"type": "redirect", "return_url": "https://t.me/vaaaac_bot"},
-            "capture": True,
-            "description": f"Покупка подписки {tariff_data['name']} - VAC VPN",
-            "metadata": {
-                "payment_id": payment_id,
-                "user_id": request.user_id,
-                "tariff": request.tariff,
-                "payment_type": "tariff",
-                "tariff_days": tariff_days
-            }
-        }
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.yookassa.ru/v3/payments",
-                auth=(SHOP_ID, API_KEY),
-                headers={
-                    "Content-Type": "application/json",
-                    "Idempotence-Key": payment_id
-                },
-                json=yookassa_data,
-                timeout=30.0
-            )
-        
-        if response.status_code in [200, 201]:
-            payment_data = response.json()
-            update_payment_status(payment_id, "pending", payment_data.get("id"))
+        # Оплата с баланса
+        if request.payment_method == "balance":
+            user_balance = user.get('balance', 0.0)
             
-            logger.info(f"💳 Tariff payment created: {payment_id} for user {request.user_id}")
+            if user_balance < tariff_price:
+                return {"error": f"Недостаточно средств на балансе. Необходимо: {tariff_price}₽, доступно: {user_balance}₽"}
+            
+            # Создаем запись о платеже
+            payment_id = str(uuid.uuid4())
+            save_payment(payment_id, request.user_id, tariff_price, request.tariff, "tariff", "balance")
+            
+            # Списываем средства с баланса
+            update_user_balance(request.user_id, -tariff_price)
+            
+            # Активируем подписку
+            success = update_subscription_days(request.user_id, tariff_days)
+            
+            if not success:
+                return {"error": "Ошибка активации подписки"}
+            
+            # Проверяем реферальную систему и начисляем денежные бонусы
+            if user.get('referred_by'):
+                referrer_id = user['referred_by']
+                referral_id = f"{referrer_id}_{request.user_id}"
+                
+                # Проверяем, что бонус еще не начислялся
+                referral_exists = db.collection('referrals').document(referral_id).get().exists
+                
+                if not referral_exists:
+                    logger.info(f"🎁 Applying referral bonus for {request.user_id} referred by {referrer_id}")
+                    add_referral_bonus(referrer_id, request.user_id, tariff_price)
+            
+            # Обновляем статус платежа
+            update_payment_status(payment_id, "succeeded")
+            
+            logger.info(f"✅ Tariff activated with balance: {request.user_id} -> {tariff_days} days")
             
             return {
                 "success": True,
                 "payment_id": payment_id,
-                "payment_url": payment_data["confirmation"]["confirmation_url"],
                 "amount": tariff_price,
                 "days": tariff_days,
-                "status": "pending",
-                "message": "Перейдите по ссылке для оплаты подписки"
+                "status": "succeeded",
+                "message": "Подписка успешно активирована с баланса!"
             }
+        
+        # Оплата через ЮKassa
+        elif request.payment_method == "yookassa":
+            SHOP_ID = os.getenv("SHOP_ID")
+            API_KEY = os.getenv("API_KEY")
+            
+            if not SHOP_ID or not API_KEY:
+                return {"error": "Payment gateway not configured"}
+            
+            # Создаем платеж через ЮKassa
+            payment_id = str(uuid.uuid4())
+            save_payment(payment_id, request.user_id, tariff_price, request.tariff, "tariff", "yookassa")
+            
+            yookassa_data = {
+                "amount": {"value": f"{tariff_price:.2f}", "currency": "RUB"},
+                "confirmation": {"type": "redirect", "return_url": "https://t.me/vaaaac_bot"},
+                "capture": True,
+                "description": f"Покупка подписки {tariff_data['name']} - VAC VPN",
+                "metadata": {
+                    "payment_id": payment_id,
+                    "user_id": request.user_id,
+                    "tariff": request.tariff,
+                    "payment_type": "tariff",
+                    "tariff_days": tariff_days
+                }
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.yookassa.ru/v3/payments",
+                    auth=(SHOP_ID, API_KEY),
+                    headers={
+                        "Content-Type": "application/json",
+                        "Idempotence-Key": payment_id
+                    },
+                    json=yookassa_data,
+                    timeout=30.0
+                )
+            
+            if response.status_code in [200, 201]:
+                payment_data = response.json()
+                update_payment_status(payment_id, "pending", payment_data.get("id"))
+                
+                logger.info(f"💳 Tariff payment created: {payment_id} for user {request.user_id}")
+                
+                return {
+                    "success": True,
+                    "payment_id": payment_id,
+                    "payment_url": payment_data["confirmation"]["confirmation_url"],
+                    "amount": tariff_price,
+                    "days": tariff_days,
+                    "status": "pending",
+                    "message": "Перейдите по ссылке для оплаты подписки"
+                }
+            else:
+                return {"error": f"Payment gateway error: {response.status_code}"}
+        
         else:
-            return {"error": f"Payment gateway error: {response.status_code}"}
+            return {"error": "Invalid payment method"}
         
     except Exception as e:
         logger.error(f"❌ Error activating tariff: {e}")
@@ -696,59 +776,61 @@ async def check_payment(payment_id: str, user_id: str):
                 "amount": payment['amount']
             }
         
-        yookassa_id = payment.get('yookassa_id')
-        if yookassa_id:
-            SHOP_ID = os.getenv("SHOP_ID")
-            API_KEY = os.getenv("API_KEY")
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"https://api.yookassa.ru/v3/payments/{yookassa_id}",
-                    auth=(SHOP_ID, API_KEY),
-                    timeout=10.0
-                )
+        # Для платежей через ЮKassa проверяем статус
+        if payment.get('payment_method') == 'yookassa':
+            yookassa_id = payment.get('yookassa_id')
+            if yookassa_id:
+                SHOP_ID = os.getenv("SHOP_ID")
+                API_KEY = os.getenv("API_KEY")
                 
-                if response.status_code == 200:
-                    yookassa_data = response.json()
-                    status = yookassa_data.get('status')
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"https://api.yookassa.ru/v3/payments/{yookassa_id}",
+                        auth=(SHOP_ID, API_KEY),
+                        timeout=10.0
+                    )
                     
-                    update_payment_status(payment_id, status, yookassa_id)
-                    
-                    if status == 'succeeded':
-                        user_id = payment['user_id']
-                        tariff = payment['tariff']
-                        tariff_days = TARIFFS[tariff]["days"]
-                        tariff_price = TARIFFS[tariff]["price"]
+                    if response.status_code == 200:
+                        yookassa_data = response.json()
+                        status = yookassa_data.get('status')
                         
-                        # Активируем подписку - добавляем дни
-                        success = update_subscription_days(user_id, tariff_days)
+                        update_payment_status(payment_id, status, yookassa_id)
                         
-                        if not success:
-                            logger.error(f"❌ Failed to activate subscription for user {user_id}")
-                            return {"error": "Failed to activate subscription"}
-                        
-                        # Проверяем реферальную систему и начисляем денежные бонусы
-                        user = get_user(user_id)
-                        if user and user.get('referred_by'):
-                            referrer_id = user['referred_by']
-                            referral_id = f"{referrer_id}_{user_id}"
+                        if status == 'succeeded':
+                            user_id = payment['user_id']
+                            tariff = payment['tariff']
+                            tariff_days = TARIFFS[tariff]["days"]
+                            tariff_price = TARIFFS[tariff]["price"]
                             
-                            # Проверяем, что бонус еще не начислялся
-                            referral_exists = db.collection('referrals').document(referral_id).get().exists
+                            # Активируем подписку - добавляем дни
+                            success = update_subscription_days(user_id, tariff_days)
                             
-                            if not referral_exists:
-                                logger.info(f"🎁 Applying referral bonus for {user_id} referred by {referrer_id}")
-                                add_referral_bonus(referrer_id, user_id, tariff_price)
-                        
-                        logger.info(f"✅ Subscription activated for user {user_id}: +{tariff_days} days")
-                        
-                        return {
-                            "success": True,
-                            "status": status,
-                            "payment_id": payment_id,
-                            "amount": payment['amount'],
-                            "days_added": tariff_days
-                        }
+                            if not success:
+                                logger.error(f"❌ Failed to activate subscription for user {user_id}")
+                                return {"error": "Failed to activate subscription"}
+                            
+                            # Проверяем реферальную систему и начисляем денежные бонусы
+                            user = get_user(user_id)
+                            if user and user.get('referred_by'):
+                                referrer_id = user['referred_by']
+                                referral_id = f"{referrer_id}_{user_id}"
+                                
+                                # Проверяем, что бонус еще не начислялся
+                                referral_exists = db.collection('referrals').document(referral_id).get().exists
+                                
+                                if not referral_exists:
+                                    logger.info(f"🎁 Applying referral bonus for {user_id} referred by {referrer_id}")
+                                    add_referral_bonus(referrer_id, user_id, tariff_price)
+                            
+                            logger.info(f"✅ Subscription activated for user {user_id}: +{tariff_days} days")
+                            
+                            return {
+                                "success": True,
+                                "status": status,
+                                "payment_id": payment_id,
+                                "amount": payment['amount'],
+                                "days_added": tariff_days
+                            }
         
         return {
             "success": True,
