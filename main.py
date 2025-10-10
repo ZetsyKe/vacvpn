@@ -207,34 +207,67 @@ def update_subscription_days(user_id: str, additional_days: int):
         logger.error(f"❌ Error updating subscription days: {e}")
         return False
 
-def add_referral_bonus(referrer_id: str, referred_id: str, tariff_price: float):
-    """Начисляет реферальные денежные бонусы после покупки тарифа"""
+def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
+    """Начисляет реферальные бонусы сразу при регистрации"""
     if not db: 
         logger.error("❌ Database not connected")
         return False
     
     try:
-        logger.info(f"💰 Referral bonuses: referrer {referrer_id} gets {REFERRAL_BONUS_REFERRER}₽, referred {referred_id} gets {REFERRAL_BONUS_REFERRED}₽")
+        logger.info(f"💰 Immediate referral bonuses: referrer {referrer_id} gets 50₽, referred {referred_id} gets 100₽")
         
-        # Начисляем денежный бонус пригласившему
-        update_user_balance(referrer_id, REFERRAL_BONUS_REFERRER)
+        # Начисляем денежный бонус пригласившему (50₽)
+        update_user_balance(referrer_id, 50.0)
         
-        # Начисляем денежный бонус приглашенному
-        update_user_balance(referred_id, REFERRAL_BONUS_REFERRED)
+        # Начисляем денежный бонус приглашенному (100₽)
+        update_user_balance(referred_id, 100.0)
         
         # Сохраняем запись о реферале
         referral_id = f"{referrer_id}_{referred_id}"
         db.collection('referrals').document(referral_id).set({
             'referrer_id': referrer_id,
             'referred_id': referred_id,
-            'referrer_bonus': REFERRAL_BONUS_REFERRER,
-            'referred_bonus': REFERRAL_BONUS_REFERRED,
+            'referrer_bonus': 50.0,
+            'referred_bonus': 100.0,
+            'bonus_paid': True,
+            'created_at': firestore.SERVER_TIMESTAMP
+        })
+        
+        logger.info(f"✅ Immediate referral bonuses applied: {referrer_id} +50₽, {referred_id} +100₽")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error adding immediate referral bonus: {e}")
+        return False
+
+def add_referral_bonus_after_purchase(referrer_id: str, referred_id: str, tariff_price: float):
+    """Начисляет реферальные денежные бонусы после покупки тарифа"""
+    if not db: 
+        logger.error("❌ Database not connected")
+        return False
+    
+    try:
+        logger.info(f"💰 Referral bonuses after purchase: referrer {referrer_id} gets 50₽, referred {referred_id} gets 100₽")
+        
+        # Начисляем денежный бонус пригласившему
+        update_user_balance(referrer_id, 50.0)
+        
+        # Начисляем денежный бонус приглашенному
+        update_user_balance(referred_id, 100.0)
+        
+        # Сохраняем запись о реферале
+        referral_id = f"{referrer_id}_{referred_id}"
+        db.collection('referrals').document(referral_id).set({
+            'referrer_id': referrer_id,
+            'referred_id': referred_id,
+            'referrer_bonus': 50.0,
+            'referred_bonus': 100.0,
             'tariff_price': tariff_price,
             'bonus_paid': True,
             'created_at': firestore.SERVER_TIMESTAMP
         })
         
-        logger.info(f"✅ Referral bonuses applied: {referrer_id} +{REFERRAL_BONUS_REFERRER}₽, {referred_id} +{REFERRAL_BONUS_REFERRED}₽")
+        logger.info(f"✅ Referral bonuses applied: {referrer_id} +50₽, {referred_id} +100₽")
         return True
         
     except Exception as e:
@@ -522,6 +555,7 @@ async def init_user(request: InitUserRequest):
         # Извлекаем referrer_id из start_param
         referrer_id = None
         is_referral = False
+        bonus_applied = False
         
         if request.start_param:
             referrer_id = extract_referrer_id(request.start_param)
@@ -536,6 +570,11 @@ async def init_user(request: InitUserRequest):
                     
                     if not referral_exists:
                         is_referral = True
+                        # НАЧИСЛЯЕМ БОНУСЫ СРАЗУ ПРИ РЕГИСТРАЦИИ
+                        bonus_result = add_referral_bonus_immediately(referrer_id, request.user_id)
+                        if bonus_result:
+                            bonus_applied = True
+                            logger.info(f"🎉 Referral bonuses applied immediately for {request.user_id}")
         
         # Создаем пользователя если не существует
         user_ref = db.collection('users').document(request.user_id)
@@ -547,7 +586,7 @@ async def init_user(request: InitUserRequest):
                 'username': request.username,
                 'first_name': request.first_name,
                 'last_name': request.last_name,
-                'balance': 0.0,
+                'balance': 100.0 if bonus_applied else 0.0,  # Если бонус начислен, стартовый баланс 100₽
                 'has_subscription': False,
                 'subscription_days': 0,
                 'subscription_start': None,
@@ -561,14 +600,14 @@ async def init_user(request: InitUserRequest):
                 logger.info(f"🔗 User {request.user_id} referred by {referrer_id}")
             
             user_ref.set(user_data)
-            logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}")
+            logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}, bonus_applied: {bonus_applied}")
             
             return {
                 "success": True, 
                 "message": "User created",
                 "user_id": request.user_id,
                 "is_referral": is_referral,
-                "bonus_applied": False  # Бонусы теперь начисляются только после покупки
+                "bonus_applied": bonus_applied
             }
         else:
             user_data = user_doc.to_dict()
@@ -672,7 +711,7 @@ async def buy_with_balance(request: BuyWithBalanceRequest):
         if not success:
             return {"error": "Ошибка активации подписки"}
         
-        # Проверяем реферальную систему и начисляем денежные бонусы
+        # Проверяем реферальную систему и начисляем дополнительные бонусы после покупки
         if user.get('referred_by'):
             referrer_id = user['referred_by']
             referral_id = f"{referrer_id}_{request.user_id}"
@@ -681,8 +720,8 @@ async def buy_with_balance(request: BuyWithBalanceRequest):
             referral_exists = db.collection('referrals').document(referral_id).get().exists
             
             if not referral_exists:
-                logger.info(f"🎁 Applying referral bonus for {request.user_id} referred by {referrer_id}")
-                add_referral_bonus(referrer_id, request.user_id, request.tariff_price)
+                logger.info(f"🎁 Applying referral bonus after purchase for {request.user_id} referred by {referrer_id}")
+                add_referral_bonus_after_purchase(referrer_id, request.user_id, request.tariff_price)
         
         # Обновляем статус платежа
         update_payment_status(payment_id, "succeeded")
@@ -749,7 +788,7 @@ async def activate_tariff(request: ActivateTariffRequest):
                 
                 if not referral_exists:
                     logger.info(f"🎁 Applying referral bonus for {request.user_id} referred by {referrer_id}")
-                    add_referral_bonus(referrer_id, request.user_id, tariff_price)
+                    add_referral_bonus_after_purchase(referrer_id, request.user_id, tariff_price)
             
             # Обновляем статус платежа
             update_payment_status(payment_id, "succeeded")
@@ -893,7 +932,7 @@ async def check_payment(payment_id: str, user_id: str):
                                 
                                 if not referral_exists:
                                     logger.info(f"🎁 Applying referral bonus for {user_id} referred by {referrer_id}")
-                                    add_referral_bonus(referrer_id, user_id, tariff_price)
+                                    add_referral_bonus_after_purchase(referrer_id, user_id, tariff_price)
                             
                             logger.info(f"✅ Subscription activated for user {user_id}: +{tariff_days} days")
                             
@@ -915,17 +954,17 @@ async def check_payment(payment_id: str, user_id: str):
         logger.error(f"❌ Error checking payment: {e}")
         return {"error": f"Error checking payment: {str(e)}"}
 
-@app.post("/vless-config")
-async def get_vless_config(request: VlessConfigRequest):
+@app.get("/get-vless-config")
+async def get_vless_config(user_id: str):
     """Получить VLESS Reality конфигурацию для пользователя"""
     try:
         if not db:
             return {"error": "Database not connected"}
             
         # Обрабатываем списание дней перед выдачей конфигурации
-        process_subscription_days(request.user_id)
+        process_subscription_days(user_id)
             
-        user = get_user(request.user_id)
+        user = get_user(user_id)
         if not user:
             return {"error": "User not found"}
         
@@ -939,12 +978,12 @@ async def get_vless_config(request: VlessConfigRequest):
         # Создаем конфиги для всех серверов
         configs = []
         for server in VLESS_SERVERS:
-            config = create_vless_config(request.user_id, vless_uuid, server)
+            config = create_vless_config(user_id, vless_uuid, server)
             configs.append(config)
         
         return {
             "success": True,
-            "user_id": request.user_id,
+            "user_id": user_id,
             "vless_uuid": vless_uuid,
             "configs": configs
         }
