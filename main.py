@@ -30,10 +30,12 @@ app.add_middleware(
 # КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ
 VLESS_SERVERS = [
     {
+        "name": "🇷🇺 Москва #1",
         "address": "45.134.13.189",
         "port": 8443,
-        "sni": "localhost",
-        "uuid": "f1cc0e69-45b2-43e8-b24f-fd2197615211"
+        "sni": "www.google.com",
+        "reality_pbk": "t3ZKBQqtSDDda-LKC4AmeqkJtTC0KykHg-R-Bnpy0ls",
+        "short_id": "2bd6a8283e"
     }
 ]
 
@@ -167,6 +169,10 @@ def update_user_balance(user_id: str, amount: float):
         logger.error(f"❌ Error updating balance: {e}")
         return False
 
+def generate_user_uuid():
+    """Генерирует уникальный UUID для пользователя"""
+    return str(uuid.uuid4())
+
 def update_subscription_days(user_id: str, additional_days: int):
     """Обновляет количество дней подписки"""
     if not db: 
@@ -192,10 +198,12 @@ def update_subscription_days(user_id: str, additional_days: int):
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
             
-            # Если это первая активация подписки, устанавливаем UUID
+            # Если это первая активация подписки, генерируем уникальный UUID
             if has_subscription and not user_data.get('vless_uuid'):
-                update_data['vless_uuid'] = VLESS_SERVERS[0]["uuid"]
+                user_uuid = generate_user_uuid()
+                update_data['vless_uuid'] = user_uuid
                 update_data['subscription_start'] = datetime.now().isoformat()
+                logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
             
             user_ref.update(update_data)
             logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
@@ -290,7 +298,7 @@ def create_user(user_data: dict):
                 'has_subscription': False,
                 'subscription_days': 0,
                 'subscription_start': None,
-                'vless_uuid': None,
+                'vless_uuid': None,  # UUID будет сгенерирован при активации подписки
                 'created_at': firestore.SERVER_TIMESTAMP
             })
             logger.info(f"✅ User created: {user_data['user_id']}")
@@ -298,33 +306,32 @@ def create_user(user_data: dict):
         logger.error(f"❌ Error creating user: {e}")
 
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
-    """Создает VLESS Reality конфигурацию"""
+    """Создает VLESS Reality конфигурацию с уникальным UUID пользователя"""
     address = server_config["address"]
     port = server_config["port"]
-    server_uuid = server_config["uuid"]
+    reality_pbk = server_config["reality_pbk"]
+    sni = server_config["sni"]
+    short_id = server_config["short_id"]
     
-    # Reality параметры
-    reality_pbk = "t3ZKBQqtSDDda-LKC4AmeqkJtTC0KykHg-R-Bnpy0ls"  # Публичный ключ
-    sni = "www.google.com"  # SNI
-    short_id = "2bd6a8283e"  # Short ID
-    
-    # Создаем Reality VLESS ссылку
+    # Создаем Reality VLESS ссылку с UUID пользователя
     vless_link = (
-        f"vless://{server_uuid}@{address}:{port}?"
+        f"vless://{vless_uuid}@{address}:{port}?"
+        f"encryption=none&"
+        f"flow=xtls-rprx-vision&"
         f"type=tcp&"
         f"security=reality&"
-        f"pbk={reality_pbk}&"
         f"fp=chrome&"
         f"sni={sni}&"
+        f"pbk={reality_pbk}&"
         f"sid={short_id}&"
-        f"spx=%2F&"
-        f"flow=xtls-rprx-vision"
-        f"#VAC_VPN_{user_id}"
+        f"spx=/#"
+        f"VAC-VPN-{user_id}"
     )
     
     config = {
+        "name": server_config["name"],
         "protocol": "vless",
-        "uuid": server_uuid,
+        "uuid": vless_uuid,
         "server": address,
         "port": port,
         "security": "reality",
@@ -385,7 +392,7 @@ def process_subscription_days(user_id: str):
                     # Если дни закончились - деактивируем подписку
                     if new_days == 0:
                         update_data['has_subscription'] = False
-                        update_data['vless_uuid'] = None  # Убираем UUID при деактивации
+                        # UUID не удаляем, чтобы при продлении был тот же
                     
                     db.collection('users').document(user_id).update(update_data)
                     logger.info(f"✅ Subscription days processed for user {user_id}: {subscription_days} -> {new_days} (-{days_passed} days)")
@@ -590,7 +597,7 @@ async def init_user(request: InitUserRequest):
                 'has_subscription': False,
                 'subscription_days': 0,
                 'subscription_start': None,
-                'vless_uuid': None,
+                'vless_uuid': None,  # UUID будет сгенерирован при активации подписки
                 'created_at': firestore.SERVER_TIMESTAMP
             }
             
@@ -1022,7 +1029,7 @@ async def admin_reset_user(user_id: str):
             'balance': 0.0,
             'subscription_days': 0,
             'has_subscription': False,
-            'vless_uuid': None,
+            'vless_uuid': None,  # Сбрасываем UUID
             'referred_by': firestore.DELETE_FIELD,
             'updated_at': firestore.SERVER_TIMESTAMP
         })
