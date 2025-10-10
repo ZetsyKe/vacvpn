@@ -51,12 +51,9 @@ TARIFFS = {
     }
 }
 
-# Новая реферальная система (в рублях)
-REFERRAL_BONUS_REFERRER = 50  # Тот кто пригласил получает 50₽
-REFERRAL_BONUS_REFERRED = 100  # Тот кого пригласили получает 100₽
-
-# Стоимость одного дня подписки (рассчитываем из тарифов)
-DAY_PRICE = TARIFFS["1month"]["price"] / TARIFFS["1month"]["days"]  # 150₽ / 30 дней = 5₽ за день
+# Реферальная система (денежные бонусы)
+REFERRAL_BONUS_REFERRER = 50.0  # Тот кто пригласил получает 50₽ на баланс
+REFERRAL_BONUS_REFERRED = 100.0  # Тот кого пригласили получает 100₽ на баланс
 
 # Инициализация Firebase
 try:
@@ -135,6 +132,34 @@ def get_user(user_id: str):
         logger.error(f"❌ Error getting user: {e}")
         return None
 
+def update_user_balance(user_id: str, amount: float):
+    """Обновляет баланс пользователя"""
+    if not db: 
+        logger.error("❌ Database not connected")
+        return False
+    try:
+        user_ref = db.collection('users').document(user_id)
+        user = user_ref.get()
+        
+        if user.exists:
+            user_data = user.to_dict()
+            current_balance = user_data.get('balance', 0.0)
+            new_balance = current_balance + amount
+            
+            user_ref.update({
+                'balance': new_balance,
+                'updated_at': firestore.SERVER_TIMESTAMP
+            })
+            
+            logger.info(f"💰 Balance updated for user {user_id}: {current_balance} -> {new_balance} ({'+' if amount > 0 else ''}{amount}₽)")
+            return True
+        else:
+            logger.error(f"❌ User {user_id} not found")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Error updating balance: {e}")
+        return False
+
 def update_subscription_days(user_id: str, additional_days: int):
     """Обновляет количество дней подписки"""
     if not db: 
@@ -176,37 +201,33 @@ def update_subscription_days(user_id: str, additional_days: int):
         return False
 
 def add_referral_bonus(referrer_id: str, referred_id: str, tariff_price: float):
-    """Начисляет реферальные бонусы после покупки тарифа"""
+    """Начисляет реферальные денежные бонусы после покупки тарифа"""
     if not db: 
         logger.error("❌ Database not connected")
         return False
     
     try:
-        # Рассчитываем дни бонусов
-        referrer_bonus_days = int(REFERRAL_BONUS_REFERRER / DAY_PRICE)  # 50₽ / 5₽ = 10 дней
-        referred_bonus_days = int(REFERRAL_BONUS_REFERRED / DAY_PRICE)  # 100₽ / 5₽ = 20 дней
+        logger.info(f"💰 Referral bonuses: referrer {referrer_id} gets {REFERRAL_BONUS_REFERRER}₽, referred {referred_id} gets {REFERRAL_BONUS_REFERRED}₽")
         
-        logger.info(f"💰 Referral bonuses: referrer {referrer_id} gets {referrer_bonus_days} days, referred {referred_id} gets {referred_bonus_days} days")
+        # Начисляем денежный бонус пригласившему
+        update_user_balance(referrer_id, REFERRAL_BONUS_REFERRER)
         
-        # Начисляем бонус пригласившему
-        update_subscription_days(referrer_id, referrer_bonus_days)
-        
-        # Начисляем бонус приглашенному
-        update_subscription_days(referred_id, referred_bonus_days)
+        # Начисляем денежный бонус приглашенному
+        update_user_balance(referred_id, REFERRAL_BONUS_REFERRED)
         
         # Сохраняем запись о реферале
         referral_id = f"{referrer_id}_{referred_id}"
         db.collection('referrals').document(referral_id).set({
             'referrer_id': referrer_id,
             'referred_id': referred_id,
-            'referrer_bonus_days': referrer_bonus_days,
-            'referred_bonus_days': referred_bonus_days,
+            'referrer_bonus': REFERRAL_BONUS_REFERRER,
+            'referred_bonus': REFERRAL_BONUS_REFERRED,
             'tariff_price': tariff_price,
             'bonus_paid': True,
             'created_at': firestore.SERVER_TIMESTAMP
         })
         
-        logger.info(f"✅ Referral bonuses applied: {referrer_id} +{referrer_bonus_days} days, {referred_id} +{referred_bonus_days} days")
+        logger.info(f"✅ Referral bonuses applied: {referrer_id} +{REFERRAL_BONUS_REFERRER}₽, {referred_id} +{REFERRAL_BONUS_REFERRED}₽")
         return True
         
     except Exception as e:
@@ -555,25 +576,24 @@ async def get_user_info(user_id: str):
         has_subscription = user.get('has_subscription', False)
         subscription_days = user.get('subscription_days', 0)
         vless_uuid = user.get('vless_uuid')
+        balance = user.get('balance', 0.0)
         
         # Получаем реферальную статистику
         referrals = get_referrals(user_id)
         referral_count = len(referrals)
-        total_bonus_days = sum([ref.get('referrer_bonus_days', 0) for ref in referrals])
+        total_bonus_money = sum([ref.get('referrer_bonus', 0) for ref in referrals])
         
         return {
             "user_id": user_id,
-            "balance": user.get('balance', 0),
+            "balance": balance,
             "has_subscription": has_subscription,
             "subscription_days": subscription_days,
             "vless_uuid": vless_uuid,
             "referral_stats": {
                 "total_referrals": referral_count,
-                "total_bonus_days": total_bonus_days,
+                "total_bonus_money": total_bonus_money,
                 "referrer_bonus": REFERRAL_BONUS_REFERRER,
-                "referred_bonus": REFERRAL_BONUS_REFERRED,
-                "referrer_bonus_days": int(REFERRAL_BONUS_REFERRER / DAY_PRICE),
-                "referred_bonus_days": int(REFERRAL_BONUS_REFERRED / DAY_PRICE)
+                "referred_bonus": REFERRAL_BONUS_REFERRED
             }
         }
         
@@ -707,7 +727,7 @@ async def check_payment(payment_id: str, user_id: str):
                             logger.error(f"❌ Failed to activate subscription for user {user_id}")
                             return {"error": "Failed to activate subscription"}
                         
-                        # Проверяем реферальную систему и начисляем бонусы
+                        # Проверяем реферальную систему и начисляем денежные бонусы
                         user = get_user(user_id)
                         if user and user.get('referred_by'):
                             referrer_id = user['referred_by']
