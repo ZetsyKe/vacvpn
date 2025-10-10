@@ -367,6 +367,13 @@
       margin: 12px 0;
       font-size: 14px;
     }
+    .balance-info {
+      background: rgba(176, 203, 31, 0.1);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 8px 0;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
@@ -389,8 +396,12 @@
   <div class="card">
     <div class="subscription-days" id="subscriptionDays">Подписка неактивна</div>
     
+    <div class="balance-info">
+      <div>💰 <strong>Баланс:</strong> <span id="userBalance">0</span>₽</div>
+    </div>
+    
     <div class="subscription-info" id="subscriptionInfo" style="display: none;">
-      <div>💰 <strong>Информация о подписке:</strong></div>
+      <div>📅 <strong>Информация о подписке:</strong></div>
       <div class="days-counter" id="daysCounter">
         <div class="days-number" id="daysNumber">0</div>
         <div class="days-label" id="daysLabel">дней осталось</div>
@@ -440,7 +451,7 @@
       1. Выбираете тариф и нажимаете "КУПИТЬ ПОДПИСКУ"<br>
       2. Переходите по ссылке для оплаты<br>
       3. После успешной оплаты подписка активируется на указанный период<br>
-      4. Рефералы продлевают вашу подписку на +7 дней<br>
+      4. Рефералы пополняют ваш баланс<br>
       5. Можно купить несколько тарифов - дни суммируются<br>
       6. Подписка работает пока не закончатся дни
     </div>
@@ -451,14 +462,14 @@
         <div class="tariff-label">1 Месяц</div>
         <div class="tariff-price">150₽</div>
         <div class="tariff-trial">30 дней</div>
-        <div class="tariff-description">Доступ к VPN на 30 дней. Реферал продлевает на +7 дней</div>
+        <div class="tariff-description">Доступ к VPN на 30 дней. Реферал пополняет баланс</div>
       </div>
       <div class="tariff-card" id="tariff1year" onclick="selectTariff('1year')">
         <div class="tariff-dot"></div>
         <div class="tariff-label">1 Год</div>
         <div class="tariff-price">1300₽</div>
         <div class="tariff-trial">365 дней</div>
-        <div class="tariff-description">Доступ к VPN на 365 дней. Реферал продлевает на +7 дней</div>
+        <div class="tariff-description">Доступ к VPN на 365 дней. Реферал пополняет баланс</div>
       </div>
     </div>
     
@@ -466,7 +477,7 @@
       <strong>При покупке подписки:</strong><br>
       • Стоимость: <strong style="color: var(--primary);" id="tariffPrice">150₽</strong><br>
       • Период: <strong id="tariffPeriod">30 дней</strong><br>
-      • Реферал: <strong>+7 дней к вашей подписке</strong><br>
+      • Реферал: <strong>+50₽ на ваш баланс</strong><br>
       • После оплаты: <strong>Подписка активируется сразу</strong>
     </div>
     
@@ -477,14 +488,20 @@
     <div class="referral-block">
       <div class="referral-description">
         🎁 <strong>Реферальная система:</strong><br>
-        • Приглашенный друг получает <strong style="color: var(--primary);">7 дней</strong> подписки<br>
-        • Вы получаете <strong style="color: var(--primary);">+7 дней</strong> к своей подписке за каждого друга<br>
-        • Друг должен перейти по вашей ссылке и запустить бота<br>
-        • Реферальные дни суммируются с текущей подпиской
+        • Приглашенный друг получает <strong style="color: var(--primary);">100₽ на баланс</strong><br>
+        • Вы получаете <strong style="color: var(--primary);">50₽ на баланс</strong> за каждого друга<br>
+        • Друг должен перейти по вашей ссылке и купить любой тариф<br>
+        • Бонусы начисляются автоматически после покупки тарифа<br>
+        • Баланс можно использовать для оплаты подписок
       </div>
       <div class="ref-link-box">
         <span class="ref-link-text" id="refLink">Загрузка ссылки...</span>
         <button class="copy-btn" onclick="copyRef()">Скопировать</button>
+      </div>
+      <div id="referralStats" style="margin-top: 12px; padding: 10px; background: rgba(176, 203, 31, 0.1); border-radius: 6px; font-size: 13px;">
+        <strong>Ваша реферальная статистика:</strong><br>
+        • Приглашено друзей: <strong id="referralCount">0</strong><br>
+        • Всего получено: <strong id="totalBonusMoney">0</strong>₽
       </div>
     </div>
   </div>
@@ -524,6 +541,7 @@
     let currentTariff = null;
     let hasSubscription = false;
     let subscriptionDays = 0;
+    let userBalance = 0;
 
     // Тарифные планы (фиксированная подписка на период)
     const tariffPlans = {
@@ -532,14 +550,14 @@
         name: '1 Месяц',
         price: 150,
         days: 30,
-        description: 'Доступ к VPN на 30 дней. Реферал продлевает на +7 дней'
+        description: 'Доступ к VPN на 30 дней. Реферал пополняет баланс'
       },
       '1year': {
         id: '1year', 
         name: '1 Год',
         price: 1300,
         days: 365,
-        description: 'Доступ к VPN на 365 дней. Реферал продлевает на +7 дней'
+        description: 'Доступ к VPN на 365 дней. Реферал пополняет баланс'
       }
     };
 
@@ -565,7 +583,8 @@
             '2. Нельзя передавать аккаунт третьим лицам\n' +
             '3. Возврат средств возможен в течение 3 дней\n' +
             '4. VLESS ключ выдается только при активной подписке\n' +
-            '5. Подписка работает по принципу накопления дней'
+            '5. Подписка работает по принципу накопления дней\n' +
+            '6. Реферальные бонусы начисляются после покупки тарифа'
         );
         toggleMenu();
     }
@@ -624,7 +643,7 @@
             <strong>При покупке подписки:</strong><br>
             • Стоимость: <strong style="color: var(--primary);">${tariff.price}₽</strong><br>
             • Период: <strong>${tariff.days} дней</strong><br>
-            • Реферал: <strong>+7 дней к вашей подписке</strong><br>
+            • Реферал: <strong>+50₽ на ваш баланс</strong><br>
             • После оплаты: <strong>Подписка активируется сразу</strong>
         `;
         
@@ -718,8 +737,8 @@
             if (data.success) {
                 console.log('✅ User initialized successfully');
                 
-                if (data.is_referral && data.bonus_applied) {
-                    showSuccess('🎉 Вам начислен реферальный бонус 7 дней подписки!');
+                if (data.is_referral) {
+                    showSuccess('🔗 Вы зарегистрированы по реферальной ссылке! Получите бонус после покупки тарифа.');
                 }
                 
                 await loadUserData();
@@ -767,12 +786,17 @@
     function updateUserInterface(userData) {
         hasSubscription = userData.has_subscription || false;
         subscriptionDays = userData.subscription_days || 0;
+        userBalance = userData.balance || 0;
         
         const subscriptionBadge = document.getElementById('subscriptionBadge');
         const subscriptionDaysElement = document.getElementById('subscriptionDays');
         const vlessConfigContainer = document.getElementById('vlessConfigContainer');
         const vlessButton = document.getElementById('vlessButton');
         const buyTariffBtn = document.getElementById('buyTariffBtn');
+        const userBalanceElement = document.getElementById('userBalance');
+        
+        // Отображаем баланс
+        userBalanceElement.textContent = userBalance.toFixed(2);
         
         if (hasSubscription && subscriptionDays > 0) {
             subscriptionBadge.textContent = 'Активна';
@@ -793,6 +817,12 @@
             subscriptionDaysElement.textContent = 'Подписка неактивна';
             vlessConfigContainer.style.display = 'none';
             vlessButton.style.display = 'none';
+        }
+        
+        // Обновляем реферальную статистику
+        if (userData.referral_stats) {
+            document.getElementById('referralCount').textContent = userData.referral_stats.total_referrals;
+            document.getElementById('totalBonusMoney').textContent = userData.referral_stats.total_bonus_money.toFixed(2);
         }
         
         // Всегда показываем кнопку покупки
@@ -881,7 +911,7 @@
             console.log('📊 Tariff payment status:', data);
             
             if (data.status === 'succeeded') {
-                showSuccess('✅ Подписка успешно оплачена и активирована!');
+                showSuccess('✅ Подписка успешно оплачена и активирована! Реферальные бонусы начислены на баланс.');
                 await loadUserData();
             } else if (data.status === 'pending') {
                 setTimeout(() => checkTariffPaymentStatus(paymentId), 3000);
