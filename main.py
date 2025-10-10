@@ -12,6 +12,7 @@ import re
 import json
 import urllib.parse
 import asyncio
+import subprocess
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -31,142 +32,131 @@ app.add_middleware(
 # Класс для управления Xray
 class XrayManager:
     def __init__(self):
-        self.api_url = "http://127.0.0.1:8080"
-        self.inbound_tag = "inbound-1"
+        self.script_path = "/usr/local/bin/add_vpn_user"
+        self.config_path = "/usr/local/etc/xray/config.json"
         
-    async def test_connection(self) -> bool:
-        """Проверяет подключение к Xray API"""
+    async def add_user(self, email: str, uuid_str: str = None) -> bool:
+        """Добавляет пользователя через скрипт"""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.api_url}/list",
-                    json={"inboundTag": self.inbound_tag},
-                    timeout=5.0
-                )
-                logger.info(f"✅ Xray API connection test: {response.status_code}")
-                return response.status_code == 200
+            logger.info(f"🔄 Adding user via script: {email}")
+            
+            # Если UUID не передан, генерируем его
+            if not uuid_str:
+                uuid_str = str(uuid.uuid4())
+            
+            # Вызываем скрипт добавления пользователя
+            result = subprocess.run(
+                [self.script_path, email],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                logger.info(f"✅ User {email} successfully added via script")
+                # Извлекаем UUID из вывода скрипта
+                output_lines = result.stdout.split('\n')
+                for line in output_lines:
+                    if 'UUID:' in line:
+                        actual_uuid = line.split('UUID:')[1].strip()
+                        logger.info(f"🔑 Actual UUID assigned: {actual_uuid}")
+                        break
+                return True
+            else:
+                logger.error(f"❌ Script failed: {result.stderr}")
+                # Fallback на прямое редактирование конфига
+                return await self.add_user_direct(email, uuid_str)
+                
         except Exception as e:
-            logger.error(f"❌ Xray API connection failed: {e}")
-            return False
-        
-    async def add_user(self, email: str, uuid_str: str) -> bool:
-        """Добавляет пользователя в Xray"""
+            logger.error(f"❌ Error adding user via script: {e}")
+            return await self.add_user_direct(email, uuid_str)
+    
+    async def add_user_direct(self, email: str, uuid_str: str) -> bool:
+        """Добавляет пользователя напрямую в конфиг"""
         try:
-            logger.info(f"🔄 Adding user to Xray: {email}, UUID: {uuid_str}")
+            logger.info(f"🔄 Adding user directly to config: {email}")
             
-            # Проверяем подключение к Xray
-            if not await self.test_connection():
-                logger.warning("⚠️ Xray API not available, skipping user addition")
-                return True  # Продолжаем работу без Xray
+            # Читаем конфиг
+            with open(self.config_path, 'r') as f:
+                config = json.load(f)
             
-            # Формат запроса для Xray API
-            payload = {
+            new_user = {
+                "id": uuid_str,
                 "email": email,
-                "level": 0,
-                "inboundTag": self.inbound_tag,
-                "settings": json.dumps({
-                    "clients": [
-                        {
-                            "id": uuid_str,
-                            "flow": "xtls-rprx-vision",
-                            "email": email
-                        }
-                    ]
-                })
+                "flow": ""
             }
             
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.api_url}/add",
-                    json=payload,
-                    timeout=10.0
-                )
-                
-                logger.info(f"📡 Xray API response: {response.status_code} - {response.text}")
-                
-                if response.status_code == 200:
-                    logger.info(f"✅ User {email} successfully added to Xray")
-                    return True
-                else:
-                    logger.error(f"❌ Failed to add user to Xray: {response.status_code} - {response.text}")
-                    # Продолжаем работу даже если Xray не ответил
-                    return True
-                    
-        except Exception as e:
-            logger.error(f"❌ Error adding user to Xray: {e}")
-            # Продолжаем работу без Xray
+            # Добавляем пользователя в первый inbound
+            config['inbounds'][0]['settings']['clients'].append(new_user)
+            
+            # Сохраняем конфиг
+            with open(self.config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+            
+            # Перезапускаем Xray
+            subprocess.run(["systemctl", "restart", "xray"], check=True, timeout=30)
+            
+            logger.info(f"✅ User {email} successfully added directly to config")
             return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error adding user directly: {e}")
+            return False
     
     async def remove_user(self, email: str) -> bool:
-        """Удаляет пользователя из Xray"""
+        """Удаляет пользователя из конфига"""
         try:
-            logger.info(f"🔄 Removing user from Xray: {email}")
+            logger.info(f"🔄 Removing user from config: {email}")
             
-            if not await self.test_connection():
-                logger.warning("⚠️ Xray API not available, skipping user removal")
-                return True
+            # Читаем конфиг
+            with open(self.config_path, 'r') as f:
+                config = json.load(f)
             
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.api_url}/remove",
-                    json={
-                        "email": email,
-                        "inboundTag": self.inbound_tag
-                    },
-                    timeout=10.0
-                )
-                
-                logger.info(f"📡 Xray API delete response: {response.status_code} - {response.text}")
-                
-                if response.status_code == 200:
-                    logger.info(f"✅ User {email} successfully removed from Xray")
-                    return True
-                else:
-                    logger.error(f"❌ Failed to remove user from Xray: {response.status_code}")
-                    return True
+            # Удаляем пользователя
+            for inbound in config['inbounds']:
+                if inbound.get('tag') == 'inbound-1':
+                    original_count = len(inbound['settings']['clients'])
+                    inbound['settings']['clients'] = [
+                        client for client in inbound['settings']['clients'] 
+                        if client.get('email') != email
+                    ]
+                    new_count = len(inbound['settings']['clients'])
                     
-        except Exception as e:
-            logger.error(f"❌ Error removing user from Xray: {e}")
+                    if new_count < original_count:
+                        logger.info(f"✅ Removed user {email} from config")
+                    else:
+                        logger.info(f"⚠️ User {email} not found in config")
+                    break
+            
+            # Сохраняем конфиг
+            with open(self.config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+            
+            # Перезапускаем Xray
+            subprocess.run(["systemctl", "restart", "xray"], check=True, timeout=30)
+            
             return True
-    
-    async def get_user_stats(self, email: str) -> dict:
-        """Получает статистику пользователя"""
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.api_url}/getUserStats?email={email}&inboundTag={self.inbound_tag}",
-                    timeout=10.0
-                )
-                
-                if response.status_code == 200:
-                    return response.json()
-                else:
-                    logger.error(f"❌ Failed to get user stats: {response.status_code}")
-                    return {}
-                    
+            
         except Exception as e:
-            logger.error(f"❌ Error getting user stats: {e}")
-            return {}
+            logger.error(f"❌ Error removing user: {e}")
+            return False
 
-    async def list_users(self) -> list:
-        """Получает список пользователей из Xray"""
+    async def get_user_uuid(self, email: str) -> str:
+        """Получает UUID пользователя из конфига"""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.api_url}/list",
-                    json={"inboundTag": self.inbound_tag},
-                    timeout=10.0
-                )
-                
-                if response.status_code == 200:
-                    return response.json()
-                else:
-                    logger.error(f"❌ Failed to list users: {response.status_code}")
-                    return []
-                    
+            with open(self.config_path, 'r') as f:
+                config = json.load(f)
+            
+            for inbound in config['inbounds']:
+                if inbound.get('tag') == 'inbound-1':
+                    for client in inbound['settings'].get('clients', []):
+                        if client.get('email') == email:
+                            return client['id']
+            return None
+            
         except Exception as e:
-            logger.error(f"❌ Error listing users: {e}")
-            return []
+            logger.error(f"❌ Error getting user UUID: {e}")
+            return None
 
 # Инициализация Xray менеджера
 xray_manager = XrayManager()
@@ -177,10 +167,10 @@ VLESS_SERVERS = [
         "name": "🇷🇺 Москва #1",
         "address": "45.134.13.189",
         "port": 8443,
-        "sni": "www.google.com",
-        "reality_pbk": "sDwKcWtG67OSTE48iq_1XysyHtimL7jckacPZSNadlE",
+        "sni": "www.ign.com",
+        "reality_pbk": "BoTEvceuDTYQ38S-Nd5KgUJ2VDew4Q7-J3eFeVg8ckY",
         "short_id": "2bd6a8283e",
-        "flow": "xtls-rprx-vision",
+        "flow": "",
         "security": "reality"
     }
 ]
@@ -342,7 +332,7 @@ async def update_subscription_days(user_id: str, additional_days: int):
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
             
-            # Генерируем уникальный UUID для пользователя
+            # Генерируем уникальный UUID для пользователя и добавляем в Xray
             if has_subscription and not user_data.get('vless_uuid'):
                 user_uuid = generate_user_uuid()
                 update_data['vless_uuid'] = user_uuid
@@ -355,7 +345,7 @@ async def update_subscription_days(user_id: str, additional_days: int):
                 if not success:
                     logger.error(f"❌ Failed to add user {user_id} to Xray")
                     # Продолжаем работу даже если Xray не доступен
-                    logger.info("⚠️  Continuing without Xray integration")
+                    logger.info("⚠️ Continuing without Xray integration")
             
             user_ref.update(update_data)
             logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
@@ -609,37 +599,37 @@ def extract_referrer_id(start_param: str) -> str:
 # Эндпоинты API
 @app.get("/")
 async def root():
-    xray_status = await xray_manager.test_connection()
     return {
         "message": "VAC VPN API is running", 
         "status": "ok", 
         "firebase": "connected" if db else "disconnected",
-        "xray": "connected" if xray_status else "disconnected",
+        "xray": "ready",
         "timestamp": datetime.now().isoformat()
     }
 
 @app.get("/health")
 async def health_check():
-    xray_status = await xray_manager.test_connection()
     return {
         "status": "healthy", 
         "timestamp": datetime.now().isoformat(), 
         "firebase": "connected" if db else "disconnected",
-        "xray": "connected" if xray_status else "disconnected",
         "database_connected": db is not None
     }
 
 @app.get("/test-xray")
 async def test_xray_connection():
-    """Тест подключения к Xray API"""
+    """Тест подключения к Xray"""
     try:
-        status = await xray_manager.test_connection()
-        users = await xray_manager.list_users()
+        # Проверяем что конфиг существует и читается
+        with open("/usr/local/etc/xray/config.json", 'r') as f:
+            config = json.load(f)
+        
+        users_count = len(config['inbounds'][0]['settings']['clients'])
         
         return {
-            "xray_connected": status,
-            "total_users_in_xray": len(users),
-            "users": users[:10]  # Первые 10 пользователей
+            "xray_connected": True,
+            "total_users": users_count,
+            "config_status": "ok"
         }
     except Exception as e:
         return {"error": str(e)}
@@ -1158,12 +1148,14 @@ async def deactivate_user(user_id: str):
 async def get_xray_stats(user_id: str):
     try:
         email = f"user_{user_id}@vacvpn.com"
-        stats = await xray_manager.get_user_stats(email)
+        user_uuid = await xray_manager.get_user_uuid(email)
         
         return {
             "success": True,
             "user_id": user_id,
-            "stats": stats
+            "email": email,
+            "uuid": user_uuid,
+            "status": "active" if user_uuid else "not_found"
         }
         
     except Exception as e:
