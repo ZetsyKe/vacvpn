@@ -27,7 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-VVLESS_SERVERS = [
+VLESS_SERVERS = [
     {
         "name": "🇷🇺 Москва #1",
         "address": "45.134.13.189",
