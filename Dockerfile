@@ -19,7 +19,6 @@ COPY . .
 # Копируем конфиг Xray
 COPY config.json /usr/local/etc/xray/config.json
 
-# Создаем скрипт запуска с задержкой
-RUN echo '#!/bin/bash\n/usr/local/bin/xray run -config /usr/local/etc/xray/config.json &\nsleep 3\npython main.py' > /app/start.sh && chmod +x /app/start.sh
+EXPOSE 8000
 
-CMD ["/app/start.sh"]
+CMD ["sh", "-c", "/usr/local/bin/xray run -config /usr/local/etc/xray/config.json & uvicorn main:app --host 0.0.0.0 --port $PORT"]
