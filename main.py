@@ -99,6 +99,8 @@ try:
     
 except Exception as e:
     logger.error(f"❌ Firebase initialization failed: {str(e)}")
+    import traceback
+    logger.error(traceback.format_exc())
     db = None
 
 # Модели данных
@@ -123,6 +125,7 @@ class BuyWithBalanceRequest(BaseModel):
 # Функции работы с Firebase
 def get_user(user_id: str):
     if not db: 
+        logger.error("❌ Database not connected")
         return None
     try:
         doc = db.collection('users').document(user_id).get()
@@ -133,6 +136,7 @@ def get_user(user_id: str):
 
 def update_user_balance(user_id: str, amount: float):
     if not db: 
+        logger.error("❌ Database not connected")
         return False
     try:
         user_ref = db.collection('users').document(user_id)
@@ -148,7 +152,7 @@ def update_user_balance(user_id: str, amount: float):
                 'updated_at': firestore.SERVER_TIMESTAMP
             })
             
-            logger.info(f"💰 Balance updated for user {user_id}: {current_balance} -> {new_balance}")
+            logger.info(f"💰 Balance updated for user {user_id}: {current_balance} -> {new_balance} ({'+' if amount > 0 else ''}{amount}₽)")
             return True
         else:
             logger.error(f"❌ User {user_id} not found")
@@ -163,6 +167,7 @@ def generate_user_uuid():
 # Функция активации подписки
 async def update_subscription_days(user_id: str, additional_days: int):
     if not db: 
+        logger.error("❌ Database not connected")
         return False
     try:
         user_ref = db.collection('users').document(user_id)
@@ -191,7 +196,7 @@ async def update_subscription_days(user_id: str, additional_days: int):
                 logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
             
             user_ref.update(update_data)
-            logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days}")
+            logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
             return True
         else:
             logger.error(f"❌ User {user_id} not found")
@@ -202,9 +207,12 @@ async def update_subscription_days(user_id: str, additional_days: int):
 
 def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
     if not db: 
+        logger.error("❌ Database not connected")
         return False
     
     try:
+        logger.info(f"💰 Immediate referral bonuses: referrer {referrer_id} gets 50₽, referred {referred_id} gets 100₽")
+        
         update_user_balance(referrer_id, 50.0)
         update_user_balance(referred_id, 100.0)
         
@@ -218,11 +226,11 @@ def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
             'created_at': firestore.SERVER_TIMESTAMP
         })
         
-        logger.info(f"✅ Referral bonuses applied: {referrer_id} +50₽, {referred_id} +100₽")
+        logger.info(f"✅ Immediate referral bonuses applied: {referrer_id} +50₽, {referred_id} +100₽")
         return True
         
     except Exception as e:
-        logger.error(f"❌ Error adding referral bonus: {e}")
+        logger.error(f"❌ Error adding immediate referral bonus: {e}")
         return False
 
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
@@ -271,6 +279,7 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
 
 def process_subscription_days(user_id: str):
     if not db:
+        logger.error("❌ Database not connected")
         return False
     
     try:
@@ -304,7 +313,7 @@ def process_subscription_days(user_id: str):
                         update_data['has_subscription'] = False
                     
                     db.collection('users').document(user_id).update(update_data)
-                    logger.info(f"✅ Subscription days processed for user {user_id}: {subscription_days} -> {new_days}")
+                    logger.info(f"✅ Subscription days processed for user {user_id}: {subscription_days} -> {new_days} (-{days_passed} days)")
                     
             except Exception as e:
                 logger.error(f"❌ Error processing subscription days: {e}")
@@ -317,6 +326,7 @@ def process_subscription_days(user_id: str):
 
 def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_method: str = "yookassa"):
     if not db: 
+        logger.error("❌ Database not connected")
         return
     try:
         db.collection('payments').document(payment_id).set({
@@ -334,6 +344,7 @@ def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, paym
 
 def update_payment_status(payment_id: str, status: str):
     if not db: 
+        logger.error("❌ Database not connected")
         return
     try:
         update_data = {'status': status}
@@ -347,6 +358,7 @@ def update_payment_status(payment_id: str, status: str):
 
 def get_payment(payment_id: str):
     if not db: 
+        logger.error("❌ Database not connected")
         return None
     try:
         doc = db.collection('payments').document(payment_id).get()
@@ -357,6 +369,7 @@ def get_payment(payment_id: str):
 
 def get_referrals(referrer_id: str):
     if not db: 
+        logger.error("❌ Database not connected")
         return []
     try:
         referrals = db.collection('referrals').where('referrer_id', '==', referrer_id).stream()
@@ -369,24 +382,35 @@ def extract_referrer_id(start_param: str) -> str:
     if not start_param:
         return None
     
+    logger.info(f"🔍 Extracting referrer_id from: '{start_param}'")
+    
     if start_param.startswith('ref_'):
-        return start_param.replace('ref_', '')
+        referrer_id = start_param.replace('ref_', '')
+        logger.info(f"✅ Found ref_ format: {referrer_id}")
+        return referrer_id
     
     if start_param.isdigit():
+        logger.info(f"✅ Found digit format: {start_param}")
         return start_param
     
     patterns = [
         r'ref_(\d+)',
         r'ref(\d+)',  
         r'referral_(\d+)',
+        r'referral(\d+)',
+        r'startapp_(\d+)',
+        r'startapp(\d+)',
         r'(\d{8,})',
     ]
     
     for pattern in patterns:
         match = re.search(pattern, start_param)
         if match:
-            return match.group(1)
+            referrer_id = match.group(1)
+            logger.info(f"✅ Found with pattern '{pattern}': {referrer_id}")
+            return referrer_id
     
+    logger.info(f"⚠️ Using raw start_param as referrer_id: {start_param}")
     return start_param
 
 # Эндпоинты API
@@ -410,6 +434,8 @@ async def health_check():
 @app.post("/init-user")
 async def init_user(request: InitUserRequest):
     try:
+        logger.info(f"🔍 INIT-USER START: user_id={request.user_id}, start_param='{request.start_param}'")
+        
         if not db:
             return {"error": "Database not connected"}
         
@@ -422,6 +448,7 @@ async def init_user(request: InitUserRequest):
         
         if request.start_param:
             referrer_id = extract_referrer_id(request.start_param)
+            logger.info(f"🎯 Extracted referrer_id: {referrer_id}")
             
             if referrer_id:
                 referrer = get_user(referrer_id)
@@ -435,6 +462,7 @@ async def init_user(request: InitUserRequest):
                         bonus_result = add_referral_bonus_immediately(referrer_id, request.user_id)
                         if bonus_result:
                             bonus_applied = True
+                            logger.info(f"🎉 Referral bonuses applied immediately for {request.user_id}")
         
         user_ref = db.collection('users').document(request.user_id)
         user_doc = user_ref.get()
@@ -448,14 +476,17 @@ async def init_user(request: InitUserRequest):
                 'balance': 100.0 if bonus_applied else 0.0,
                 'has_subscription': False,
                 'subscription_days': 0,
+                'subscription_start': None,
                 'vless_uuid': None,
                 'created_at': firestore.SERVER_TIMESTAMP
             }
             
             if is_referral and referrer_id:
                 user_data['referred_by'] = referrer_id
+                logger.info(f"🔗 User {request.user_id} referred by {referrer_id}")
             
             user_ref.set(user_data)
+            logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}, bonus_applied: {bonus_applied}")
             
             return {
                 "success": True, 
@@ -473,6 +504,7 @@ async def init_user(request: InitUserRequest):
                 "message": "User already exists", 
                 "user_id": request.user_id,
                 "is_referral": has_referrer,
+                "bonus_applied": False
             }
             
     except Exception as e:
@@ -518,6 +550,8 @@ async def get_user_info(user_id: str):
             "referral_stats": {
                 "total_referrals": referral_count,
                 "total_bonus_money": total_bonus_money,
+                "referrer_bonus": REFERRAL_BONUS_REFERRER,
+                "referred_bonus": REFERRAL_BONUS_REFERRED
             }
         }
         
@@ -527,6 +561,8 @@ async def get_user_info(user_id: str):
 @app.post("/buy-with-balance")
 async def buy_with_balance(request: BuyWithBalanceRequest):
     try:
+        logger.info(f"💰 BUY-WITH-BALANCE START: user_id={request.user_id}, tariff={request.tariff_id}, price={request.tariff_price}")
+        
         if not db:
             return {"error": "Database not connected"}
         
@@ -559,15 +595,19 @@ async def buy_with_balance(request: BuyWithBalanceRequest):
             referral_exists = db.collection('referrals').document(referral_id).get().exists
             
             if not referral_exists:
+                logger.info(f"🎁 Applying referral bonus for {request.user_id} referred by {referrer_id}")
                 add_referral_bonus_immediately(referrer_id, request.user_id)
         
         update_payment_status(payment_id, "succeeded")
+        
+        logger.info(f"✅ Tariff activated with balance: {request.user_id} -> {request.tariff_days} days")
         
         return {
             "success": True,
             "payment_id": payment_id,
             "amount": request.tariff_price,
             "days": request.tariff_days,
+            "status": "succeeded",
             "message": "Подписка успешно активирована с баланса!"
         }
         
@@ -615,15 +655,19 @@ async def activate_tariff(request: ActivateTariffRequest):
                 referral_exists = db.collection('referrals').document(referral_id).get().exists
                 
                 if not referral_exists:
+                    logger.info(f"🎁 Applying referral bonus for {request.user_id} referred by {referrer_id}")
                     add_referral_bonus_immediately(referrer_id, request.user_id)
             
             update_payment_status(payment_id, "succeeded")
+            
+            logger.info(f"✅ Tariff activated with balance: {request.user_id} -> {tariff_days} days")
             
             return {
                 "success": True,
                 "payment_id": payment_id,
                 "amount": tariff_price,
                 "days": tariff_days,
+                "status": "succeeded",
                 "message": "Подписка успешно активирована с баланса!"
             }
         
@@ -646,6 +690,8 @@ async def activate_tariff(request: ActivateTariffRequest):
                     "payment_id": payment_id,
                     "user_id": request.user_id,
                     "tariff": request.tariff,
+                    "payment_type": "tariff",
+                    "tariff_days": tariff_days
                 }
             }
             
@@ -670,6 +716,7 @@ async def activate_tariff(request: ActivateTariffRequest):
                     "payment_url": payment_data["confirmation"]["confirmation_url"],
                     "amount": tariff_price,
                     "days": tariff_days,
+                    "status": "pending",
                     "message": "Перейдите по ссылке для оплаты подписки"
                 }
             else:
