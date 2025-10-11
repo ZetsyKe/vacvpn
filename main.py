@@ -13,7 +13,65 @@ import json
 import urllib.parse
 import subprocess
 from typing import List
+import subprocess
+import json
 
+@app.get("/admin/xray-users")
+async def get_xray_users():
+    """Показать всех пользователей в Xray конфиге"""
+    try:
+        with open(XRAY_CONFIG_PATH, 'r') as f:
+            config = json.load(f)
+        clients = config['inbounds'][0]['settings']['clients']
+        uuids = [client['id'] for client in clients]
+        return {"users": uuids, "count": len(uuids)}
+    except Exception as e:
+        return {"error": str(e)}
+
+XRAY_CONFIG_PATH = "/usr/local/etc/xray/config.json"
+
+def add_user_to_xray(user_uuid: str):
+    """Добавляет пользователя в Xray конфиг и перезапускает сервис"""
+    try:
+        # Читаем текущий конфиг
+        with open(XRAY_CONFIG_PATH, 'r') as f:
+            config = json.load(f)
+        
+        # Добавляем пользователя в массив clients
+        clients = config['inbounds'][0]['settings']['clients']
+        
+        # Проверяем нет ли уже такого UUID
+        existing_uuids = [client['id'] for client in clients]
+        if user_uuid not in existing_uuids:
+            clients.append({
+                "id": user_uuid,
+                "flow": ""
+            })
+            
+            # Сохраняем обновленный конфиг
+            with open(XRAY_CONFIG_PATH, 'w') as f:
+                json.dump(config, f, indent=2)
+            
+            # Перезапускаем Xray
+            result = subprocess.run(
+                ["systemctl", "restart", "xray"], 
+                capture_output=True, 
+                text=True
+            )
+            
+            if result.returncode == 0:
+                logger.info(f"✅ UUID {user_uuid} добавлен в Xray конфиг")
+                return True
+            else:
+                logger.error(f"❌ Ошибка перезапуска Xray: {result.stderr}")
+                return False
+        else:
+            logger.info(f"⚠️ UUID {user_uuid} уже существует в конфиге")
+            return True
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка обновления Xray конфига: {e}")
+        return False
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -247,7 +305,7 @@ def update_subscription_days(user_id: str, additional_days: int):
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
             
-            # ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ UUID ДЛЯ ПОЛЬЗОВАТЕЛЯ ПРИ АКТИВАЦИИ ПОДПИСКИ
+            # ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ UUID ДЛЯ ПОЛЬЗОВАТЕЛЯ
             if has_subscription and not user_data.get('vless_uuid'):
                 user_uuid = generate_user_uuid()
                 update_data['vless_uuid'] = user_uuid
@@ -255,7 +313,7 @@ def update_subscription_days(user_id: str, additional_days: int):
                 logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
                 
                 # ⚠️ ДОБАВЛЯЕМ UUID В XRAY КОНФИГ
-                update_xray_config(user_uuid)
+                add_user_to_xray(user_uuid)
             
             user_ref.update(update_data)
             logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
