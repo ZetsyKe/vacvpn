@@ -2,7 +2,7 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "sh -c 'xray run -config /usr/local/etc/xray/config.json & uvicorn main:app --host 0.0.0.0 --port $PORT'"
+startCommand = "python main.py"
 
 [env]
 PORT = "8000"
