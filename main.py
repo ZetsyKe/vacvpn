@@ -66,36 +66,28 @@ REFERRAL_BONUS_REFERRED = 100.0
 # Инициализация Firebase
 try:
     if not firebase_admin._apps:
-        firebase_credentials_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
+        logger.info("🚀 Initializing Firebase from individual environment variables")
         
-        if firebase_credentials_json:
-            logger.info("🚀 Initializing Firebase from FIREBASE_CREDENTIALS_JSON")
-            firebase_config = json.loads(firebase_credentials_json)
-            cred = credentials.Certificate(firebase_config)
-        else:
-            logger.info("🚀 Initializing Firebase from individual environment variables")
-            
-            private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n')
-            
-            if not private_key:
-                raise ValueError("FIREBASE_PRIVATE_KEY environment variable is empty")
-            
-            firebase_config = {
-                "type": "service_account",
-                "project_id": os.getenv("FIREBASE_PROJECT_ID", "vacvpn-75yegf"),
-                "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID", "8e6469cea94608d13c03d57a60f70ad7269e9421"),
-                "private_key": private_key,
-                "client_email": os.getenv("FIREBASE_CLIENT_EMAIL", "firebase-adminsdk-fbsvc@vacvpn-75yegf.iam.gserviceaccount.com"),
-                "client_id": os.getenv("FIREBASE_CLIENT_ID", "118426875107507915166"),
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_X509_CERT_URL", "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40vacvpn-75yegf.iam.gserviceaccount.com"),
-                "universe_domain": "googleapis.com"
-            }
-            
-            cred = credentials.Certificate(firebase_config)
+        private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n')
         
+        if not private_key:
+            raise ValueError("FIREBASE_PRIVATE_KEY environment variable is empty")
+        
+        firebase_config = {
+            "type": "service_account",
+            "project_id": os.getenv("FIREBASE_PROJECT_ID", "vacvpn-75yegf"),
+            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID", "8e6469cea94608d13c03d57a60f70ad7269e9421"),
+            "private_key": private_key,
+            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL", "firebase-adminsdk-fbsvc@vacvpn-75yegf.iam.gserviceaccount.com"),
+            "client_id": os.getenv("FIREBASE_CLIENT_ID", "118426875107507915166"),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_X509_CERT_URL", "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40vacvpn-75yegf.iam.gserviceaccount.com"),
+            "universe_domain": "googleapis.com"
+        }
+        
+        cred = credentials.Certificate(firebase_config)
         firebase_admin.initialize_app(cred)
     
     db = firestore.client()
@@ -353,8 +345,8 @@ def update_subscription_days(user_id: str, additional_days: int):
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
             
-            # ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ UUID ДЛЯ ПОЛЬЗОВАТЕЛЯ
-            if has_subscription and not user_data.get('vless_uuid'):
+            # ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ UUID ДЛЯ ПОЛЬЗОВАТЕЛЯ (даже если уже есть подписка)
+            if has_subscription and (not user_data.get('vless_uuid') or user_data.get('vless_uuid') == ''):
                 user_uuid = generate_user_uuid()
                 update_data['vless_uuid'] = user_uuid
                 update_data['subscription_start'] = datetime.now().isoformat()
@@ -1059,6 +1051,134 @@ async def get_vless_config(user_id: str):
     except Exception as e:
         logger.error(f"❌ Error getting VLESS config: {e}")
         return {"error": f"Error getting VLESS config: {str(e)}"}
+
+# Новые эндпоинты для генерации UUID
+@app.post("/admin/generate-uuid-for-user")
+async def generate_uuid_for_user(user_id: str):
+    """Принудительно сгенерировать UUID для пользователя и добавить в Xray"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        user = get_user(user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        # Если у пользователя уже есть UUID
+        existing_uuid = user.get('vless_uuid')
+        if existing_uuid:
+            # Проверяем есть ли в Xray, если нет - добавляем
+            if not check_user_in_xray(existing_uuid):
+                success = add_user_to_xray(existing_uuid)
+                if success:
+                    return {
+                        "success": True,
+                        "message": f"UUID {existing_uuid} добавлен в Xray",
+                        "user_uuid": existing_uuid,
+                        "action": "added_to_xray"
+                    }
+                else:
+                    return {"error": f"Не удалось добавить UUID в Xray"}
+            else:
+                return {
+                    "success": True,
+                    "message": f"UUID уже существует и есть в Xray",
+                    "user_uuid": existing_uuid,
+                    "action": "already_exists"
+                }
+        
+        # Если UUID нет - генерируем новый
+        user_uuid = generate_user_uuid()
+        
+        # Обновляем пользователя в базе
+        user_ref = db.collection('users').document(user_id)
+        user_ref.update({
+            'vless_uuid': user_uuid,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        })
+        
+        # Добавляем в Xray
+        success = add_user_to_xray(user_uuid)
+        if success:
+            return {
+                "success": True,
+                "message": f"Сгенерирован новый UUID и добавлен в Xray",
+                "user_uuid": user_uuid,
+                "action": "generated_and_added"
+            }
+        else:
+            return {"error": f"Не удалось добавить UUID в Xray"}
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating UUID: {e}")
+        return {"error": str(e)}
+
+@app.post("/admin/generate-uuids-for-all")
+async def generate_uuids_for_all():
+    """Сгенерировать UUID для всех пользователей с подпиской но без UUID"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        users_ref = db.collection('users').where('has_subscription', '==', True).stream()
+        
+        results = {
+            "generated": 0,
+            "already_have": 0,
+            "errors": 0,
+            "details": []
+        }
+        
+        for user_doc in users_ref:
+            user_data = user_doc.to_dict()
+            user_id = user_data.get('user_id')
+            
+            if not user_data.get('vless_uuid'):
+                # Генерируем UUID
+                user_uuid = generate_user_uuid()
+                user_doc.reference.update({
+                    'vless_uuid': user_uuid,
+                    'updated_at': firestore.SERVER_TIMESTAMP
+                })
+                
+                # Добавляем в Xray
+                success = add_user_to_xray(user_uuid)
+                if success:
+                    results["generated"] += 1
+                    results["details"].append({
+                        "user_id": user_id,
+                        "uuid": user_uuid,
+                        "status": "generated"
+                    })
+                    logger.info(f"✅ Generated UUID for user {user_id}: {user_uuid}")
+                else:
+                    results["errors"] += 1
+                    results["details"].append({
+                        "user_id": user_id,
+                        "status": "xray_error"
+                    })
+            else:
+                results["already_have"] += 1
+                
+                # Проверяем есть ли в Xray
+                existing_uuid = user_data.get('vless_uuid')
+                if not check_user_in_xray(existing_uuid):
+                    add_user_to_xray(existing_uuid)
+                    results["details"].append({
+                        "user_id": user_id,
+                        "uuid": existing_uuid,
+                        "status": "added_to_xray"
+                    })
+        
+        return {
+            "success": True,
+            "message": f"UUID generation completed",
+            "results": results
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating UUIDs for all: {e}")
+        return {"error": str(e)}
 
 # Админские эндпоинты для управления Xray
 @app.get("/admin/xray-users")
