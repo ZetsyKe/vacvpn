@@ -32,9 +32,9 @@ VLESS_SERVERS = [
         "name": "🇷🇺 Москва #1",
         "address": "45.134.13.189",
         "port": 8443,
-        "sni": "www.cloudflare.com",  # ⚠️ ИЗМЕНИ НА google.com
-        "reality_pbk": "Meq6E7CArCvaupeG8uH2eoPm_7JEmS3Y0XJFAMyRP1Y",
-        "short_id": "2bd6a828",
+        "sni": "www.cloudflare.com",
+        "reality_pbk": "pLQKNQ9sl4DWgXXjVqWC8ylEsVu_MOVjw3DkYXOnjhE",
+        "short_id": "2bd6a828", 
         "flow": "",
         "security": "reality"
     }
