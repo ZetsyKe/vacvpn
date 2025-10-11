@@ -36,7 +36,7 @@ VLESS_SERVERS = [
         "sni": "www.ign.com",
         "reality_pbk": "KtGa9MWkCNvp3FC-zpNN9pxyIl3yQau2ewGB2h992Uk",
         "short_id": "2bd6a8283e",
-        "flow": "xtls-rprx-vision",
+        "flow": "",  # ИЗМЕНИ НА ПУСТУЮ СТРОКУ
         "security": "reality"
     }
 ]
