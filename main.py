@@ -97,10 +97,11 @@ app.add_middleware(
 xray_manager = XrayManager()
 
 # КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ
+# Конфигурация вашего сервера
 VLESS_SERVERS = [
     {
-        "name": "🇷🇺 Москва #1",
-        "address": "45.134.13.189",
+        "name": "🇷🇺 Ваш сервер #1",
+        "address": "45.134.13.189",  # Замените на реальный IP
         "port": 8443,
         "sni": "www.ign.com",
         "reality_pbk": "BoTEvceuDTYQ38S-Nd5KgUJ2VDew4Q7-J3eFeVg8ckY",
