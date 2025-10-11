@@ -11,6 +11,8 @@ import logging
 import re
 import json
 import urllib.parse
+import subprocess
+from typing import List
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +28,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Константы
+XRAY_CONFIG_PATH = "/usr/local/etc/xray/config.json"
 
 VLESS_SERVERS = [
     {
@@ -130,6 +135,53 @@ class BuyWithBalanceRequest(BaseModel):
     tariff_price: float
     tariff_days: int
 
+# Функции работы с Xray конфигом
+def update_xray_config(new_uuid: str):
+    """Добавляет новый UUID в Xray конфиг и перезапускает Xray"""
+    try:
+        # Читаем текущий конфиг
+        with open(XRAY_CONFIG_PATH, 'r') as f:
+            config = json.load(f)
+        
+        # Находим массив clients в первом inbound
+        clients = config['inbounds'][0]['settings']['clients']
+        
+        # Проверяем нет ли уже такого UUID
+        existing_uuids = [client['id'] for client in clients]
+        if new_uuid not in existing_uuids:
+            # Добавляем новый UUID
+            clients.append({
+                "id": new_uuid,
+                "flow": ""
+            })
+            
+            # Сохраняем обновленный конфиг
+            with open(XRAY_CONFIG_PATH, 'w') as f:
+                json.dump(config, f, indent=2)
+            
+            # Перезапускаем Xray
+            subprocess.run(["systemctl", "restart", "xray"], check=True)
+            logger.info(f"✅ Добавлен новый UUID в Xray: {new_uuid}")
+            return True
+        else:
+            logger.info(f"⚠️ UUID уже существует: {new_uuid}")
+            return True
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка обновления Xray конфига: {e}")
+        return False
+
+def get_current_uuids() -> List[str]:
+    """Получает список всех UUID из Xray конфига"""
+    try:
+        with open(XRAY_CONFIG_PATH, 'r') as f:
+            config = json.load(f)
+        clients = config['inbounds'][0]['settings']['clients']
+        return [client['id'] for client in clients]
+    except Exception as e:
+        logger.error(f"❌ Ошибка чтения Xray конфига: {e}")
+        return []
+
 # Функции работы с Firebase
 def get_user(user_id: str):
     if not db: 
@@ -201,6 +253,9 @@ def update_subscription_days(user_id: str, additional_days: int):
                 update_data['vless_uuid'] = user_uuid
                 update_data['subscription_start'] = datetime.now().isoformat()
                 logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
+                
+                # ⚠️ ДОБАВЛЯЕМ UUID В XRAY КОНФИГ
+                update_xray_config(user_uuid)
             
             user_ref.update(update_data)
             logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
@@ -241,7 +296,7 @@ def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
         return False
 
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
-    """Создает VLESS Reality конфигурацию с правильными настройками"""
+    """Создает VLESS Reality конфигурацию с правильными настройки"""
     address = server_config["address"]
     port = server_config["port"]
     reality_pbk = server_config["reality_pbk"]
@@ -623,6 +678,7 @@ async def buy_with_balance(request: BuyWithBalanceRequest):
         
         update_user_balance(request.user_id, -request.tariff_price)
         
+        # Активируем подписку - UUID будет сгенерирован и добавлен в Xray внутри update_subscription_days
         success = update_subscription_days(request.user_id, request.tariff_days)
         
         if not success:
@@ -683,6 +739,7 @@ async def activate_tariff(request: ActivateTariffRequest):
             
             update_user_balance(request.user_id, -tariff_price)
             
+            # Активируем подписку - UUID будет сгенерирован и добавлен в Xray внутри update_subscription_days
             success = update_subscription_days(request.user_id, tariff_days)
             
             if not success:
@@ -889,6 +946,19 @@ async def get_vless_config(user_id: str):
     except Exception as e:
         logger.error(f"❌ Error getting VLESS config: {e}")
         return {"error": f"Error getting VLESS config: {str(e)}"}
+
+# Админские эндпоинты для управления Xray
+@app.get("/admin/xray-uuids")
+async def get_xray_uuids():
+    """Получить все UUID из Xray конфига"""
+    uuids = get_current_uuids()
+    return {"uuids": uuids, "count": len(uuids)}
+
+@app.post("/admin/add-uuid-to-xray")
+async def admin_add_uuid_to_xray(uuid: str):
+    """Добавить UUID в Xray конфиг (для админа)"""
+    success = update_xray_config(uuid)
+    return {"success": success, "uuid": uuid}
 
 @app.post("/admin/add-balance")
 async def admin_add_balance(user_id: str, amount: float):
