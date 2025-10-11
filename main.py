@@ -32,7 +32,7 @@ VLESS_SERVERS = [
         "name": "🇷🇺 Москва #1",
         "address": "45.134.13.189",
         "port": 8443,
-        "sni": "www.google.com:443",
+        "sni": "www.google.com",
         "reality_pbk": "pLQKNQ9sl4DWgXXjVqWC8ylEsVu_MOVjw3DkYXOnjhE",
         "short_id": "2bd6a828", 
         "flow": "",
