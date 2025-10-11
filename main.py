@@ -27,14 +27,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-VLESS_SERVERS = [
+VVLESS_SERVERS = [
     {
         "name": "🇷🇺 Москва #1",
         "address": "45.134.13.189",
-        "port": 8443,
+        "port": 8444, 
         "sni": "www.google.com",
         "reality_pbk": "pLQKNQ9sl4DWgXXjVqWC8ylEsVu_MOVjw3DkYXOnjhE",
-        "short_id": "2bd6a828", 
+        "short_id": "2bd6a828",
         "flow": "",
         "security": "reality"
     }
