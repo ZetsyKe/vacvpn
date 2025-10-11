@@ -28,16 +28,14 @@ app.add_middleware(
 )
 
 # КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ - ПРАВИЛЬНЫЕ НАСТРОЙКИ REALITY
-# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ - ДОЛЖНА СООТВЕТСТВОВАТЬ СЕРВЕРУ
 VLESS_SERVERS = [
     {
         "name": "🇷🇺 Москва #1",
         "address": "45.134.13.189",
         "port": 8443,
-        "sni": "www.ign.com",  # ✅ СОВПАДАЕТ С dest НА СЕРВЕРЕ
-        # УБЕРИ UUID ОТСЮДА - он будет генерироваться для каждого пользователя
-        "reality_pbk": "KtGa9MWkCNvp3FC-zpNN9pxyIl3yQau2ewGB2h992Uk",  # ✅ ПРАВИЛЬНЫЙ Public key
-        "short_id": "2bd6a8283e",  # ✅ ПРАВИЛЬНЫЙ
+        "sni": "www.ign.com",
+        "reality_pbk": "KtGa9MWkCNvp3FC-zpNN9pxyIl3yQau2ewGB2h992Uk",
+        "short_id": "2bd6a8283e",
         "flow": "xtls-rprx-vision",
         "security": "reality"
     }
@@ -105,7 +103,7 @@ except Exception as e:
     logger.error(traceback.format_exc())
     db = None
 
-# Модели данных (остаются без изменений)
+# Модели данных
 class PaymentRequest(BaseModel):
     user_id: str
     amount: float
@@ -198,6 +196,7 @@ def update_subscription_days(user_id: str, additional_days: int):
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
             
+            # ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ UUID ДЛЯ ПОЛЬЗОВАТЕЛЯ ПРИ АКТИВАЦИИ ПОДПИСКИ
             if has_subscription and not user_data.get('vless_uuid'):
                 user_uuid = generate_user_uuid()
                 update_data['vless_uuid'] = user_uuid
@@ -246,7 +245,6 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
     """Создает VLESS Reality конфигурацию с правильными настройками"""
     address = server_config["address"]
     port = server_config["port"]
-    server_uuid = server_config["uuid"]  # Общий UUID сервера
     reality_pbk = server_config["reality_pbk"]
     sni = server_config["sni"]
     short_id = server_config["short_id"]
@@ -430,7 +428,7 @@ def extract_referrer_id(start_param: str) -> str:
     logger.info(f"⚠️ Using raw start_param as referrer_id: {start_param}")
     return start_param
 
-# Эндпоинты API (остаются без изменений)
+# Эндпоинты API
 @app.get("/")
 async def root():
     return {
