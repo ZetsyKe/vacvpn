@@ -13,65 +13,7 @@ import json
 import urllib.parse
 import subprocess
 from typing import List
-import subprocess
-import json
 
-@app.get("/admin/xray-users")
-async def get_xray_users():
-    """Показать всех пользователей в Xray конфиге"""
-    try:
-        with open(XRAY_CONFIG_PATH, 'r') as f:
-            config = json.load(f)
-        clients = config['inbounds'][0]['settings']['clients']
-        uuids = [client['id'] for client in clients]
-        return {"users": uuids, "count": len(uuids)}
-    except Exception as e:
-        return {"error": str(e)}
-
-XRAY_CONFIG_PATH = "/usr/local/etc/xray/config.json"
-
-def add_user_to_xray(user_uuid: str):
-    """Добавляет пользователя в Xray конфиг и перезапускает сервис"""
-    try:
-        # Читаем текущий конфиг
-        with open(XRAY_CONFIG_PATH, 'r') as f:
-            config = json.load(f)
-        
-        # Добавляем пользователя в массив clients
-        clients = config['inbounds'][0]['settings']['clients']
-        
-        # Проверяем нет ли уже такого UUID
-        existing_uuids = [client['id'] for client in clients]
-        if user_uuid not in existing_uuids:
-            clients.append({
-                "id": user_uuid,
-                "flow": ""
-            })
-            
-            # Сохраняем обновленный конфиг
-            with open(XRAY_CONFIG_PATH, 'w') as f:
-                json.dump(config, f, indent=2)
-            
-            # Перезапускаем Xray
-            result = subprocess.run(
-                ["systemctl", "restart", "xray"], 
-                capture_output=True, 
-                text=True
-            )
-            
-            if result.returncode == 0:
-                logger.info(f"✅ UUID {user_uuid} добавлен в Xray конфиг")
-                return True
-            else:
-                logger.error(f"❌ Ошибка перезапуска Xray: {result.stderr}")
-                return False
-        else:
-            logger.info(f"⚠️ UUID {user_uuid} уже существует в конфиге")
-            return True
-            
-    except Exception as e:
-        logger.error(f"❌ Ошибка обновления Xray конфига: {e}")
-        return False
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -194,22 +136,21 @@ class BuyWithBalanceRequest(BaseModel):
     tariff_days: int
 
 # Функции работы с Xray конфигом
-def update_xray_config(new_uuid: str):
-    """Добавляет новый UUID в Xray конфиг и перезапускает Xray"""
+def add_user_to_xray(user_uuid: str):
+    """Добавляет пользователя в Xray конфиг и перезапускает сервис"""
     try:
         # Читаем текущий конфиг
         with open(XRAY_CONFIG_PATH, 'r') as f:
             config = json.load(f)
         
-        # Находим массив clients в первом inbound
+        # Добавляем пользователя в массив clients
         clients = config['inbounds'][0]['settings']['clients']
         
         # Проверяем нет ли уже такого UUID
         existing_uuids = [client['id'] for client in clients]
-        if new_uuid not in existing_uuids:
-            # Добавляем новый UUID
+        if user_uuid not in existing_uuids:
             clients.append({
-                "id": new_uuid,
+                "id": user_uuid,
                 "flow": ""
             })
             
@@ -218,11 +159,21 @@ def update_xray_config(new_uuid: str):
                 json.dump(config, f, indent=2)
             
             # Перезапускаем Xray
-            subprocess.run(["systemctl", "restart", "xray"], check=True)
-            logger.info(f"✅ Добавлен новый UUID в Xray: {new_uuid}")
-            return True
+            result = subprocess.run(
+                ["systemctl", "restart", "xray"], 
+                capture_output=True, 
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                logger.info(f"✅ UUID {user_uuid} добавлен в Xray конфиг")
+                return True
+            else:
+                logger.error(f"❌ Ошибка перезапуска Xray: {result.stderr}")
+                return False
         else:
-            logger.info(f"⚠️ UUID уже существует: {new_uuid}")
+            logger.info(f"⚠️ UUID {user_uuid} уже существует в конфиге")
             return True
             
     except Exception as e:
@@ -354,7 +305,7 @@ def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
         return False
 
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
-    """Создает VLESS Reality конфигурацию с правильными настройки"""
+    """Создает VLESS Reality конфигурацию с правильными настройками"""
     address = server_config["address"]
     port = server_config["port"]
     reality_pbk = server_config["reality_pbk"]
@@ -362,8 +313,8 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
     short_id = server_config["short_id"]
     flow = server_config["flow"]
     
-    # ⚠️ УБЕРИ :443 ИЗ SNI
-    clean_sni = sni.replace(":443", "")  # Убираем порт если есть
+    # Убираем порт из SNI если есть
+    clean_sni = sni.replace(":443", "")
     
     vless_link = (
         f"vless://{vless_uuid}@{address}:{port}?"
@@ -372,7 +323,7 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
         f"flow={flow}&"
         f"pbk={reality_pbk}&"
         f"fp=chrome&"
-        f"sni={clean_sni}&"  # ⚠️ ИСПОЛЬЗУЕМ clean_sni
+        f"sni={clean_sni}&"
         f"sid={short_id}#"
         f"VAC-VPN-{user_id}"
     )
@@ -385,7 +336,7 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
         "port": port,
         "security": "reality",
         "reality_pbk": reality_pbk,
-        "sni": clean_sni,  # ⚠️ ИСПОЛЬЗУЕМ clean_sni
+        "sni": clean_sni,
         "short_id": short_id,
         "flow": flow,
         "type": "tcp",
@@ -1006,16 +957,22 @@ async def get_vless_config(user_id: str):
         return {"error": f"Error getting VLESS config: {str(e)}"}
 
 # Админские эндпоинты для управления Xray
-@app.get("/admin/xray-uuids")
-async def get_xray_uuids():
-    """Получить все UUID из Xray конфига"""
-    uuids = get_current_uuids()
-    return {"uuids": uuids, "count": len(uuids)}
+@app.get("/admin/xray-users")
+async def get_xray_users():
+    """Показать всех пользователей в Xray конфиге"""
+    try:
+        with open(XRAY_CONFIG_PATH, 'r') as f:
+            config = json.load(f)
+        clients = config['inbounds'][0]['settings']['clients']
+        uuids = [client['id'] for client in clients]
+        return {"users": uuids, "count": len(uuids)}
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.post("/admin/add-uuid-to-xray")
 async def admin_add_uuid_to_xray(uuid: str):
     """Добавить UUID в Xray конфиг (для админа)"""
-    success = update_xray_config(uuid)
+    success = add_user_to_xray(uuid)
     return {"success": success, "uuid": uuid}
 
 @app.post("/admin/add-balance")
