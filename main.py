@@ -31,10 +31,10 @@ VVLESS_SERVERS = [
     {
         "name": "🇷🇺 Москва #1",
         "address": "45.134.13.189",
-        "port": 8444, 
+        "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "pLQKNQ9sl4DWgXXjVqWC8ylEsVu_MOVjw3DkYXOnjhE",
-        "short_id": "2bd6a828",
+        "reality_pbk": "9fzeqq8tQoPyy3BClEOriCpwp5CGcCrSZ--_PiYNpWs",
+        "short_id": "2489c154",  
         "flow": "",
         "security": "reality"
     }
