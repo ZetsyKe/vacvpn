@@ -249,7 +249,9 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
     short_id = server_config["short_id"]
     flow = server_config["flow"]
     
-    # ПРАВИЛЬНАЯ VLESS REALITY ССЫЛКА
+    # ⚠️ УБЕРИ :443 ИЗ SNI
+    clean_sni = sni.replace(":443", "")  # Убираем порт если есть
+    
     vless_link = (
         f"vless://{vless_uuid}@{address}:{port}?"
         f"type=tcp&"
@@ -257,7 +259,7 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
         f"flow={flow}&"
         f"pbk={reality_pbk}&"
         f"fp=chrome&"
-        f"sni={sni}&"
+        f"sni={clean_sni}&"  # ⚠️ ИСПОЛЬЗУЕМ clean_sni
         f"sid={short_id}#"
         f"VAC-VPN-{user_id}"
     )
@@ -270,7 +272,7 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
         "port": port,
         "security": "reality",
         "reality_pbk": reality_pbk,
-        "sni": sni,
+        "sni": clean_sni,  # ⚠️ ИСПОЛЬЗУЕМ clean_sni
         "short_id": short_id,
         "flow": flow,
         "type": "tcp",
