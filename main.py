@@ -27,17 +27,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ - ПРАВИЛЬНЫЕ НАСТРОЙКИ REALITY
-# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ - ОБНОВИ PUBLIC KEY
 VLESS_SERVERS = [
     {
         "name": "🇷🇺 Москва #1",
         "address": "45.134.13.189",
         "port": 8443,
-        "sni": "www.ign.com",
-        "reality_pbk": "Meq6E7CArCvaupeG8uH2eoPm_7JEmS3Y0XJFAMyRP1Y",  # ⚠️ НОВЫЙ PUBLIC KEY
+        "sni": "www.google.com",  # ⚠️ ИЗМЕНИ НА google.com
+        "reality_pbk": "Meq6E7CArCvaupeG8uH2eoPm_7JEmS3Y0XJFAMyRP1Y",
         "short_id": "2bd6a8283e",
-        "flow": "",  # Пустая строка вместо xtls-rprx-vision
+        "flow": "",
         "security": "reality"
     }
 ]
