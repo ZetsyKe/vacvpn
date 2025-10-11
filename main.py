@@ -345,9 +345,7 @@ def process_subscription_days(user_id: str):
                     
                     if new_days == 0:
                         update_data['has_subscription'] = False
-                        # Удаляем пользователя из Xray при истечении подписки
-                        email = f"user_{user_id}@vacvpn.com"
-                        asyncio.create_task(xray_manager.remove_user(email))
+                        
                     
                     db.collection('users').document(user_id).update(update_data)
                     logger.info(f"✅ Subscription days processed for user {user_id}: {subscription_days} -> {new_days} (-{days_passed} days)")
@@ -966,10 +964,6 @@ async def admin_reset_user(user_id: str):
             'referred_by': firestore.DELETE_FIELD,
             'updated_at': firestore.SERVER_TIMESTAMP
         })
-        
-        # Удаляем пользователя из Xray
-        email = f"user_{user_id}@vacvpn.com"
-        asyncio.create_task(xray_manager.remove_user(email))
         
         referrals_ref = db.collection('referrals').where('referrer_id', '==', user_id)
         referrals = referrals_ref.stream()
