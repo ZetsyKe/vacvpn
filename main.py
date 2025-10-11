@@ -28,74 +28,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-        
-    async def add_user(self, email: str, uuid_str: str = None) -> bool:
-        """Добавляет пользователя через скрипт"""
-        try:
-            logger.info(f"🔄 Adding user via script: {email}")
-            
-            # Вызываем скрипт добавления пользователя
-            result = subprocess.run(
-                [self.script_path, email],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            if result.returncode == 0:
-                logger.info(f"✅ User {email} successfully added via script")
-                return True
-            else:
-                logger.error(f"❌ Script failed: {result.stderr}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"❌ Error adding user via script: {e}")
-            return False
-    
-    async def remove_user(self, email: str) -> bool:
-        """Удаляет пользователя из конфига"""
-        try:
-            logger.info(f"🔄 Removing user from config: {email}")
-            
-            config_path = "/usr/local/etc/xray/config.json"
-            
-            # Читаем конфиг
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            
-            # Удаляем пользователя
-            for inbound in config['inbounds']:
-                if inbound.get('tag') == 'inbound-1':
-                    original_count = len(inbound['settings']['clients'])
-                    inbound['settings']['clients'] = [
-                        client for client in inbound['settings']['clients'] 
-                        if client.get('email') != email
-                    ]
-                    new_count = len(inbound['settings']['clients'])
-                    
-                    if new_count < original_count:
-                        logger.info(f"✅ Removed user {email} from config")
-                    break
-            
-            # Сохраняем конфиг
-            with open(config_path, 'w') as f:
-                json.dump(config, f, indent=2)
-            
-            # Перезапускаем Xray
-            subprocess.run(["systemctl", "restart", "xray"], check=True, timeout=30)
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Error removing user: {e}")
-            return False
-
-# Инициализация Xray менеджера
-xray_manager = XrayManager()
-
 # КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ
 # Конфигурация вашего сервера
 VLESS_SERVERS = [
@@ -245,7 +177,7 @@ def generate_user_uuid():
 
 # Функция активации подписки с Xray интеграцией
 async def update_subscription_days(user_id: str, additional_days: int):
-    """Обновляет количество дней подписки и добавляет пользователя в Xray"""
+    """Обновляет количество дней подписки и генерирует UUID"""
     if not db: 
         logger.error("❌ Database not connected")
         return False
@@ -268,20 +200,12 @@ async def update_subscription_days(user_id: str, additional_days: int):
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
             
-            # Генерируем уникальный UUID для пользователя и добавляем в Xray
+            # Генерируем уникальный UUID для пользователя
             if has_subscription and not user_data.get('vless_uuid'):
                 user_uuid = generate_user_uuid()
                 update_data['vless_uuid'] = user_uuid
                 update_data['subscription_start'] = datetime.now().isoformat()
                 logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
-                
-                # Добавляем пользователя в Xray через наш скрипт
-                email = f"user_{user_id}@vacvpn.com"
-                success = await xray_manager.add_user(email, user_uuid)
-                if not success:
-                    logger.error(f"❌ Failed to add user {user_id} to Xray")
-                    # Продолжаем работу даже если Xray не доступен
-                    logger.info("⚠️ Continuing without Xray integration")
             
             user_ref.update(update_data)
             logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
@@ -292,7 +216,6 @@ async def update_subscription_days(user_id: str, additional_days: int):
     except Exception as e:
         logger.error(f"❌ Error updating subscription days: {e}")
         return False
-
 # Функция для деактивации пользователя
 async def deactivate_user_subscription(user_id: str):
     """Деактивирует подписку пользователя и удаляет из Xray"""
