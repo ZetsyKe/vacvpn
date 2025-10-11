@@ -13,6 +13,21 @@ import json
 import urllib.parse
 import asyncio
 import subprocess
+import subprocess
+import threading
+
+def start_xray():
+    """Запускает Xray в отдельном процессе"""
+    try:
+        subprocess.run([
+            "/usr/local/bin/xray", "run", "-config", "/usr/local/etc/xray/config.json"
+        ])
+    except Exception as e:
+        print(f"Xray error: {e}")
+
+# Запускаем Xray в фоне при старте приложения
+xray_thread = threading.Thread(target=start_xray, daemon=True)
+xray_thread.start()
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
