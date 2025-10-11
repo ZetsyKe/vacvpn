@@ -28,15 +28,16 @@ app.add_middleware(
 )
 
 # КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ - ПРАВИЛЬНЫЕ НАСТРОЙКИ REALITY
+# КОНФИГУРАЦИЯ VLESS СЕРВЕРОВ - ДОЛЖНА СООТВЕТСТВОВАТЬ СЕРВЕРУ
 VLESS_SERVERS = [
     {
         "name": "🇷🇺 Москва #1",
-        "address": "45.134.13.189",  # Ваш IP сервера
-        "port": 8443,  # Правильный порт Reality
-        "sni": "www.google.com",
-        "uuid": "3148c2b6-1600-4942-aa3e-523bf5f58c89",  # Общий UUID из вашего Xray
-        "reality_pbk": "sDwKcWtG67OSTE48iq_1XysyHtimL7jckacPZSNadlE",  # Public Key из privateKey
-        "short_id": "2bd6a8283e",
+        "address": "45.134.13.189",
+        "port": 8443,
+        "sni": "www.ign.com",  # ✅ СОВПАДАЕТ С dest НА СЕРВЕРЕ
+        # УБЕРИ UUID ОТСЮДА - он будет генерироваться для каждого пользователя
+        "reality_pbk": "KtGa9MWkCNvp3FC-zpNN9pxyIl3yQau2ewGB2h992Uk",  # ✅ ПРАВИЛЬНЫЙ Public key
+        "short_id": "2bd6a8283e",  # ✅ ПРАВИЛЬНЫЙ
         "flow": "xtls-rprx-vision",
         "security": "reality"
     }
