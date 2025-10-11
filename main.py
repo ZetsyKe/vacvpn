@@ -191,6 +191,103 @@ def get_current_uuids() -> List[str]:
         logger.error(f"❌ Ошибка чтения Xray конфига: {e}")
         return []
 
+def check_user_in_xray(user_uuid: str):
+    """Проверяет есть ли пользователь в Xray конфиге"""
+    try:
+        with open(XRAY_CONFIG_PATH, 'r') as f:
+            config = json.load(f)
+        
+        clients = config['inbounds'][0]['settings']['clients']
+        existing_uuids = [client['id'] for client in clients]
+        
+        return user_uuid in existing_uuids
+    except Exception as e:
+        logger.error(f"❌ Ошибка проверки пользователя в Xray: {e}")
+        return False
+
+def migrate_existing_users_to_xray():
+    """Добавляет всех существующих пользователей с UUID в Xray конфиг"""
+    try:
+        if not db:
+            logger.error("❌ Database not connected")
+            return {"success": 0, "errors": 1, "skipped": 0}
+        
+        # Получаем всех пользователей с UUID
+        users_ref = db.collection('users').stream()
+        
+        migrated_count = 0
+        skipped_count = 0
+        error_count = 0
+        
+        for user_doc in users_ref:
+            user_data = user_doc.to_dict()
+            user_id = user_data.get('user_id')
+            user_uuid = user_data.get('vless_uuid')
+            
+            if user_uuid:
+                # Добавляем UUID в Xray конфиг
+                success = add_user_to_xray(user_uuid)
+                if success:
+                    migrated_count += 1
+                    logger.info(f"✅ Мигрирован пользователь {user_id} с UUID {user_uuid}")
+                else:
+                    error_count += 1
+                    logger.error(f"❌ Ошибка миграции пользователя {user_id}")
+            else:
+                skipped_count += 1
+                logger.info(f"⏭️ Пропущен пользователь {user_id} (нет UUID)")
+        
+        logger.info(f"🎉 Миграция завершена! Успешно: {migrated_count}, Ошибки: {error_count}, Пропущено: {skipped_count}")
+        return {
+            "success": migrated_count,
+            "errors": error_count,
+            "skipped": skipped_count
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка миграции: {e}")
+        return {"success": 0, "errors": 1, "skipped": 0}
+
+def fix_missing_users():
+    """Добавляет пользователей которые есть в базе но нет в Xray"""
+    try:
+        if not db:
+            logger.error("❌ Database not connected")
+            return {"fixed": 0, "already_exists": 0}
+        
+        users_ref = db.collection('users').stream()
+        
+        fixed_count = 0
+        already_exists_count = 0
+        
+        for user_doc in users_ref:
+            user_data = user_doc.to_dict()
+            user_id = user_data.get('user_id')
+            user_uuid = user_data.get('vless_uuid')
+            
+            if user_uuid:
+                # Проверяем есть ли пользователь в Xray
+                if not check_user_in_xray(user_uuid):
+                    # Добавляем отсутствующего пользователя
+                    success = add_user_to_xray(user_uuid)
+                    if success:
+                        fixed_count += 1
+                        logger.info(f"✅ Добавлен отсутствующий пользователь {user_id}")
+                    else:
+                        logger.error(f"❌ Ошибка добавления пользователя {user_id}")
+                else:
+                    already_exists_count += 1
+        
+        logger.info(f"🔧 Исправлено пользователей: {fixed_count}, Уже были в Xray: {already_exists_count}")
+        return {
+            "fixed": fixed_count,
+            "already_exists": already_exists_count
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка исправления пользователей: {e}")
+        return {"fixed": 0, "already_exists": 0}
+
 # Функции работы с Firebase
 def get_user(user_id: str):
     if not db: 
@@ -940,6 +1037,13 @@ async def get_vless_config(user_id: str):
         if not user.get('has_subscription', False):
             return {"error": "No active subscription"}
         
+        # ⚠️ ПРОВЕРЯЕМ ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ В XRAY
+        if not check_user_in_xray(vless_uuid):
+            logger.warning(f"⚠️ Пользователь {user_id} есть в базе но нет в Xray. Добавляем...")
+            success = add_user_to_xray(vless_uuid)
+            if not success:
+                return {"error": "User not found in Xray configuration. Please contact administrator."}
+        
         configs = []
         for server in VLESS_SERVERS:
             config = create_vless_config(user_id, vless_uuid, server)
@@ -974,6 +1078,109 @@ async def admin_add_uuid_to_xray(uuid: str):
     """Добавить UUID в Xray конфиг (для админа)"""
     success = add_user_to_xray(uuid)
     return {"success": success, "uuid": uuid}
+
+@app.post("/admin/migrate-users-to-xray")
+async def migrate_users_to_xray():
+    """Запустить миграцию всех пользователей в Xray"""
+    result = migrate_existing_users_to_xray()
+    return {
+        "success": True, 
+        "message": "Миграция завершена",
+        "result": result
+    }
+
+@app.post("/admin/fix-missing-users")
+async def fix_missing_users_endpoint():
+    """Добавить пользователей которые есть в базе но нет в Xray"""
+    result = fix_missing_users()
+    return {
+        "success": True, 
+        "message": "Проверка и исправление завершены",
+        "result": result
+    }
+
+@app.get("/admin/check-migration-status")
+async def check_migration_status():
+    """Проверить статус миграции"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        # Получаем статистику из базы
+        users_ref = db.collection('users').stream()
+        
+        total_users = 0
+        users_with_uuid = 0
+        users_with_subscription = 0
+        
+        for user_doc in users_ref:
+            user_data = user_doc.to_dict()
+            total_users += 1
+            
+            if user_data.get('vless_uuid'):
+                users_with_uuid += 1
+            
+            if user_data.get('has_subscription'):
+                users_with_subscription += 1
+        
+        # Получаем статистику из Xray
+        with open(XRAY_CONFIG_PATH, 'r') as f:
+            xray_config = json.load(f)
+        
+        xray_users = len(xray_config['inbounds'][0]['settings']['clients'])
+        
+        return {
+            "database": {
+                "total_users": total_users,
+                "users_with_uuid": users_with_uuid,
+                "users_with_subscription": users_with_subscription
+            },
+            "xray": {
+                "total_users": xray_users
+            },
+            "missing_users": users_with_uuid - xray_users,
+            "migration_complete": users_with_uuid == xray_users
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/admin/add-single-user-to-xray")
+async def add_single_user_to_xray(user_id: str):
+    """Добавить конкретного пользователя в Xray"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        user = get_user(user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        user_uuid = user.get('vless_uuid')
+        if not user_uuid:
+            return {"error": "User doesn't have UUID"}
+        
+        # Проверяем есть ли уже в Xray
+        if check_user_in_xray(user_uuid):
+            return {
+                "success": True,
+                "message": f"Пользователь {user_id} уже есть в Xray",
+                "user_uuid": user_uuid
+            }
+        
+        # Добавляем в Xray
+        success = add_user_to_xray(user_uuid)
+        if success:
+            return {
+                "success": True,
+                "message": f"Пользователь {user_id} добавлен в Xray",
+                "user_uuid": user_uuid
+            }
+        else:
+            return {"error": f"Не удалось добавить пользователя {user_id} в Xray"}
+        
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.post("/admin/add-balance")
 async def admin_add_balance(user_id: str, amount: float):
