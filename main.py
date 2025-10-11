@@ -34,7 +34,7 @@ VLESS_SERVERS = [
         "port": 8443,
         "sni": "www.cloudflare.com",  # ⚠️ ИЗМЕНИ НА google.com
         "reality_pbk": "Meq6E7CArCvaupeG8uH2eoPm_7JEmS3Y0XJFAMyRP1Y",
-        "short_id": "2bd6a8283e",
+        "short_id": "2bd6a828",
         "flow": "",
         "security": "reality"
     }
