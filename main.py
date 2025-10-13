@@ -12,6 +12,7 @@ import re
 import json
 import urllib.parse
 import subprocess
+import time
 from typing import List
 
 # Настройка логирования
@@ -183,7 +184,7 @@ def add_user_to_xray(user_uuid: str) -> bool:
         new_client = {
             "id": user_uuid,
             "flow": "",
-            "email": f"user_{user_uuid[:8]}@vacvpn.com"  # Добавляем email для удобства
+            "email": f"user_{user_uuid[:8]}@vacvpn.com"
         }
         clients.append(new_client)
         
@@ -389,6 +390,7 @@ def generate_user_uuid():
     return str(uuid.uuid4())
 
 def update_subscription_days(user_id: str, additional_days: int) -> bool:
+    """Обновляет дни подписки и ГАРАНТИРОВАННО создает UUID и добавляет в Xray"""
     if not db: 
         logger.error("❌ Database not connected")
         return False
@@ -425,8 +427,7 @@ def update_subscription_days(user_id: str, additional_days: int) -> bool:
                 xray_success = add_user_to_xray(user_uuid)
                 if not xray_success:
                     logger.error(f"❌ Failed to add user {user_id} to Xray config")
-                    # Можно решить, продолжать ли без добавления в Xray
-                    # return False  # Если хотите прервать операцию при ошибке Xray
+                    # Продолжаем даже если не удалось добавить в Xray, но логируем ошибку
             
             user_ref.update(update_data)
             logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
@@ -468,51 +469,57 @@ def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
 
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
     """Создает VLESS Reality конфигурацию с правильными настройками"""
-    address = server_config["address"]
-    port = server_config["port"]
-    reality_pbk = server_config["reality_pbk"]
-    sni = server_config["sni"]
-    short_id = server_config["short_id"]
-    flow = server_config["flow"]
-    
-    # Убираем порт из SNI если есть
-    clean_sni = sni.replace(":443", "")
-    
-    vless_link = (
-        f"vless://{vless_uuid}@{address}:{port}?"
-        f"type=tcp&"
-        f"security=reality&"
-        f"flow={flow}&"
-        f"pbk={reality_pbk}&"
-        f"fp=chrome&"
-        f"sni={clean_sni}&"
-        f"sid={short_id}#"
-        f"VAC-VPN-{user_id}"
-    )
-    
-    config = {
-        "name": server_config["name"],
-        "protocol": "vless",
-        "uuid": vless_uuid,
-        "server": address,
-        "port": port,
-        "security": "reality",
-        "reality_pbk": reality_pbk,
-        "sni": clean_sni,
-        "short_id": short_id,
-        "flow": flow,
-        "type": "tcp",
-        "fingerprint": "chrome",
-        "remark": f"VAC VPN Reality - {user_id}"
-    }
-    
-    encoded_vless_link = urllib.parse.quote(vless_link)
-    
-    return {
-        "vless_link": vless_link,
-        "config": config,
-        "qr_code": f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={encoded_vless_link}"
-    }
+    try:
+        address = server_config["address"]
+        port = server_config["port"]
+        reality_pbk = server_config["reality_pbk"]
+        sni = server_config["sni"]
+        short_id = server_config["short_id"]
+        flow = server_config["flow"]
+        security = server_config.get("security", "reality")
+        
+        # Убираем порт из SNI если есть
+        clean_sni = sni.split(":")[0] if ":" in sni else sni
+        
+        # Формируем VLESS ссылку
+        vless_link = (
+            f"vless://{vless_uuid}@{address}:{port}?"
+            f"type=tcp&"
+            f"security={security}&"
+            f"flow={flow}&"
+            f"pbk={reality_pbk}&"
+            f"fp=chrome&"
+            f"sni={clean_sni}&"
+            f"sid={short_id}#"
+            f"VAC-VPN-{user_id}"
+        )
+        
+        config = {
+            "name": server_config["name"],
+            "protocol": "vless",
+            "uuid": vless_uuid,
+            "server": address,
+            "port": port,
+            "security": security,
+            "reality_pbk": reality_pbk,
+            "sni": clean_sni,
+            "short_id": short_id,
+            "flow": flow,
+            "type": "tcp",
+            "fingerprint": "chrome",
+            "remark": f"VAC VPN Reality - {user_id}"
+        }
+        
+        encoded_vless_link = urllib.parse.quote(vless_link)
+        
+        return {
+            "vless_link": vless_link,
+            "config": config,
+            "qr_code": f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={encoded_vless_link}"
+        }
+    except Exception as e:
+        logger.error(f"❌ Error creating VLESS config: {e}")
+        return None
 
 def process_subscription_days(user_id: str):
     if not db:
@@ -654,6 +661,14 @@ def extract_referrer_id(start_param: str) -> str:
     
     logger.info(f"⚠️ Using raw start_param as referrer_id: {start_param}")
     return start_param
+
+# Автоматическая миграция при запуске
+@app.on_event("startup")
+async def startup_migration():
+    """Автоматически добавляем всех пользователей в Xray при запуске сервера"""
+    logger.info("🚀 Starting automatic migration of existing users to Xray...")
+    result = migrate_existing_users_to_xray()
+    logger.info(f"🎉 Automatic migration completed: {result}")
 
 # Эндпоинты API
 @app.get("/")
@@ -1102,17 +1117,20 @@ async def get_vless_config(user_id: str):
         if not user.get('has_subscription', False):
             return {"error": "No active subscription"}
         
-        # ⚠️ ПРОВЕРЯЕМ ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ В Xray
+        # ⚠️ ПРОВЕРЯЕМ ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ В Xray И ЕСЛИ НЕТ - ДОБАВЛЯЕМ
         if not check_user_in_xray(vless_uuid):
-            logger.warning(f"⚠️ Пользователь {user_id} есть в базе но нет в Xray. Добавляем...")
+            logger.warning(f"⚠️ User {user_id} exists in DB but not in Xray. Adding...")
             success = add_user_to_xray(vless_uuid)
             if not success:
                 return {"error": "User not found in Xray configuration. Please contact administrator."}
+            # Даем время Xray перезагрузиться
+            time.sleep(2)
         
         configs = []
         for server in VLESS_SERVERS:
             config = create_vless_config(user_id, vless_uuid, server)
-            configs.append(config)
+            if config:
+                configs.append(config)
         
         return {
             "success": True,
@@ -1298,6 +1316,16 @@ async def get_xray_users():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/admin/xray-config")
+async def get_xray_config():
+    """Показать текущий Xray конфиг"""
+    try:
+        with open(XRAY_CONFIG_PATH, 'r') as f:
+            config = json.load(f)
+        return {"config": config}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.post("/admin/add-uuid-to-xray")
 async def admin_add_uuid_to_xray(uuid: str):
     """Добавить UUID в Xray конфиг (для админа)"""
@@ -1452,8 +1480,106 @@ async def admin_reset_user(user_id: str):
         logger.error(f"❌ Error resetting user: {e}")
         return {"error": str(e)}
 
+@app.get("/debug-user/{user_id}")
+async def debug_user(user_id: str):
+    """Отладочная информация о пользователе"""
+    user = get_user(user_id)
+    if not user:
+        return {"error": "User not found"}
+    
+    return {
+        "user_exists": True,
+        "user_id": user_id,
+        "has_subscription": user.get('has_subscription'),
+        "subscription_days": user.get('subscription_days'),
+        "vless_uuid": user.get('vless_uuid'),
+        "in_xray": check_user_in_xray(user.get('vless_uuid')) if user.get('vless_uuid') else False,
+        "all_xray_users": len(get_current_uuids())
+    }
+
+@app.get("/test-vless-config")
+async def test_vless_config(user_id: str):
+    """Тестовый эндпоинт для генерации VLESS конфига"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+            
+        user = get_user(user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        vless_uuid = user.get('vless_uuid')
+        if not vless_uuid:
+            return {"error": "User doesn't have UUID"}
+        
+        # Проверяем наличие в Xray
+        in_xray = check_user_in_xray(vless_uuid)
+        
+        # Генерируем тестовую конфигурацию
+        test_configs = []
+        for server in VLESS_SERVERS:
+            config = create_vless_config(user_id, vless_uuid, server)
+            if config:
+                test_configs.append(config)
+        
+        return {
+            "user_id": user_id,
+            "vless_uuid": vless_uuid,
+            "in_xray_config": in_xray,
+            "has_subscription": user.get('has_subscription', False),
+            "subscription_days": user.get('subscription_days', 0),
+            "test_configs": test_configs,
+            "server_count": len(VLESS_SERVERS)
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/fix-user-config")
+async def fix_user_config(user_id: str):
+    """Принудительно исправить конфиг пользователя"""
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+        
+        user = get_user(user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        # Шаг 1: Убедимся, что есть UUID
+        vless_uuid = user.get('vless_uuid')
+        if not vless_uuid:
+            vless_uuid = generate_user_uuid()
+            db.collection('users').document(user_id).update({
+                'vless_uuid': vless_uuid,
+                'updated_at': firestore.SERVER_TIMESTAMP
+            })
+            logger.info(f"🔑 Generated new UUID for user {user_id}: {vless_uuid}")
+        
+        # Шаг 2: Добавляем в Xray
+        xray_success = add_user_to_xray(vless_uuid)
+        
+        # Шаг 3: Генерируем конфиги
+        configs = []
+        for server in VLESS_SERVERS:
+            config = create_vless_config(user_id, vless_uuid, server)
+            if config:
+                configs.append(config)
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "vless_uuid": vless_uuid,
+            "added_to_xray": xray_success,
+            "configs": configs,
+            "message": "User configuration fixed"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error fixing user config: {e}")
+        return {"error": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
-    import time
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
