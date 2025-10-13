@@ -127,30 +127,74 @@ class BuyWithBalanceRequest(BaseModel):
     tariff_price: float
     tariff_days: int
 
+# Вспомогательные функции для Xray
+def restart_xray_alternative() -> bool:
+    """Альтернативный способ перезапуска Xray"""
+    try:
+        # Пробуем перезагрузить через kill и запуск
+        subprocess.run(["pkill", "-f", "xray"], capture_output=True)
+        time.sleep(2)
+        result = subprocess.run(["/usr/local/bin/xray", "-config", XRAY_CONFIG_PATH], 
+                              capture_output=True, text=True, start_new_session=True)
+        if result.returncode == 0:
+            logger.info("✅ Xray restarted using alternative method")
+            return True
+        else:
+            logger.error(f"❌ Alternative restart failed: {result.stderr}")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Alternative restart failed: {e}")
+        return False
+
 # Функции работы с Xray конфигом
-def add_user_to_xray(user_uuid: str):
+def add_user_to_xray(user_uuid: str) -> bool:
     """Добавляет пользователя в Xray конфиг и перезапускает сервис"""
     try:
+        # Проверяем валидность UUID
+        if not user_uuid or len(user_uuid) != 36:
+            logger.error(f"❌ Invalid UUID format: {user_uuid}")
+            return False
+            
         # Читаем текущий конфиг
         with open(XRAY_CONFIG_PATH, 'r') as f:
             config = json.load(f)
         
-        # Добавляем пользователя в массив clients
-        clients = config['inbounds'][0]['settings']['clients']
+        # Находим inbound с VLESS Reality (обычно первый)
+        inbound = None
+        for inbound_candidate in config.get('inbounds', []):
+            if (inbound_candidate.get('protocol') == 'vless' and 
+                inbound_candidate.get('settings', {}).get('clients') is not None):
+                inbound = inbound_candidate
+                break
+        
+        if not inbound:
+            logger.error("❌ VLESS inbound not found in Xray config")
+            return False
+        
+        clients = inbound['settings']['clients']
         
         # Проверяем нет ли уже такого UUID
         existing_uuids = [client['id'] for client in clients]
-        if user_uuid not in existing_uuids:
-            clients.append({
-                "id": user_uuid,
-                "flow": ""
-            })
+        if user_uuid in existing_uuids:
+            logger.info(f"⚠️ UUID {user_uuid} уже существует в конфиге")
+            return True
             
-            # Сохраняем обновленный конфиг
-            with open(XRAY_CONFIG_PATH, 'w') as f:
-                json.dump(config, f, indent=2)
-            
-            # Перезапускаем Xray
+        # Добавляем пользователя
+        new_client = {
+            "id": user_uuid,
+            "flow": "",
+            "email": f"user_{user_uuid[:8]}@vacvpn.com"  # Добавляем email для удобства
+        }
+        clients.append(new_client)
+        
+        # Сохраняем обновленный конфиг с правильным форматированием
+        with open(XRAY_CONFIG_PATH, 'w') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        
+        logger.info(f"✅ UUID {user_uuid} добавлен в Xray конфиг. Всего пользователей: {len(clients)}")
+        
+        # Перезапускаем Xray с таймаутом
+        try:
             result = subprocess.run(
                 ["systemctl", "restart", "xray"], 
                 capture_output=True, 
@@ -159,14 +203,19 @@ def add_user_to_xray(user_uuid: str):
             )
             
             if result.returncode == 0:
-                logger.info(f"✅ UUID {user_uuid} добавлен в Xray конфиг")
+                logger.info("✅ Xray service restarted successfully")
                 return True
             else:
                 logger.error(f"❌ Ошибка перезапуска Xray: {result.stderr}")
-                return False
-        else:
-            logger.info(f"⚠️ UUID {user_uuid} уже существует в конфиге")
-            return True
+                # Пытаемся перезагрузить альтернативным способом
+                return restart_xray_alternative()
+                
+        except subprocess.TimeoutExpired:
+            logger.error("❌ Timeout restarting Xray service")
+            return restart_xray_alternative()
+        except Exception as e:
+            logger.error(f"❌ Error restarting Xray: {e}")
+            return restart_xray_alternative()
             
     except Exception as e:
         logger.error(f"❌ Ошибка обновления Xray конфига: {e}")
@@ -177,8 +226,15 @@ def get_current_uuids() -> List[str]:
     try:
         with open(XRAY_CONFIG_PATH, 'r') as f:
             config = json.load(f)
-        clients = config['inbounds'][0]['settings']['clients']
-        return [client['id'] for client in clients]
+        
+        # Находим VLESS inbound
+        for inbound in config.get('inbounds', []):
+            if (inbound.get('protocol') == 'vless' and 
+                inbound.get('settings', {}).get('clients') is not None):
+                clients = inbound['settings']['clients']
+                return [client['id'] for client in clients]
+        
+        return []
     except Exception as e:
         logger.error(f"❌ Ошибка чтения Xray конфига: {e}")
         return []
@@ -189,10 +245,15 @@ def check_user_in_xray(user_uuid: str):
         with open(XRAY_CONFIG_PATH, 'r') as f:
             config = json.load(f)
         
-        clients = config['inbounds'][0]['settings']['clients']
-        existing_uuids = [client['id'] for client in clients]
+        # Находим VLESS inbound
+        for inbound in config.get('inbounds', []):
+            if (inbound.get('protocol') == 'vless' and 
+                inbound.get('settings', {}).get('clients') is not None):
+                clients = inbound['settings']['clients']
+                existing_uuids = [client['id'] for client in clients]
+                return user_uuid in existing_uuids
         
-        return user_uuid in existing_uuids
+        return False
     except Exception as e:
         logger.error(f"❌ Ошибка проверки пользователя в Xray: {e}")
         return False
@@ -217,14 +278,19 @@ def migrate_existing_users_to_xray():
             user_uuid = user_data.get('vless_uuid')
             
             if user_uuid:
-                # Добавляем UUID в Xray конфиг
-                success = add_user_to_xray(user_uuid)
-                if success:
-                    migrated_count += 1
-                    logger.info(f"✅ Мигрирован пользователь {user_id} с UUID {user_uuid}")
+                # Проверяем есть ли уже в Xray
+                if not check_user_in_xray(user_uuid):
+                    # Добавляем UUID в Xray конфиг
+                    success = add_user_to_xray(user_uuid)
+                    if success:
+                        migrated_count += 1
+                        logger.info(f"✅ Мигрирован пользователь {user_id} с UUID {user_uuid}")
+                    else:
+                        error_count += 1
+                        logger.error(f"❌ Ошибка миграции пользователя {user_id}")
                 else:
-                    error_count += 1
-                    logger.error(f"❌ Ошибка миграции пользователя {user_id}")
+                    skipped_count += 1
+                    logger.info(f"⏭️ Пользователь {user_id} уже в Xray")
             else:
                 skipped_count += 1
                 logger.info(f"⏭️ Пропущен пользователь {user_id} (нет UUID)")
@@ -322,7 +388,7 @@ def update_user_balance(user_id: str, amount: float):
 def generate_user_uuid():
     return str(uuid.uuid4())
 
-def update_subscription_days(user_id: str, additional_days: int):
+def update_subscription_days(user_id: str, additional_days: int) -> bool:
     if not db: 
         logger.error("❌ Database not connected")
         return False
@@ -345,15 +411,22 @@ def update_subscription_days(user_id: str, additional_days: int):
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
             
-            # ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ UUID ДЛЯ ПОЛЬЗОВАТЕЛЯ (даже если уже есть подписка)
-            if has_subscription and (not user_data.get('vless_uuid') or user_data.get('vless_uuid') == ''):
-                user_uuid = generate_user_uuid()
-                update_data['vless_uuid'] = user_uuid
-                update_data['subscription_start'] = datetime.now().isoformat()
-                logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
+            # ВАЖНО: Всегда генерируем UUID при активации подписки
+            if has_subscription and additional_days > 0:
+                user_uuid = user_data.get('vless_uuid')
+                if not user_uuid:
+                    user_uuid = generate_user_uuid()
+                    update_data['vless_uuid'] = user_uuid
+                    update_data['subscription_start'] = datetime.now().isoformat()
+                    logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
                 
-                # ⚠️ ДОБАВЛЯЕМ UUID В XRAY КОНФИГ
-                add_user_to_xray(user_uuid)
+                # ВАЖНО: Всегда добавляем UUID в Xray при активации подписки
+                logger.info(f"🔄 Adding UUID {user_uuid} to Xray for user {user_id}")
+                xray_success = add_user_to_xray(user_uuid)
+                if not xray_success:
+                    logger.error(f"❌ Failed to add user {user_id} to Xray config")
+                    # Можно решить, продолжать ли без добавления в Xray
+                    # return False  # Если хотите прервать операцию при ошибке Xray
             
             user_ref.update(update_data)
             logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
@@ -1029,7 +1102,7 @@ async def get_vless_config(user_id: str):
         if not user.get('has_subscription', False):
             return {"error": "No active subscription"}
         
-        # ⚠️ ПРОВЕРЯЕМ ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ В XRAY
+        # ⚠️ ПРОВЕРЯЕМ ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ В Xray
         if not check_user_in_xray(vless_uuid):
             logger.warning(f"⚠️ Пользователь {user_id} есть в базе но нет в Xray. Добавляем...")
             success = add_user_to_xray(vless_uuid)
@@ -1052,7 +1125,32 @@ async def get_vless_config(user_id: str):
         logger.error(f"❌ Error getting VLESS config: {e}")
         return {"error": f"Error getting VLESS config: {str(e)}"}
 
-# Новые эндпоинты для генерации UUID
+# Новые эндпоинты для управления Xray
+@app.post("/force-add-to-xray")
+async def force_add_to_xray(user_id: str):
+    """Принудительно добавить пользователя в Xray"""
+    try:
+        user = get_user(user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        user_uuid = user.get('vless_uuid')
+        if not user_uuid:
+            return {"error": "User doesn't have UUID"}
+        
+        success = add_user_to_xray(user_uuid)
+        if success:
+            return {
+                "success": True, 
+                "message": f"User {user_id} added to Xray",
+                "uuid": user_uuid
+            }
+        else:
+            return {"error": "Failed to add user to Xray"}
+            
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.post("/admin/generate-uuid-for-user")
 async def generate_uuid_for_user(user_id: str):
     """Принудительно сгенерировать UUID для пользователя и добавить в Xray"""
@@ -1187,9 +1285,16 @@ async def get_xray_users():
     try:
         with open(XRAY_CONFIG_PATH, 'r') as f:
             config = json.load(f)
-        clients = config['inbounds'][0]['settings']['clients']
-        uuids = [client['id'] for client in clients]
-        return {"users": uuids, "count": len(uuids)}
+        
+        # Находим VLESS inbound
+        for inbound in config.get('inbounds', []):
+            if (inbound.get('protocol') == 'vless' and 
+                inbound.get('settings', {}).get('clients') is not None):
+                clients = inbound['settings']['clients']
+                uuids = [client['id'] for client in clients]
+                return {"users": uuids, "count": len(uuids)}
+        
+        return {"users": [], "count": 0}
     except Exception as e:
         return {"error": str(e)}
 
@@ -1244,10 +1349,7 @@ async def check_migration_status():
                 users_with_subscription += 1
         
         # Получаем статистику из Xray
-        with open(XRAY_CONFIG_PATH, 'r') as f:
-            xray_config = json.load(f)
-        
-        xray_users = len(xray_config['inbounds'][0]['settings']['clients'])
+        xray_users = len(get_current_uuids())
         
         return {
             "database": {
@@ -1352,5 +1454,6 @@ async def admin_reset_user(user_id: str):
 
 if __name__ == "__main__":
     import uvicorn
+    import time
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
