@@ -37,7 +37,7 @@ VLESS_SERVERS = [
         "address": "45.134.13.189",
         "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "9fzeqq8tQoPyy3BClEOriCpwp5CGcCrSZ--_PiYNpWs",
+        "reality_pbk": "6G8AmNa3qvxCvsc1ZEPGLmVpD62IFmUK_MZydXi9wH4",
         "short_id": "2489c154",  
         "flow": "",
         "security": "reality"
