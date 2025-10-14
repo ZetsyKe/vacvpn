@@ -29,8 +29,9 @@ app.add_middleware(
 )
 
 # Константы для Xray Manager
-XRAY_MANAGER_URL = "http://localhost:8001"
-XRAY_API_KEY = "vac-vpn-secret-key-2024"  # Должен совпадать с ключом в Xray Manager
+# Для Railway - используем внешний IP твоего VPN сервера на Aeza
+XRAY_MANAGER_URL = os.getenv("XRAY_MANAGER_URL", "http://45.134.13.189:8001")
+XRAY_API_KEY = os.getenv("XRAY_API_KEY", "vac-vpn-secret-key-2024")
 
 VLESS_SERVERS = [
     {
@@ -63,29 +64,31 @@ TARIFFS = {
 REFERRAL_BONUS_REFERRER = 50.0
 REFERRAL_BONUS_REFERRED = 100.0
 
-# Инициализация Firebase
+# Инициализация Firebase для Railway
 try:
     if not firebase_admin._apps:
-        logger.info("🚀 Initializing Firebase from individual environment variables")
+        logger.info("🚀 Initializing Firebase for Railway")
         
-        private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n')
-        
-        if not private_key:
-            raise ValueError("FIREBASE_PRIVATE_KEY environment variable is empty")
-        
+        # Для Railway используем JSON конфиг из переменных окружения
         firebase_config = {
             "type": "service_account",
-            "project_id": os.getenv("FIREBASE_PROJECT_ID", "vacvpn-75yegf"),
-            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID", "8e6469cea94608d13c03d57a60f70ad7269e9421"),
-            "private_key": private_key,
-            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL", "firebase-adminsdk-fbsvc@vacvpn-75yegf.iam.gserviceaccount.com"),
-            "client_id": os.getenv("FIREBASE_CLIENT_ID", "118426875107507915166"),
+            "project_id": os.getenv("FIREBASE_PROJECT_ID"),
+            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
+            "private_key": os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n'),
+            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
+            "client_id": os.getenv("FIREBASE_CLIENT_ID"),
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_X509_CERT_URL", "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40vacvpn-75yegf.iam.gserviceaccount.com"),
+            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_X509_CERT_URL"),
             "universe_domain": "googleapis.com"
         }
+        
+        # Проверяем что все обязательные поля есть
+        required_fields = ["project_id", "private_key", "client_email"]
+        for field in required_fields:
+            if not firebase_config.get(field):
+                raise ValueError(f"Missing required Firebase config field: {field}")
         
         cred = credentials.Certificate(firebase_config)
         firebase_admin.initialize_app(cred)
@@ -323,7 +326,7 @@ def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
         return False
 
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
-    """Создает VLESS Reality конфигурацию с правильными настройками"""
+    """Создает VLESS Reality конфигурацию с правильными настройки"""
     address = server_config["address"]
     port = server_config["port"]
     reality_pbk = server_config["reality_pbk"]
@@ -516,10 +519,11 @@ def extract_referrer_id(start_param: str) -> str:
 async def root():
     xray_users_count = await get_xray_users_count()
     return {
-        "message": "VAC VPN API is running", 
+        "message": "VAC VPN API is running on Railway", 
         "status": "ok", 
         "firebase": "connected" if db else "disconnected",
         "xray_users": xray_users_count,
+        "environment": "production",
         "timestamp": datetime.now().isoformat()
     }
 
@@ -531,7 +535,8 @@ async def health_check():
         "timestamp": datetime.now().isoformat(), 
         "firebase": "connected" if db else "disconnected",
         "xray_users": xray_users_count,
-        "database_connected": db is not None
+        "database_connected": db is not None,
+        "environment": "production"
     }
 
 @app.delete("/clear-referrals/{user_id}")
@@ -1046,73 +1051,6 @@ async def generate_uuid_for_user(user_id: str):
         logger.error(f"❌ Error generating UUID: {e}")
         return {"error": str(e)}
 
-@app.post("/admin/generate-uuids-for-all")
-async def generate_uuids_for_all():
-    """Сгенерировать UUID для всех пользователей с подпиской но без UUID"""
-    try:
-        if not db:
-            return {"error": "Database not connected"}
-        
-        users_ref = db.collection('users').where('has_subscription', '==', True).stream()
-        
-        results = {
-            "generated": 0,
-            "already_have": 0,
-            "errors": 0,
-            "details": []
-        }
-        
-        for user_doc in users_ref:
-            user_data = user_doc.to_dict()
-            user_id = user_data.get('user_id')
-            
-            if not user_data.get('vless_uuid'):
-                # Генерируем UUID
-                user_uuid = generate_user_uuid()
-                user_doc.reference.update({
-                    'vless_uuid': user_uuid,
-                    'updated_at': firestore.SERVER_TIMESTAMP
-                })
-                
-                # Добавляем в Xray
-                success = await add_user_to_xray(user_uuid)
-                if success:
-                    results["generated"] += 1
-                    results["details"].append({
-                        "user_id": user_id,
-                        "uuid": user_uuid,
-                        "status": "generated"
-                    })
-                    logger.info(f"✅ Generated UUID for user {user_id}: {user_uuid}")
-                else:
-                    results["errors"] += 1
-                    results["details"].append({
-                        "user_id": user_id,
-                        "status": "xray_error"
-                    })
-            else:
-                results["already_have"] += 1
-                
-                # Проверяем есть ли в Xray
-                existing_uuid = user_data.get('vless_uuid')
-                if not await check_user_in_xray(existing_uuid):
-                    await add_user_to_xray(existing_uuid)
-                    results["details"].append({
-                        "user_id": user_id,
-                        "uuid": existing_uuid,
-                        "status": "added_to_xray"
-                    })
-        
-        return {
-            "success": True,
-            "message": f"UUID generation completed",
-            "results": results
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ Error generating UUIDs for all: {e}")
-        return {"error": str(e)}
-
 @app.get("/admin/xray-users")
 async def get_xray_users():
     """Показать всех пользователей в Xray конфиге через API"""
@@ -1129,92 +1067,6 @@ async def get_xray_users():
                 return {"users": users, "count": len(users)}
             else:
                 return {"error": f"Failed to get Xray users: {response.status_code}"}
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.post("/admin/add-uuid-to-xray")
-async def admin_add_uuid_to_xray(uuid: str):
-    """Добавить UUID в Xray конфиг (для админа) через API"""
-    success = await add_user_to_xray(uuid)
-    return {"success": success, "uuid": uuid}
-
-@app.get("/admin/check-migration-status")
-async def check_migration_status():
-    """Проверить статус миграции"""
-    try:
-        if not db:
-            return {"error": "Database not connected"}
-        
-        # Получаем статистику из базы
-        users_ref = db.collection('users').stream()
-        
-        total_users = 0
-        users_with_uuid = 0
-        users_with_subscription = 0
-        
-        for user_doc in users_ref:
-            user_data = user_doc.to_dict()
-            total_users += 1
-            
-            if user_data.get('vless_uuid'):
-                users_with_uuid += 1
-            
-            if user_data.get('has_subscription'):
-                users_with_subscription += 1
-        
-        # Получаем статистику из Xray через API
-        xray_users_count = await get_xray_users_count()
-        
-        return {
-            "database": {
-                "total_users": total_users,
-                "users_with_uuid": users_with_uuid,
-                "users_with_subscription": users_with_subscription
-            },
-            "xray": {
-                "total_users": xray_users_count
-            },
-            "missing_users": users_with_uuid - xray_users_count,
-            "migration_complete": users_with_uuid == xray_users_count
-        }
-        
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.post("/admin/add-single-user-to-xray")
-async def add_single_user_to_xray(user_id: str):
-    """Добавить конкретного пользователя в Xray"""
-    try:
-        if not db:
-            return {"error": "Database not connected"}
-        
-        user = get_user(user_id)
-        if not user:
-            return {"error": "User not found"}
-        
-        user_uuid = user.get('vless_uuid')
-        if not user_uuid:
-            return {"error": "User doesn't have UUID"}
-        
-        # Проверяем есть ли уже в Xray
-        if await check_user_in_xray(user_uuid):
-            return {
-                "success": True,
-                "message": f"Пользователь {user_id} уже есть в Xray",
-                "user_uuid": user_uuid
-            }
-        
-        # Добавляем в Xray
-        success = await add_user_to_xray(user_uuid)
-        if success:
-            return {
-                "success": True,
-                "message": f"Пользователь {user_id} добавлен в Xray",
-                "user_uuid": user_uuid
-            }
-        else:
-            return {"error": f"Не удалось добавить пользователя {user_id} в Xray"}
-        
     except Exception as e:
         return {"error": str(e)}
 
