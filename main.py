@@ -18,7 +18,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="VAC VPN API")
-еш
 # CORS
 app.add_middleware(
     CORSMiddleware,
