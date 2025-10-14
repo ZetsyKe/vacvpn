@@ -27,7 +27,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Константы для Xray Manager
 XRAY_MANAGER_URL = os.getenv("XRAY_MANAGER_URL", "http://45.134.13.189:8001")
 XRAY_API_KEY = os.getenv("XRAY_API_KEY", "vac-vpn-secret-key-2024")
 
