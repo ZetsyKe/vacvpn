@@ -13,7 +13,6 @@ import json
 import urllib.parse
 from typing import List, Optional
 
-# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
