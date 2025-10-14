@@ -159,12 +159,12 @@ async def check_user_in_xray(user_uuid: str) -> bool:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{XRAY_MANAGER_URL}/users/{user_uuid}",
-                headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
                 timeout=5.0
             )
             
             if response.status_code == 200:
                 data = response.json()
+                # Новый формат ответа: {"exists": true, "uuid": "..."}
                 return data.get("exists", False)
             return False
             
