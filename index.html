@@ -505,6 +505,9 @@
       border-color: var(--primary);
       background: rgba(176, 203, 31, 0.1);
     }
+    .amount-preset:active {
+      transform: scale(0.95);
+    }
   </style>
 </head>
 <body>
@@ -525,8 +528,6 @@
   </div>
 
   <div class="card">
-    <!-- УБРАН СЧЕТЧИК ПОДПИСКИ НАД БАЛАНСОМ -->
-    
     <div class="balance-info">
       <div>💰 <strong>Баланс:</strong> <span id="userBalance">0</span>₽</div>
       <button class="button button-outline" onclick="showAddBalanceModal()" style="margin: 8px 0 0 0; padding: 8px;">
@@ -832,150 +833,133 @@
     }
 
     async function addBalance() {
-    try {
-        const amountInput = document.getElementById('balanceAmount');
-        const amount = parseFloat(amountInput.value);
-        
-        if (!amount || amount < 10 || amount > 50000) {
-            showError('Введите сумму от 10 до 50,000 рублей');
-            return;
-        }
-
-        const loadingIndicator = document.getElementById('loadingIndicator');
-        const errorMessage = document.getElementById('errorMessage');
-        const successMessage = document.getElementById('successMessage');
-        
-        errorMessage.style.display = 'none';
-        successMessage.style.display = 'none';
-        loadingIndicator.style.display = 'block';
-
-        console.log('💰 Adding balance:', { userId, amount });
-
-        const response = await fetch(`${API_BASE_URL}/add-balance`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                user_id: userId,
-                amount: amount,
-                payment_method: "yookassa"
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        console.log('💰 Add balance result:', result);
-
-        if (result.success) {
-            if (result.payment_url) {
-                // Есть ссылка для оплаты - открываем её
-                currentPaymentId = result.payment_id;
-                paymentUrl = result.payment_url;
-                
-                closeAddBalanceModal();
-                showSuccess('💳 Открываю страницу оплаты...');
-                
-                // Открываем в новом окне/вкладке
-                window.open(paymentUrl, '_blank');
-                
-                // Начинаем проверку статуса платежа
-                startBalancePaymentChecking();
-                
-            } else if (result.balance_added) {
-                // Баланс уже пополнен (например, при тестировании)
-                closeAddBalanceModal();
-                showSuccess(`✅ Баланс пополнен на ${result.balance_added}₽!`);
-                await loadUserData();
-            } else {
-                throw new Error('Не получена платежная ссылка');
-            }
-        } else {
-            throw new Error(result.error || 'Ошибка при создании платежа');
-        }
-
-    } catch (error) {
-        console.error('❌ Add balance error:', error);
-        showError('Ошибка пополнения баланса: ' + error.message);
-    } finally {
-        document.getElementById('loadingIndicator').style.display = 'none';
-    }
-}
-
-// Функция для проверки статуса платежа за пополнение баланса
-async function startBalancePaymentChecking() {
-    if (!currentPaymentId) return;
-    
-    let attempts = 0;
-    const maxAttempts = 60; // 10 минут (10 секунд * 60)
-    
-    const checkInterval = setInterval(async () => {
-        attempts++;
-        
-        if (attempts > maxAttempts) {
-            clearInterval(checkInterval);
-            showError('Время ожидания платежа истекло');
-            return;
-        }
-        
         try {
-            console.log(`🔄 Проверка платежа ${currentPaymentId} (попытка ${attempts})`);
+            const amountInput = document.getElementById('balanceAmount');
+            const amount = parseFloat(amountInput.value);
             
-            const response = await fetch(`${API_BASE_URL}/payment-status?payment_id=${currentPaymentId}&user_id=${userId}`);
+            if (!amount || amount < 10 || amount > 50000) {
+                showError('Введите сумму от 10 до 50,000 рублей');
+                return;
+            }
+
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const errorMessage = document.getElementById('errorMessage');
+            const successMessage = document.getElementById('successMessage');
             
+            errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
+            loadingIndicator.style.display = 'block';
+
+            console.log('💰 Adding balance:', { userId, amount });
+
+            const response = await fetch(`${API_BASE_URL}/add-balance`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    user_id: userId,
+                    amount: amount,
+                    payment_method: "yookassa"
+                })
+            });
+
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            
+
             const result = await response.json();
-            console.log('💰 Payment status result:', result);
-            
+            console.log('💰 Add balance result:', result);
+
             if (result.success) {
-                if (result.status === 'succeeded') {
-                    clearInterval(checkInterval);
+                if (result.payment_url) {
+                    // Есть ссылка для оплаты - открываем её
+                    currentPaymentId = result.payment_id;
+                    paymentUrl = result.payment_url;
                     
-                    if (result.balance_added) {
-                        showSuccess(`✅ Баланс успешно пополнен на ${result.balance_added}₽!`);
-                    } else {
-                        showSuccess('✅ Платеж подтвержден! Баланс пополнен.');
-                    }
+                    closeAddBalanceModal();
+                    showSuccess('💳 Открываю страницу оплаты...');
                     
+                    // Открываем в новом окне/вкладке
+                    window.open(paymentUrl, '_blank');
+                    
+                    // Начинаем проверку статуса платежа
+                    startBalancePaymentChecking();
+                    
+                } else if (result.balance_added) {
+                    // Баланс уже пополнен (например, при тестировании)
+                    closeAddBalanceModal();
+                    showSuccess(`✅ Баланс пополнен на ${result.balance_added}₽!`);
                     await loadUserData();
-                    
-                } else if (result.status === 'canceled' || result.status === 'failed') {
-                    clearInterval(checkInterval);
-                    showError('❌ Платеж отменен или не прошел');
+                } else {
+                    throw new Error('Не получена платежная ссылка');
                 }
-                // Если статус 'pending', продолжаем проверять
             } else {
-                console.warn('⚠️ Payment check warning:', result.error);
+                throw new Error(result.error || 'Ошибка при создании платежа');
             }
+
         } catch (error) {
-            console.error('Ошибка проверки платежа:', error);
-        }
-    }, 10000); // Проверяем каждые 10 секунд
-}
-    
-    // Добавьте эту функцию для обработки ошибок сети
-    function handleNetworkError(error) {
-        console.error('🌐 Network error:', error);
-        if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-            showError('❌ Ошибка соединения с сервером. Проверьте интернет и попробуйте снова.');
-        } else {
-            showError('❌ Ошибка: ' + error.message);
+            console.error('❌ Add balance error:', error);
+            showError('Ошибка пополнения баланса: ' + error.message);
+        } finally {
+            document.getElementById('loadingIndicator').style.display = 'none';
         }
     }
-    
-    // Обновите блок catch в функции addBalance():
-    } catch (error) {
-        console.error('❌ Add balance error:', error);
-        handleNetworkError(error);
-    } finally {
-        document.getElementById('loadingIndicator').style.display = 'none';
+
+    // Функция для проверки статуса платежа за пополнение баланса
+    async function startBalancePaymentChecking() {
+        if (!currentPaymentId) return;
+        
+        let attempts = 0;
+        const maxAttempts = 60; // 10 минут (10 секунд * 60)
+        
+        const checkInterval = setInterval(async () => {
+            attempts++;
+            
+            if (attempts > maxAttempts) {
+                clearInterval(checkInterval);
+                showError('Время ожидания платежа истекло');
+                return;
+            }
+            
+            try {
+                console.log(`🔄 Проверка платежа ${currentPaymentId} (попытка ${attempts})`);
+                
+                const response = await fetch(`${API_BASE_URL}/payment-status?payment_id=${currentPaymentId}&user_id=${userId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                console.log('💰 Payment status result:', result);
+                
+                if (result.success) {
+                    if (result.status === 'succeeded') {
+                        clearInterval(checkInterval);
+                        
+                        if (result.balance_added) {
+                            showSuccess(`✅ Баланс успешно пополнен на ${result.balance_added}₽!`);
+                        } else {
+                            showSuccess('✅ Платеж подтвержден! Баланс пополнен.');
+                        }
+                        
+                        await loadUserData();
+                        
+                    } else if (result.status === 'canceled' || result.status === 'failed') {
+                        clearInterval(checkInterval);
+                        showError('❌ Платеж отменен или не прошел');
+                    }
+                    // Если статус 'pending', продолжаем проверять
+                } else {
+                    console.warn('⚠️ Payment check warning:', result.error);
+                }
+            } catch (error) {
+                console.error('Ошибка проверки платежа:', error);
+            }
+        }, 10000); // Проверяем каждые 10 секунд
     }
+
     // Функции тарифов
     function selectTariff(id) {
         document.querySelectorAll('.tariff-card').forEach(card => {
@@ -999,7 +983,7 @@ async function startBalancePaymentChecking() {
             • Стоимость: <strong style="color: var(--primary);">${tariff.price}₽</strong><br>
             • Период: <strong>${tariff.days} дней</strong><br>
             • Реферал: <strong>+50₽ на ваш баланс</strong><br>
-            • После оплаты: <strong>Подписка активируется сразу</strong>
+            • После оплата: <strong>Подписка активируется сразу</strong>
         `;
         
         // Обновляем информацию о балансе
