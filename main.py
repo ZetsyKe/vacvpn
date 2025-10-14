@@ -68,17 +68,19 @@ def initialize_firebase():
             logger.info("✅ Firebase already initialized")
             return firestore.client()
         
-        # Вариант 1: Из переменных окружения JSON (рекомендуется для Railway)
+        # Вариант 1: Из переменных окружения JSON (Railway)
         firebase_config_json = os.environ.get('FIREBASE_CONFIG')
         if firebase_config_json:
             try:
                 config_dict = json.loads(firebase_config_json)
                 cred = credentials.Certificate(config_dict)
                 firebase_admin.initialize_app(cred)
-                logger.info("✅ Firebase initialized from environment variables")
+                logger.info("✅ Firebase initialized from FIREBASE_CONFIG environment variable")
                 return firestore.client()
             except json.JSONDecodeError as e:
                 logger.error(f"❌ Invalid FIREBASE_CONFIG JSON: {e}")
+            except Exception as e:
+                logger.error(f"❌ Error initializing Firebase from env: {e}")
         
         # Вариант 2: Из отдельных переменных окружения
         service_account_info = {
@@ -91,15 +93,19 @@ def initialize_firebase():
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": os.environ.get("FIREBASE_CLIENT_CERT_URL")
+            "client_x509_cert_url": os.environ.get("FIREBASE_CLIENT_CERT_URL"),
+            "universe_domain": "googleapis.com"
         }
         
         # Проверяем, есть ли достаточно данных для инициализации
         if service_account_info["project_id"] and service_account_info["private_key"]:
-            cred = credentials.Certificate(service_account_info)
-            firebase_admin.initialize_app(cred)
-            logger.info("✅ Firebase initialized from individual environment variables")
-            return firestore.client()
+            try:
+                cred = credentials.Certificate(service_account_info)
+                firebase_admin.initialize_app(cred)
+                logger.info("✅ Firebase initialized from individual environment variables")
+                return firestore.client()
+            except Exception as e:
+                logger.error(f"❌ Error initializing Firebase from individual vars: {e}")
         
         # Вариант 3: Из файла (для локальной разработки)
         try:
@@ -109,6 +115,8 @@ def initialize_firebase():
             return firestore.client()
         except FileNotFoundError:
             logger.warning("⚠️ Firebase config file not found")
+        except Exception as e:
+            logger.error(f"❌ Error initializing Firebase from file: {e}")
         
         logger.error("❌ All Firebase initialization methods failed")
         return None
@@ -116,7 +124,6 @@ def initialize_firebase():
     except Exception as e:
         logger.error(f"❌ Firebase initialization error: {e}")
         return None
-
 # Инициализируем базу данных
 db = initialize_firebase()
 
