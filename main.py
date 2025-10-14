@@ -110,6 +110,11 @@ class ActivateTariffRequest(BaseModel):
     tariff: str
     payment_method: str = "yookassa"
 
+class AddBalanceRequest(BaseModel):
+    user_id: str
+    amount: float
+    payment_method: str = "yookassa"
+
 class InitUserRequest(BaseModel):
     user_id: str
     username: str = ""
@@ -801,6 +806,80 @@ async def get_user_info(user_id: str):
     except Exception as e:
         return {"error": f"Error getting user info: {str(e)}"}
 
+@app.post("/add-balance")
+async def add_balance(request: AddBalanceRequest):
+    try:
+        if not db:
+            return {"error": "Database not connected"}
+            
+        user = get_user(request.user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        if request.amount < 10:  # Минимум 10 рублей
+            return {"error": "Минимальная сумма пополнения 10₽"}
+        
+        if request.amount > 50000:  # Максимум 50,000 рублей
+            return {"error": "Максимальная сумма пополнения 50,000₽"}
+        
+        if request.payment_method == "yookassa":
+            SHOP_ID = os.getenv("SHOP_ID")
+            API_KEY = os.getenv("API_KEY")
+            
+            if not SHOP_ID or not API_KEY:
+                return {"error": "Payment gateway not configured"}
+            
+            payment_id = str(uuid.uuid4())
+            save_payment(payment_id, request.user_id, request.amount, "balance", "balance", "yookassa")
+            
+            yookassa_data = {
+                "amount": {"value": f"{request.amount:.2f}", "currency": "RUB"},
+                "confirmation": {"type": "redirect", "return_url": "https://t.me/vaaaac_bot"},
+                "capture": True,
+                "description": f"Пополнение баланса VAC VPN на {request.amount}₽",
+                "metadata": {
+                    "payment_id": payment_id,
+                    "user_id": request.user_id,
+                    "payment_type": "balance",
+                    "amount": request.amount
+                }
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.yookassa.ru/v3/payments",
+                    auth=(SHOP_ID, API_KEY),
+                    headers={
+                        "Content-Type": "application/json",
+                        "Idempotence-Key": payment_id
+                    },
+                    json=yookassa_data,
+                    timeout=30.0
+                )
+            
+            if response.status_code in [200, 201]:
+                payment_data = response.json()
+                update_payment_status(payment_id, "pending", payment_data.get("id"))
+                
+                logger.info(f"💳 Balance payment created: {payment_id} for user {request.user_id}, amount: {request.amount}₽")
+                
+                return {
+                    "success": True,
+                    "payment_id": payment_id,
+                    "payment_url": payment_data["confirmation"]["confirmation_url"],
+                    "amount": request.amount,
+                    "status": "pending",
+                    "message": f"Перейдите по ссылке для пополнения баланса на {request.amount}₽"
+                }
+            else:
+                return {"error": f"Payment gateway error: {response.status_code}"}
+        else:
+            return {"error": "Invalid payment method"}
+        
+    except Exception as e:
+        logger.error(f"❌ Error adding balance: {e}")
+        return {"error": str(e)}
+
 @app.post("/buy-with-balance")
 async def buy_with_balance(request: BuyWithBalanceRequest):
     try:
@@ -1018,6 +1097,28 @@ async def check_payment(payment_id: str, user_id: str):
                         update_payment_status(payment_id, status, yookassa_id)
                         
                         if status == 'succeeded':
+                            # Если это пополнение баланса
+                            if payment['payment_type'] == 'balance':
+                                amount = payment['amount']
+                                user_id = payment['user_id']
+                                
+                                # Пополняем баланс
+                                success = update_user_balance(user_id, amount)
+                                
+                                if success:
+                                    logger.info(f"✅ Balance topped up for user {user_id}: +{amount}₽")
+                                    return {
+                                        "success": True,
+                                        "status": status,
+                                        "payment_id": payment_id,
+                                        "amount": amount,
+                                        "balance_added": amount,
+                                        "message": f"Баланс успешно пополнен на {amount}₽!"
+                                    }
+                                else:
+                                    return {"error": "Ошибка пополнения баланса"}
+                            
+                            # Если это покупка тарифа
                             user_id = payment['user_id']
                             tariff = payment['tariff']
                             tariff_days = TARIFFS[tariff]["days"]
