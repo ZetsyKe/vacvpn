@@ -155,22 +155,31 @@ async def add_user_to_xray(user_uuid: str) -> bool:
 async def check_user_in_xray(user_uuid: str) -> bool:
     """Проверить есть ли пользователь в Xray через API"""
     try:
+        logger.info(f"🔍 [XRAY CHECK] Starting check for UUID: {user_uuid}")
+        logger.info(f"🔗 [XRAY CHECK] XRAY_MANAGER_URL: {XRAY_MANAGER_URL}")
+        
         async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{XRAY_MANAGER_URL}/users/{user_uuid}",
-                timeout=30.0
-            )
+            url = f"{XRAY_MANAGER_URL}/users/{user_uuid}"
+            logger.info(f"🌐 [XRAY CHECK] Making request to: {url}")
+            
+            response = await client.get(url, timeout=30.0)
+            logger.info(f"📡 [XRAY CHECK] Response status: {response.status_code}")
+            logger.info(f"📡 [XRAY CHECK] Response text: {response.text}")
             
             if response.status_code == 200:
                 data = response.json()
-                # Новый формат ответа: {"exists": true, "uuid": "..."}
-                return data.get("exists", False)
+                exists = data.get("exists", False)
+                logger.info(f"✅ [XRAY CHECK] User exists in Xray: {exists}")
+                return exists
+            
+            logger.error(f"❌ [XRAY CHECK] Bad status code: {response.status_code}")
             return False
             
     except Exception as e:
-        logger.error(f"❌ Error checking user in Xray: {e}")
+        logger.error(f"❌ [XRAY CHECK] Exception: {str(e)}")
+        import traceback
+        logger.error(f"❌ [XRAY CHECK] Traceback: {traceback.format_exc()}")
         return False
-
 async def get_xray_users_count() -> int:
     """Получить количество пользователей в Xray"""
     try:
