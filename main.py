@@ -134,10 +134,9 @@ async def add_user_to_xray(user_uuid: str) -> bool:
     """Добавить пользователя в Xray через API"""
     try:
         async with httpx.AsyncClient() as client:
+            # Параметр uuid передается в query string, а не в JSON
             response = await client.post(
-                f"{XRAY_MANAGER_URL}/users",
-                json={"uuid": user_uuid, "flow": ""},
-                headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
+                f"{XRAY_MANAGER_URL}/users?uuid={user_uuid}",
                 timeout=30.0
             )
             
