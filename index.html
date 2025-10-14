@@ -135,12 +135,6 @@
       margin-bottom: 16px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.2);
     }
-    .subscription-days {
-      font-size: 14px;
-      opacity: 0.8;
-      margin-bottom: 16px;
-      font-weight: 500;
-    }
     .subscription-info {
       background: rgba(176, 203, 31, 0.1);
       border-radius: 8px;
@@ -472,6 +466,45 @@
       max-width: 400px;
       width: 90%;
     }
+    .add-balance-section {
+      margin: 16px 0;
+      padding: 16px;
+      background: rgba(176, 203, 31, 0.1);
+      border-radius: 8px;
+    }
+    .amount-input {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid var(--primary);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 16px;
+      margin: 8px 0;
+      text-align: center;
+    }
+    .amount-input:focus {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--primary);
+    }
+    .amount-presets {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 12px 0;
+    }
+    .amount-preset {
+      padding: 10px;
+      border: 2px solid rgba(176, 203, 31, 0.3);
+      border-radius: 6px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .amount-preset.selected {
+      border-color: var(--primary);
+      background: rgba(176, 203, 31, 0.1);
+    }
   </style>
 </head>
 <body>
@@ -492,10 +525,13 @@
   </div>
 
   <div class="card">
-    <div class="subscription-days" id="subscriptionDays">Подписка неактивна</div>
+    <!-- УБРАН СЧЕТЧИК ПОДПИСКИ НАД БАЛАНСОМ -->
     
     <div class="balance-info">
       <div>💰 <strong>Баланс:</strong> <span id="userBalance">0</span>₽</div>
+      <button class="button button-outline" onclick="showAddBalanceModal()" style="margin: 8px 0 0 0; padding: 8px;">
+        💰 ПОПОЛНИТЬ БАЛАНС
+      </button>
     </div>
     
     <div class="subscription-info" id="subscriptionInfo" style="display: none;">
@@ -541,6 +577,32 @@
     <div class="loading" id="loadingIndicator">Подождите, идет обработка...</div>
     <div class="error-message" id="errorMessage"></div>
     <div class="success-message" id="successMessage"></div>
+  </div>
+
+  <!-- Модальное окно пополнения баланса -->
+  <div class="payment-modal" id="addBalanceModal">
+    <div class="payment-content">
+      <h3 style="color: var(--primary); margin-bottom: 10px;">💰 Пополнение баланса</h3>
+      
+      <div class="add-balance-section">
+        <div style="margin-bottom: 8px; font-weight: 600;">Сумма пополнения:</div>
+        <input type="number" class="amount-input" id="balanceAmount" placeholder="Введите сумму" min="10" max="50000" value="100">
+        
+        <div class="amount-presets">
+          <div class="amount-preset" onclick="setBalanceAmount(100)">100₽</div>
+          <div class="amount-preset" onclick="setBalanceAmount(300)">300₽</div>
+          <div class="amount-preset" onclick="setBalanceAmount(500)">500₽</div>
+          <div class="amount-preset" onclick="setBalanceAmount(1000)">1000₽</div>
+        </div>
+        
+        <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;">
+          Минимум: 10₽, Максимум: 50,000₽
+        </div>
+      </div>
+      
+      <button class="button button-yellow" onclick="addBalance()">ПОПОЛНИТЬ БАЛАНС</button>
+      <button class="button button-outline" onclick="closeAddBalanceModal()" style="margin-top: 10px;">ОТМЕНА</button>
+    </div>
   </div>
 
   <div class="card" id="tariffBlock">
@@ -748,6 +810,119 @@
           document.body.removeChild(textArea);
         }
       }
+    }
+
+    // Функции для пополнения баланса
+    function showAddBalanceModal() {
+        document.getElementById('addBalanceModal').style.display = 'flex';
+    }
+
+    function closeAddBalanceModal() {
+        document.getElementById('addBalanceModal').style.display = 'none';
+    }
+
+    function setBalanceAmount(amount) {
+        document.getElementById('balanceAmount').value = amount;
+        // Снимаем выделение со всех пресетов
+        document.querySelectorAll('.amount-preset').forEach(preset => {
+            preset.classList.remove('selected');
+        });
+        // Выделяем выбранный пресет
+        event.target.classList.add('selected');
+    }
+
+    async function addBalance() {
+        try {
+            const amountInput = document.getElementById('balanceAmount');
+            const amount = parseFloat(amountInput.value);
+            
+            if (!amount || amount < 10 || amount > 50000) {
+                showError('Введите сумму от 10 до 50,000 рублей');
+                return;
+            }
+
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const errorMessage = document.getElementById('errorMessage');
+            const successMessage = document.getElementById('successMessage');
+            
+            errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
+            loadingIndicator.style.display = 'block';
+
+            console.log('💰 Adding balance:', { userId, amount });
+
+            const response = await fetch(`${API_BASE_URL}/add-balance`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    user_id: userId,
+                    amount: amount,
+                    payment_method: "yookassa"
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('💰 Add balance result:', result);
+
+            if (result.success) {
+                currentPaymentId = result.payment_id;
+                paymentUrl = result.payment_url;
+                
+                if (paymentUrl) {
+                    closeAddBalanceModal();
+                    showSuccess('💳 Подготовлена страница оплаты');
+                    window.open(paymentUrl, '_blank');
+                    startBalancePaymentChecking();
+                } else {
+                    throw new Error('Платежная ссылка не получена');
+                }
+            } else {
+                throw new Error(result.error || 'Ошибка при создании платежа');
+            }
+
+        } catch (error) {
+            console.error('❌ Add balance error:', error);
+            showError('Ошибка пополнения баланса: ' + error.message);
+        } finally {
+            document.getElementById('loadingIndicator').style.display = 'none';
+        }
+    }
+
+    // Функция для проверки статуса платежа за пополнение баланса
+    async function startBalancePaymentChecking() {
+        if (!currentPaymentId) return;
+        
+        let attempts = 0;
+        const maxAttempts = 60; // 10 минут (10 секунд * 60)
+        
+        const checkInterval = setInterval(async () => {
+            attempts++;
+            
+            if (attempts > maxAttempts) {
+                clearInterval(checkInterval);
+                showError('Время ожидания платежа истекло');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/payment-status?payment_id=${currentPaymentId}&user_id=${userId}`);
+                const result = await response.json();
+                
+                if (result.success && result.status === 'succeeded') {
+                    clearInterval(checkInterval);
+                    showSuccess('✅ Баланс успешно пополнен!');
+                    await loadUserData();
+                }
+            } catch (error) {
+                console.error('Ошибка проверки платежа:', error);
+            }
+        }, 10000); // Проверяем каждые 10 секунд
     }
 
     // Функции тарифов
@@ -1260,7 +1435,6 @@
         userBalance = userData.balance || 0;
         
         const subscriptionBadge = document.getElementById('subscriptionBadge');
-        const subscriptionDaysElement = document.getElementById('subscriptionDays');
         const vlessConfigContainer = document.getElementById('vlessConfigContainer');
         const vlessButton = document.getElementById('vlessButton');
         const buyTariffBtn = document.getElementById('buyTariffBtn');
@@ -1272,7 +1446,6 @@
         if (hasSubscription && subscriptionDays > 0) {
             subscriptionBadge.textContent = 'Активна';
             subscriptionBadge.className = 'badge active-badge';
-            subscriptionDaysElement.textContent = `Осталось дней: ${subscriptionDays}`;
             vlessButton.style.display = 'block';
             
             if (userData.vless_uuid) {
@@ -1284,7 +1457,6 @@
         } else {
             subscriptionBadge.textContent = 'Неактивна';
             subscriptionBadge.className = 'badge inactive-badge';
-            subscriptionDaysElement.textContent = 'Подписка неактивна';
             vlessConfigContainer.style.display = 'none';
             vlessButton.style.display = 'none';
         }
