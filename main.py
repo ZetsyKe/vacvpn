@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="VAC VPN API")
-
+еш
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -139,7 +139,7 @@ async def add_user_to_xray(user_uuid: str) -> bool:
                 f"{XRAY_MANAGER_URL}/users",
                 json={"uuid": user_uuid, "flow": ""},
                 headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
-                timeout=10.0
+                timeout=30.0
             )
             
             if response.status_code == 200:
@@ -159,7 +159,7 @@ async def check_user_in_xray(user_uuid: str) -> bool:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{XRAY_MANAGER_URL}/users/{user_uuid}",
-                timeout=5.0
+                timeout=30.0
             )
             
             if response.status_code == 200:
@@ -179,7 +179,7 @@ async def get_xray_users_count() -> int:
             response = await client.get(
                 f"{XRAY_MANAGER_URL}/users",
                 headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
-                timeout=5.0
+                timeout=30.0
             )
             
             if response.status_code == 200:
@@ -198,7 +198,7 @@ async def remove_user_from_xray(user_uuid: str) -> bool:
             response = await client.delete(
                 f"{XRAY_MANAGER_URL}/users/{user_uuid}",
                 headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
-                timeout=10.0
+                timeout=30.0
             )
             
             if response.status_code == 200:
@@ -896,7 +896,7 @@ async def check_payment(payment_id: str, user_id: str):
                     response = await client.get(
                         f"https://api.yookassa.ru/v3/payments/{yookassa_id}",
                         auth=(SHOP_ID, API_KEY),
-                        timeout=10.0
+                        timeout=30.0
                     )
                     
                     if response.status_code == 200:
