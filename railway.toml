@@ -1,8 +1,8 @@
 [build]
-builder = "Dockerfile"
+builder = "nixpacks"
 
 [deploy]
-startCommand = ""
+startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
 
 [env]
 PORT = "8000"
