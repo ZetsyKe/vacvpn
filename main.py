@@ -28,7 +28,6 @@ app.add_middleware(
 )
 
 # Константы для Xray Manager
-# Для Railway - используем внешний IP твоего VPN сервера на Aeza
 XRAY_MANAGER_URL = os.getenv("XRAY_MANAGER_URL", "http://45.134.13.189:8001")
 XRAY_API_KEY = os.getenv("XRAY_API_KEY", "vac-vpn-secret-key-2024")
 
@@ -133,22 +132,36 @@ class BuyWithBalanceRequest(BaseModel):
 async def add_user_to_xray(user_uuid: str) -> bool:
     """Добавить пользователя в Xray через API"""
     try:
+        logger.info(f"🔄 [XRAY ADD] Adding user to Xray: {user_uuid}")
+        
         async with httpx.AsyncClient() as client:
-            # Параметр uuid передается в query string, а не в JSON
-            response = await client.post(
+            # Пробуем разные варианты API эндпоинтов
+            endpoints = [
                 f"{XRAY_MANAGER_URL}/users?uuid={user_uuid}",
-                timeout=30.0
-            )
+                f"{XRAY_MANAGER_URL}/user?uuid={user_uuid}",
+                f"{XRAY_MANAGER_URL}/add?uuid={user_uuid}",
+                f"{XRAY_MANAGER_URL}/add-user?uuid={user_uuid}"
+            ]
             
-            if response.status_code == 200:
-                logger.info(f"✅ User {user_uuid} added to Xray via API")
-                return True
-            else:
-                logger.error(f"❌ Failed to add user to Xray: {response.status_code} - {response.text}")
-                return False
+            for endpoint in endpoints:
+                try:
+                    logger.info(f"🔗 [XRAY ADD] Trying endpoint: {endpoint}")
+                    response = await client.post(endpoint, timeout=30.0)
+                    
+                    if response.status_code == 200:
+                        logger.info(f"✅ [XRAY ADD] User {user_uuid} added via {endpoint}")
+                        return True
+                    else:
+                        logger.warning(f"⚠️ [XRAY ADD] Endpoint {endpoint} failed: {response.status_code}")
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ [XRAY ADD] Endpoint {endpoint} error: {e}")
+            
+            logger.error(f"❌ [XRAY ADD] All endpoints failed for user {user_uuid}")
+            return False
                 
     except Exception as e:
-        logger.error(f"❌ Error adding user to Xray via API: {e}")
+        logger.error(f"❌ [XRAY ADD] Critical error: {e}")
         return False
 
 async def check_user_in_xray(user_uuid: str) -> bool:
@@ -158,20 +171,33 @@ async def check_user_in_xray(user_uuid: str) -> bool:
         logger.info(f"🔗 [XRAY CHECK] XRAY_MANAGER_URL: {XRAY_MANAGER_URL}")
         
         async with httpx.AsyncClient() as client:
-            url = f"{XRAY_MANAGER_URL}/users/{user_uuid}"
-            logger.info(f"🌐 [XRAY CHECK] Making request to: {url}")
+            # Пробуем разные варианты API эндпоинтов
+            endpoints = [
+                f"{XRAY_MANAGER_URL}/users/{user_uuid}",
+                f"{XRAY_MANAGER_URL}/user/{user_uuid}",
+                f"{XRAY_MANAGER_URL}/check/{user_uuid}",
+                f"{XRAY_MANAGER_URL}/users?uuid={user_uuid}"
+            ]
             
-            response = await client.get(url, timeout=30.0)
-            logger.info(f"📡 [XRAY CHECK] Response status: {response.status_code}")
-            logger.info(f"📡 [XRAY CHECK] Response text: {response.text}")
+            for endpoint in endpoints:
+                try:
+                    logger.info(f"🌐 [XRAY CHECK] Making request to: {endpoint}")
+                    response = await client.get(endpoint, timeout=30.0)
+                    
+                    logger.info(f"📡 [XRAY CHECK] Response status: {response.status_code}")
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        exists = data.get("exists", False)
+                        logger.info(f"✅ [XRAY CHECK] User exists in Xray: {exists}")
+                        return exists
+                    
+                    logger.warning(f"⚠️ [XRAY CHECK] Endpoint {endpoint} failed: {response.status_code}")
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ [XRAY CHECK] Endpoint {endpoint} error: {e}")
             
-            if response.status_code == 200:
-                data = response.json()
-                exists = data.get("exists", False)
-                logger.info(f"✅ [XRAY CHECK] User exists in Xray: {exists}")
-                return exists
-            
-            logger.error(f"❌ [XRAY CHECK] Bad status code: {response.status_code}")
+            logger.error(f"❌ [XRAY CHECK] All endpoints failed for UUID: {user_uuid}")
             return False
             
     except Exception as e:
@@ -179,6 +205,7 @@ async def check_user_in_xray(user_uuid: str) -> bool:
         import traceback
         logger.error(f"❌ [XRAY CHECK] Traceback: {traceback.format_exc()}")
         return False
+
 async def get_xray_users_count() -> int:
     """Получить количество пользователей в Xray"""
     try:
@@ -259,7 +286,58 @@ def update_user_balance(user_id: str, amount: float):
         return False
 
 def generate_user_uuid():
+    """Генерация уникального UUID для пользователя"""
     return str(uuid.uuid4())
+
+async def ensure_user_uuid(user_id: str) -> str:
+    """Гарантирует что у пользователя есть UUID и он в Xray"""
+    if not db:
+        raise Exception("Database not connected")
+    
+    try:
+        user_ref = db.collection('users').document(user_id)
+        user = user_ref.get()
+        
+        if not user.exists:
+            raise Exception("User not found")
+        
+        user_data = user.to_dict()
+        vless_uuid = user_data.get('vless_uuid')
+        
+        # Если UUID уже есть, проверяем его в Xray
+        if vless_uuid:
+            logger.info(f"🔍 User {user_id} has existing UUID: {vless_uuid}")
+            
+            # Проверяем есть ли в Xray
+            if not await check_user_in_xray(vless_uuid):
+                logger.warning(f"⚠️ UUID exists but not in Xray, re-adding: {vless_uuid}")
+                success = await add_user_to_xray(vless_uuid)
+                if not success:
+                    raise Exception("Failed to add existing UUID to Xray")
+            
+            return vless_uuid
+        
+        # Генерируем новый UUID
+        new_uuid = generate_user_uuid()
+        logger.info(f"🆕 Generating new UUID for user {user_id}: {new_uuid}")
+        
+        # Обновляем пользователя
+        user_ref.update({
+            'vless_uuid': new_uuid,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        })
+        
+        # Добавляем в Xray
+        success = await add_user_to_xray(new_uuid)
+        if not success:
+            raise Exception("Failed to add new UUID to Xray")
+        
+        logger.info(f"✅ New UUID created and added to Xray: {new_uuid}")
+        return new_uuid
+        
+    except Exception as e:
+        logger.error(f"❌ Error ensuring user UUID: {e}")
+        raise
 
 async def update_subscription_days(user_id: str, additional_days: int):
     if not db: 
@@ -284,19 +362,16 @@ async def update_subscription_days(user_id: str, additional_days: int):
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
             
-            # ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ UUID ДЛЯ ПОЛЬЗОВАТЕЛЯ
-            if has_subscription and (not user_data.get('vless_uuid') or user_data.get('vless_uuid') == ''):
-                user_uuid = generate_user_uuid()
-                update_data['vless_uuid'] = user_uuid
-                update_data['subscription_start'] = datetime.now().isoformat()
-                logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
-                
-                # ⚠️ ВАЖНО: ДОБАВЛЯЕМ UUID В XRAY ЧЕРЕЗ API С AWAIT
-                success = await add_user_to_xray(user_uuid)
-                if success:
-                    logger.info(f"✅ User {user_id} added to Xray automatically")
-                else:
-                    logger.error(f"❌ Failed to add user {user_id} to Xray")
+            # ГАРАНТИРУЕМ что у пользователя есть UUID при активации подписки
+            if has_subscription:
+                try:
+                    vless_uuid = await ensure_user_uuid(user_id)
+                    update_data['vless_uuid'] = vless_uuid
+                    update_data['subscription_start'] = datetime.now().isoformat()
+                    logger.info(f"🔑 UUID ensured for user {user_id}: {vless_uuid}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to ensure UUID for user {user_id}: {e}")
+                    return False
             
             user_ref.update(update_data)
             logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
@@ -336,53 +411,63 @@ def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
         logger.error(f"❌ Error adding immediate referral bonus: {e}")
         return False
 
-def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
-    """Создает VLESS Reality конфигурацию с правильными настройки"""
-    address = server_config["address"]
-    port = server_config["port"]
-    reality_pbk = server_config["reality_pbk"]
-    sni = server_config["sni"]
-    short_id = server_config["short_id"]
-    flow = server_config["flow"]
+def create_user_vless_configs(user_id: str, vless_uuid: str) -> List[dict]:
+    """Создает уникальные VLESS Reality конфигурации для пользователя"""
     
-    # Убираем порт из SNI если есть
-    clean_sni = sni.replace(":443", "")
+    configs = []
     
-    vless_link = (
-        f"vless://{vless_uuid}@{address}:{port}?"
-        f"type=tcp&"
-        f"security=reality&"
-        f"flow={flow}&"
-        f"pbk={reality_pbk}&"
-        f"fp=chrome&"
-        f"sni={clean_sni}&"
-        f"sid={short_id}#"
-        f"VAC-VPN-{user_id}"
-    )
+    for server in VLESS_SERVERS:
+        address = server["address"]
+        port = server["port"]
+        reality_pbk = server["reality_pbk"]
+        sni = server["sni"]
+        short_id = server["short_id"]
+        flow = server["flow"]
+        
+        # Убираем порт из SNI если есть
+        clean_sni = sni.replace(":443", "")
+        
+        # Создаем уникальный VLESS ссылку для этого пользователя
+        vless_link = (
+            f"vless://{vless_uuid}@{address}:{port}?"
+            f"type=tcp&"
+            f"security=reality&"
+            f"flow={flow}&"
+            f"pbk={reality_pbk}&"
+            f"fp=chrome&"
+            f"sni={clean_sni}&"
+            f"sid={short_id}#"
+            f"VAC-VPN-{user_id}"
+        )
+        
+        # Конфиг для приложений
+        config = {
+            "name": f"{server['name']} - {user_id}",
+            "protocol": "vless",
+            "uuid": vless_uuid,  # Уникальный для каждого пользователя
+            "server": address,
+            "port": port,
+            "security": "reality",
+            "reality_pbk": reality_pbk,
+            "sni": clean_sni,
+            "short_id": short_id,
+            "flow": flow,
+            "type": "tcp",
+            "fingerprint": "chrome",
+            "remark": f"VAC VPN Reality - {user_id}",
+            "user_id": user_id  # Добавляем ID пользователя
+        }
+        
+        encoded_vless_link = urllib.parse.quote(vless_link)
+        
+        configs.append({
+            "vless_link": vless_link,
+            "config": config,
+            "qr_code": f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={encoded_vless_link}",
+            "server_name": server["name"]
+        })
     
-    config = {
-        "name": server_config["name"],
-        "protocol": "vless",
-        "uuid": vless_uuid,
-        "server": address,
-        "port": port,
-        "security": "reality",
-        "reality_pbk": reality_pbk,
-        "sni": clean_sni,
-        "short_id": short_id,
-        "flow": flow,
-        "type": "tcp",
-        "fingerprint": "chrome",
-        "remark": f"VAC VPN Reality - {user_id}"
-    }
-    
-    encoded_vless_link = urllib.parse.quote(vless_link)
-    
-    return {
-        "vless_link": vless_link,
-        "config": config,
-        "qr_code": f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={encoded_vless_link}"
-    }
+    return configs
 
 def process_subscription_days(user_id: str):
     if not db:
@@ -418,6 +503,7 @@ def process_subscription_days(user_id: str):
                     
                     if new_days == 0:
                         update_data['has_subscription'] = False
+                        # При окончании подписки можно удалить из Xray, но пока оставим
                     
                     db.collection('users').document(user_id).update(update_data)
                     logger.info(f"✅ Subscription days processed for user {user_id}: {subscription_days} -> {new_days} (-{days_passed} days)")
@@ -550,6 +636,23 @@ async def health_check():
         "environment": "production"
     }
 
+@app.get("/check-xray-connection")
+async def check_xray_connection():
+    """Проверить подключение к Xray Manager"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{XRAY_MANAGER_URL}/health",
+                timeout=10.0
+            )
+            return {
+                "connected": response.status_code == 200,
+                "status_code": response.status_code,
+                "response": response.text
+            }
+    except Exception as e:
+        return {"connected": False, "error": str(e)}
+
 @app.delete("/clear-referrals/{user_id}")
 async def clear_referrals(user_id: str):
     try:
@@ -619,7 +722,7 @@ async def init_user(request: InitUserRequest):
                 'has_subscription': False,
                 'subscription_days': 0,
                 'subscription_start': None,
-                'vless_uuid': None,
+                'vless_uuid': None,  # UUID будет сгенерирован при активации подписки
                 'created_at': firestore.SERVER_TIMESTAMP
             }
             
@@ -965,35 +1068,31 @@ async def get_vless_config(user_id: str):
         if not db:
             return {"error": "Database not connected"}
             
+        # Обрабатываем списание дней подписки
         process_subscription_days(user_id)
             
         user = get_user(user_id)
         if not user:
             return {"error": "User not found"}
         
-        vless_uuid = user.get('vless_uuid')
-        if not vless_uuid:
-            return {"error": "VLESS UUID not found. Activate subscription first."}
-        
+        # Проверяем активную подписку
         if not user.get('has_subscription', False):
             return {"error": "No active subscription"}
         
-        # ⚠️ ПРОВЕРЯЕМ ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ В XRAY ЧЕРЕЗ API
-        if not await check_user_in_xray(vless_uuid):
-            logger.warning(f"⚠️ Пользователь {user_id} есть в базе но нет в Xray. Добавляем...")
-            success = await add_user_to_xray(vless_uuid)
-            if not success:
-                return {"error": "User not found in Xray configuration. Please contact administrator."}
+        # ГАРАНТИРУЕМ что у пользователя есть UUID и он в Xray
+        vless_uuid = await ensure_user_uuid(user_id)
         
-        configs = []
-        for server in VLESS_SERVERS:
-            config = create_vless_config(user_id, vless_uuid, server)
-            configs.append(config)
+        # Создаем уникальные конфиги для этого пользователя
+        configs = create_user_vless_configs(user_id, vless_uuid)
+        
+        logger.info(f"✅ Generated {len(configs)} unique configs for user {user_id}")
         
         return {
             "success": True,
             "user_id": user_id,
-            "vless_uuid": vless_uuid,
+            "vless_uuid": vless_uuid,  # Возвращаем UUID для отладки
+            "has_subscription": True,
+            "subscription_days": user.get('subscription_days', 0),
             "configs": configs
         }
         
@@ -1002,6 +1101,46 @@ async def get_vless_config(user_id: str):
         return {"error": f"Error getting VLESS config: {str(e)}"}
 
 # Админские эндпоинты для управления Xray через API
+@app.post("/admin/generate-unique-uuid")
+async def admin_generate_unique_uuid(user_id: str):
+    """Принудительно генерирует уникальный UUID для пользователя"""
+    try:
+        vless_uuid = await ensure_user_uuid(user_id)
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "vless_uuid": vless_uuid,
+            "message": "Unique UUID generated and added to Xray"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating unique UUID: {e}")
+        return {"error": str(e)}
+
+@app.get("/admin/user-uuid-info")
+async def admin_user_uuid_info(user_id: str):
+    """Информация о UUID пользователя"""
+    try:
+        user = get_user(user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        vless_uuid = user.get('vless_uuid')
+        in_xray = await check_user_in_xray(vless_uuid) if vless_uuid else False
+        
+        return {
+            "user_id": user_id,
+            "has_uuid": vless_uuid is not None,
+            "vless_uuid": vless_uuid,
+            "in_xray": in_xray,
+            "has_subscription": user.get('has_subscription', False),
+            "subscription_days": user.get('subscription_days', 0)
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.post("/admin/generate-uuid-for-user")
 async def generate_uuid_for_user(user_id: str):
     """Принудительно сгенерировать UUID для пользователя и добавить в Xray"""
