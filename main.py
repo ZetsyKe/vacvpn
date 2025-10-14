@@ -285,15 +285,19 @@ async def update_subscription_days(user_id: str, additional_days: int):
                 'updated_at': firestore.SERVER_TIMESTAMP
             }
             
-            # ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ UUID ДЛЯ ПОЛЬЗОВАТЕЛЯ (даже если уже есть подписка)
+            # ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ UUID ДЛЯ ПОЛЬЗОВАТЕЛЯ
             if has_subscription and (not user_data.get('vless_uuid') or user_data.get('vless_uuid') == ''):
                 user_uuid = generate_user_uuid()
                 update_data['vless_uuid'] = user_uuid
                 update_data['subscription_start'] = datetime.now().isoformat()
                 logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
                 
-                # ⚠️ ДОБАВЛЯЕМ UUID В XRAY ЧЕРЕЗ API
-                await add_user_to_xray(user_uuid)
+                # ⚠️ ВАЖНО: ДОБАВЛЯЕМ UUID В XRAY ЧЕРЕЗ API С AWAIT
+                success = await add_user_to_xray(user_uuid)
+                if success:
+                    logger.info(f"✅ User {user_id} added to Xray automatically")
+                else:
+                    logger.error(f"❌ Failed to add user {user_id} to Xray")
             
             user_ref.update(update_data)
             logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
