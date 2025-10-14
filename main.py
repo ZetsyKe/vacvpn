@@ -35,7 +35,7 @@ VLESS_SERVERS = [
         "address": "45.134.13.189",
         "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "F22ROGJlbAD4OvXBiU6evTl6BPFq0NR5ZuKJnSkuB1Q",
+        "reality_pbk": "9fzeqq8tQoPyy3BClEOriCpwp5CGcCrSZ--_PiYNpWs",
         "short_id": "2489c154",  
         "flow": "",
         "security": "reality"
@@ -61,84 +61,51 @@ REFERRAL_BONUS_REFERRER = 50.0
 REFERRAL_BONUS_REFERRED = 100.0
 
 # Инициализация Firebase
-def initialize_firebase():
-    try:
-        # Проверяем, не инициализирован ли уже Firebase
-        if firebase_admin._apps:
-            logger.info("✅ Firebase already initialized")
-            return firestore.client()
+try:
+    if not firebase_admin._apps:
+        logger.info("🚀 Initializing Firebase from environment variables")
         
-        # Вариант 1: Из переменных окружения JSON (Railway)
+        # Используем переменные окружения Railway
         firebase_config_json = os.environ.get('FIREBASE_CONFIG')
+        
         if firebase_config_json:
-            try:
-                config_dict = json.loads(firebase_config_json)
-                cred = credentials.Certificate(config_dict)
-                firebase_admin.initialize_app(cred)
-                logger.info("✅ Firebase initialized from FIREBASE_CONFIG environment variable")
-                return firestore.client()
-            except json.JSONDecodeError as e:
-                logger.error(f"❌ Invalid FIREBASE_CONFIG JSON: {e}")
-            except Exception as e:
-                logger.error(f"❌ Error initializing Firebase from env: {e}")
-        
-        # Вариант 2: Из отдельных переменных окружения
-        service_account_info = {
-            "type": "service_account",
-            "project_id": os.environ.get("FIREBASE_PROJECT_ID"),
-            "private_key_id": os.environ.get("FIREBASE_PRIVATE_KEY_ID"),
-            "private_key": os.environ.get("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n'),
-            "client_email": os.environ.get("FIREBASE_CLIENT_EMAIL"),
-            "client_id": os.environ.get("FIREBASE_CLIENT_ID"),
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": os.environ.get("FIREBASE_CLIENT_CERT_URL"),
-            "universe_domain": "googleapis.com"
-        }
-        
-        # Проверяем, есть ли достаточно данных для инициализации
-        if service_account_info["project_id"] and service_account_info["private_key"]:
-            try:
-                cred = credentials.Certificate(service_account_info)
-                firebase_admin.initialize_app(cred)
-                logger.info("✅ Firebase initialized from individual environment variables")
-                return firestore.client()
-            except Exception as e:
-                logger.error(f"❌ Error initializing Firebase from individual vars: {e}")
-        
-        # Вариант 3: Из файла (для локальной разработки)
-        try:
-            cred = credentials.Certificate('firebase-config.json')
+            # Если есть JSON конфиг в переменной окружения
+            config_dict = json.loads(firebase_config_json)
+            cred = credentials.Certificate(config_dict)
             firebase_admin.initialize_app(cred)
-            logger.info("✅ Firebase initialized from config file")
-            return firestore.client()
-        except FileNotFoundError:
-            logger.warning("⚠️ Firebase config file not found")
-        except Exception as e:
-            logger.error(f"❌ Error initializing Firebase from file: {e}")
-        
-        logger.error("❌ All Firebase initialization methods failed")
-        return None
-        
-    except Exception as e:
-        logger.error(f"❌ Firebase initialization error: {e}")
-        return None
-# Инициализируем базу данных
-db = initialize_firebase()
+            logger.info("✅ Firebase initialized from FIREBASE_CONFIG")
+        else:
+            # Используем отдельные переменные окружения
+            private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n')
+            
+            if not private_key:
+                raise ValueError("FIREBASE_PRIVATE_KEY environment variable is empty")
+            
+            firebase_config = {
+                "type": "service_account",
+                "project_id": os.getenv("FIREBASE_PROJECT_ID", "vacvpn-75yegf"),
+                "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID", "8e6469cea94608d13c03d57a60f70ad7269e9421"),
+                "private_key": private_key,
+                "client_email": os.getenv("FIREBASE_CLIENT_EMAIL", "firebase-adminsdk-fbsvc@vacvpn-75yegf.iam.gserviceaccount.com"),
+                "client_id": os.getenv("FIREBASE_CLIENT_ID", "118426875107507915166"),
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_X509_CERT_URL", "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40vacvpn-75yegf.iam.gserviceaccount.com"),
+                "universe_domain": "googleapis.com"
+            }
+            
+            cred = credentials.Certificate(firebase_config)
+            firebase_admin.initialize_app(cred)
+    
+    db = firestore.client()
+    logger.info("✅ Firebase initialized successfully")
+    
+except Exception as e:
+    logger.error(f"❌ Firebase initialization failed: {str(e)}")
+    db = None
 
 # Модели данных
-class PaymentRequest(BaseModel):
-    user_id: str
-    amount: float
-    tariff: str = "1month"
-    payment_type: str = "tariff"
-
-class ActivateTariffRequest(BaseModel):
-    user_id: str
-    tariff: str
-    payment_method: str = "yookassa"
-
 class InitUserRequest(BaseModel):
     user_id: str
     username: str = ""
@@ -146,19 +113,20 @@ class InitUserRequest(BaseModel):
     last_name: str = ""
     start_param: str = None
 
-class VlessConfigRequest(BaseModel):
-    user_id: str
-
 class BuyWithBalanceRequest(BaseModel):
     user_id: str
     tariff_id: str
     tariff_price: float
     tariff_days: int
 
+class ActivateTariffRequest(BaseModel):
+    user_id: str
+    tariff: str
+    payment_method: str = "yookassa"
+
 # Функции работы с Firebase
 def get_user(user_id: str):
     if not db: 
-        logger.error("❌ Database not connected")
         return None
     try:
         doc = db.collection('users').document(user_id).get()
@@ -169,7 +137,6 @@ def get_user(user_id: str):
 
 def update_user_balance(user_id: str, amount: float):
     if not db: 
-        logger.error("❌ Database not connected")
         return False
     try:
         user_ref = db.collection('users').document(user_id)
@@ -185,7 +152,7 @@ def update_user_balance(user_id: str, amount: float):
                 'updated_at': firestore.SERVER_TIMESTAMP
             })
             
-            logger.info(f"💰 Balance updated for user {user_id}: {current_balance} -> {new_balance} ({'+' if amount > 0 else ''}{amount}₽)")
+            logger.info(f"💰 Balance updated for user {user_id}: {current_balance} -> {new_balance}")
             return True
         else:
             logger.error(f"❌ User {user_id} not found")
@@ -197,9 +164,8 @@ def update_user_balance(user_id: str, amount: float):
 def generate_user_uuid():
     return str(uuid.uuid4())
 
-def update_subscription_days(user_id: str, additional_days: int) -> bool:
+def update_subscription_days(user_id: str, additional_days: int):
     if not db: 
-        logger.error("❌ Database not connected")
         return False
     try:
         user_ref = db.collection('users').document(user_id)
@@ -221,18 +187,14 @@ def update_subscription_days(user_id: str, additional_days: int) -> bool:
             }
             
             # Генерируем UUID при активации подписки
-            if has_subscription and additional_days > 0:
-                user_uuid = user_data.get('vless_uuid')
-                if not user_uuid:
-                    user_uuid = generate_user_uuid()
-                    update_data['vless_uuid'] = user_uuid
-                    update_data['subscription_start'] = datetime.now().isoformat()
-                    logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
-                
-                logger.info(f"📝 UUID {user_uuid} ready for manual addition to Xray config")
+            if has_subscription and (not user_data.get('vless_uuid') or user_data.get('vless_uuid') == ''):
+                user_uuid = generate_user_uuid()
+                update_data['vless_uuid'] = user_uuid
+                update_data['subscription_start'] = datetime.now().isoformat()
+                logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
             
             user_ref.update(update_data)
-            logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
+            logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days}")
             return True
         else:
             logger.error(f"❌ User {user_id} not found")
@@ -243,12 +205,9 @@ def update_subscription_days(user_id: str, additional_days: int) -> bool:
 
 def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
     if not db: 
-        logger.error("❌ Database not connected")
         return False
     
     try:
-        logger.info(f"💰 Immediate referral bonuses: referrer {referrer_id} gets 50₽, referred {referred_id} gets 100₽")
-        
         update_user_balance(referrer_id, 50.0)
         update_user_balance(referred_id, 100.0)
         
@@ -262,11 +221,11 @@ def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
             'created_at': firestore.SERVER_TIMESTAMP
         })
         
-        logger.info(f"✅ Immediate referral bonuses applied: {referrer_id} +50₽, {referred_id} +100₽")
+        logger.info(f"✅ Referral bonuses applied: {referrer_id} +50₽, {referred_id} +100₽")
         return True
         
     except Exception as e:
-        logger.error(f"❌ Error adding immediate referral bonus: {e}")
+        logger.error(f"❌ Error adding referral bonus: {e}")
         return False
 
 def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
@@ -278,16 +237,13 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
         sni = server_config["sni"]
         short_id = server_config["short_id"]
         flow = server_config["flow"]
-        security = server_config.get("security", "reality")
         
-        # Убираем порт из SNI если есть
-        clean_sni = sni.split(":")[0] if ":" in sni else sni
+        clean_sni = sni.replace(":443", "")
         
-        # Формируем VLESS ссылку
         vless_link = (
             f"vless://{vless_uuid}@{address}:{port}?"
             f"type=tcp&"
-            f"security={security}&"
+            f"security=reality&"
             f"flow={flow}&"
             f"pbk={reality_pbk}&"
             f"fp=chrome&"
@@ -302,7 +258,7 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
             "uuid": vless_uuid,
             "server": address,
             "port": port,
-            "security": security,
+            "security": "reality",
             "reality_pbk": reality_pbk,
             "sni": clean_sni,
             "short_id": short_id,
@@ -325,7 +281,6 @@ def create_vless_config(user_id: str, vless_uuid: str, server_config: dict):
 
 def process_subscription_days(user_id: str):
     if not db:
-        logger.error("❌ Database not connected")
         return False
     
     try:
@@ -359,7 +314,7 @@ def process_subscription_days(user_id: str):
                         update_data['has_subscription'] = False
                     
                     db.collection('users').document(user_id).update(update_data)
-                    logger.info(f"✅ Subscription days processed for user {user_id}: {subscription_days} -> {new_days} (-{days_passed} days)")
+                    logger.info(f"✅ Subscription days processed for user {user_id}: {subscription_days} -> {new_days}")
                     
             except Exception as e:
                 logger.error(f"❌ Error processing subscription days: {e}")
@@ -370,9 +325,8 @@ def process_subscription_days(user_id: str):
         logger.error(f"❌ Error processing subscription: {e}")
         return False
 
-def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_type: str = "tariff", payment_method: str = "yookassa"):
+def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_method: str = "yookassa"):
     if not db: 
-        logger.error("❌ Database not connected")
         return
     try:
         db.collection('payments').document(payment_id).set({
@@ -381,7 +335,6 @@ def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, paym
             'amount': amount,
             'tariff': tariff,
             'status': 'pending',
-            'payment_type': payment_type,
             'payment_method': payment_method,
             'created_at': firestore.SERVER_TIMESTAMP,
             'yookassa_id': None
@@ -392,7 +345,6 @@ def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, paym
 
 def update_payment_status(payment_id: str, status: str, yookassa_id: str = None):
     if not db: 
-        logger.error("❌ Database not connected")
         return
     try:
         update_data = {
@@ -409,7 +361,6 @@ def update_payment_status(payment_id: str, status: str, yookassa_id: str = None)
 
 def get_payment(payment_id: str):
     if not db: 
-        logger.error("❌ Database not connected")
         return None
     try:
         doc = db.collection('payments').document(payment_id).get()
@@ -420,7 +371,6 @@ def get_payment(payment_id: str):
 
 def get_referrals(referrer_id: str):
     if not db: 
-        logger.error("❌ Database not connected")
         return []
     try:
         referrals = db.collection('referrals').where('referrer_id', '==', referrer_id).stream()
@@ -433,42 +383,31 @@ def extract_referrer_id(start_param: str) -> str:
     if not start_param:
         return None
     
-    logger.info(f"🔍 Extracting referrer_id from: '{start_param}'")
-    
     if start_param.startswith('ref_'):
-        referrer_id = start_param.replace('ref_', '')
-        logger.info(f"✅ Found ref_ format: {referrer_id}")
-        return referrer_id
+        return start_param.replace('ref_', '')
     
     if start_param.isdigit():
-        logger.info(f"✅ Found digit format: {start_param}")
         return start_param
     
     patterns = [
         r'ref_(\d+)',
         r'ref(\d+)',  
         r'referral_(\d+)',
-        r'referral(\d+)',
-        r'startapp_(\d+)',
-        r'startapp(\d+)',
         r'(\d{8,})',
     ]
     
     for pattern in patterns:
         match = re.search(pattern, start_param)
         if match:
-            referrer_id = match.group(1)
-            logger.info(f"✅ Found with pattern '{pattern}': {referrer_id}")
-            return referrer_id
+            return match.group(1)
     
-    logger.info(f"⚠️ Using raw start_param as referrer_id: {start_param}")
     return start_param
 
-# Эндпоинты API
+# Основные эндпоинты API
 @app.get("/")
 async def root():
     return {
-        "message": "VAC VPN API is running on Railway", 
+        "message": "VAC VPN API is running", 
         "status": "ok", 
         "firebase": "connected" if db else "disconnected",
         "timestamp": datetime.now().isoformat()
@@ -479,15 +418,12 @@ async def health_check():
     return {
         "status": "healthy", 
         "timestamp": datetime.now().isoformat(), 
-        "firebase": "connected" if db else "disconnected",
-        "note": "Xray management is manual - UUIDs need to be added to VPN server config"
+        "firebase": "connected" if db else "disconnected"
     }
 
 @app.post("/init-user")
 async def init_user(request: InitUserRequest):
     try:
-        logger.info(f"🔍 INIT-USER START: user_id={request.user_id}, start_param='{request.start_param}'")
-        
         if not db:
             return {"error": "Database not connected"}
         
@@ -500,7 +436,6 @@ async def init_user(request: InitUserRequest):
         
         if request.start_param:
             referrer_id = extract_referrer_id(request.start_param)
-            logger.info(f"🎯 Extracted referrer_id: {referrer_id}")
             
             if referrer_id:
                 referrer = get_user(referrer_id)
@@ -514,7 +449,6 @@ async def init_user(request: InitUserRequest):
                         bonus_result = add_referral_bonus_immediately(referrer_id, request.user_id)
                         if bonus_result:
                             bonus_applied = True
-                            logger.info(f"🎉 Referral bonuses applied immediately for {request.user_id}")
         
         user_ref = db.collection('users').document(request.user_id)
         user_doc = user_ref.get()
@@ -535,10 +469,8 @@ async def init_user(request: InitUserRequest):
             
             if is_referral and referrer_id:
                 user_data['referred_by'] = referrer_id
-                logger.info(f"🔗 User {request.user_id} referred by {referrer_id}")
             
             user_ref.set(user_data)
-            logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}, bonus_applied: {bonus_applied}")
             
             return {
                 "success": True, 
@@ -604,8 +536,7 @@ async def get_user_info(user_id: str):
                 "total_bonus_money": total_bonus_money,
                 "referrer_bonus": REFERRAL_BONUS_REFERRER,
                 "referred_bonus": REFERRAL_BONUS_REFERRED
-            },
-            "note": "UUID needs to be manually added to Xray config on VPN server"
+            }
         }
         
     except Exception as e:
@@ -614,8 +545,6 @@ async def get_user_info(user_id: str):
 @app.post("/buy-with-balance")
 async def buy_with_balance(request: BuyWithBalanceRequest):
     try:
-        logger.info(f"💰 BUY-WITH-BALANCE START: user_id={request.user_id}, tariff={request.tariff_id}, price={request.tariff_price}")
-        
         if not db:
             return {"error": "Database not connected"}
         
@@ -632,11 +561,10 @@ async def buy_with_balance(request: BuyWithBalanceRequest):
             }
         
         payment_id = str(uuid.uuid4())
-        save_payment(payment_id, request.user_id, request.tariff_price, request.tariff_id, "tariff", "balance")
+        save_payment(payment_id, request.user_id, request.tariff_price, request.tariff_id, "balance")
         
         update_user_balance(request.user_id, -request.tariff_price)
         
-        # Активируем подписку - UUID будет сгенерирован внутри update_subscription_days
         success = update_subscription_days(request.user_id, request.tariff_days)
         
         if not success:
@@ -649,26 +577,17 @@ async def buy_with_balance(request: BuyWithBalanceRequest):
             referral_exists = db.collection('referrals').document(referral_id).get().exists
             
             if not referral_exists:
-                logger.info(f"🎁 Applying referral bonus for {request.user_id} referred by {referrer_id}")
                 add_referral_bonus_immediately(referrer_id, request.user_id)
         
         update_payment_status(payment_id, "succeeded")
-        
-        # Получаем обновленные данные пользователя
-        updated_user = get_user(request.user_id)
-        user_uuid = updated_user.get('vless_uuid') if updated_user else None
-        
-        logger.info(f"✅ Tariff activated with balance: {request.user_id} -> {request.tariff_days} days, UUID: {user_uuid}")
         
         return {
             "success": True,
             "payment_id": payment_id,
             "amount": request.tariff_price,
             "days": request.tariff_days,
-            "user_uuid": user_uuid,
             "status": "succeeded",
-            "message": "Подписка успешно активирована с баланса! UUID сгенерирован и готов для добавления в Xray конфиг.",
-            "note": "⚠️ Не забудьте добавить UUID в Xray конфиг на VPN сервере"
+            "message": "Подписка успешно активирована с баланса!"
         }
         
     except Exception as e:
@@ -699,11 +618,10 @@ async def activate_tariff(request: ActivateTariffRequest):
                 return {"error": f"Недостаточно средств на балансе. Необходимо: {tariff_price}₽, доступно: {user_balance}₽"}
             
             payment_id = str(uuid.uuid4())
-            save_payment(payment_id, request.user_id, tariff_price, request.tariff, "tariff", "balance")
+            save_payment(payment_id, request.user_id, tariff_price, request.tariff, "balance")
             
             update_user_balance(request.user_id, -tariff_price)
             
-            # Активируем подписку
             success = update_subscription_days(request.user_id, tariff_days)
             
             if not success:
@@ -716,26 +634,17 @@ async def activate_tariff(request: ActivateTariffRequest):
                 referral_exists = db.collection('referrals').document(referral_id).get().exists
                 
                 if not referral_exists:
-                    logger.info(f"🎁 Applying referral bonus for {request.user_id} referred by {referrer_id}")
                     add_referral_bonus_immediately(referrer_id, request.user_id)
             
             update_payment_status(payment_id, "succeeded")
-            
-            # Получаем UUID
-            updated_user = get_user(request.user_id)
-            user_uuid = updated_user.get('vless_uuid') if updated_user else None
-            
-            logger.info(f"✅ Tariff activated with balance: {request.user_id} -> {tariff_days} days, UUID: {user_uuid}")
             
             return {
                 "success": True,
                 "payment_id": payment_id,
                 "amount": tariff_price,
                 "days": tariff_days,
-                "user_uuid": user_uuid,
                 "status": "succeeded",
-                "message": "Подписка успешно активирована с баланса!",
-                "note": "⚠️ Не забудьте добавить UUID в Xray конфиг на VPN сервере"
+                "message": "Подписка успешно активирована с баланса!"
             }
         
         elif request.payment_method == "yookassa":
@@ -746,7 +655,7 @@ async def activate_tariff(request: ActivateTariffRequest):
                 return {"error": "Payment gateway not configured"}
             
             payment_id = str(uuid.uuid4())
-            save_payment(payment_id, request.user_id, tariff_price, request.tariff, "tariff", "yookassa")
+            save_payment(payment_id, request.user_id, tariff_price, request.tariff, "yookassa")
             
             yookassa_data = {
                 "amount": {"value": f"{tariff_price:.2f}", "currency": "RUB"},
@@ -757,7 +666,6 @@ async def activate_tariff(request: ActivateTariffRequest):
                     "payment_id": payment_id,
                     "user_id": request.user_id,
                     "tariff": request.tariff,
-                    "payment_type": "tariff",
                     "tariff_days": tariff_days
                 }
             }
@@ -777,8 +685,6 @@ async def activate_tariff(request: ActivateTariffRequest):
             if response.status_code in [200, 201]:
                 payment_data = response.json()
                 update_payment_status(payment_id, "pending", payment_data.get("id"))
-                
-                logger.info(f"💳 Tariff payment created: {payment_id} for user {request.user_id}")
                 
                 return {
                     "success": True,
@@ -843,12 +749,10 @@ async def check_payment(payment_id: str, user_id: str):
                             user_id = payment['user_id']
                             tariff = payment['tariff']
                             tariff_days = TARIFFS[tariff]["days"]
-                            tariff_price = TARIFFS[tariff]["price"]
                             
                             success = update_subscription_days(user_id, tariff_days)
                             
                             if not success:
-                                logger.error(f"❌ Failed to activate subscription for user {user_id}")
                                 return {"error": "Failed to activate subscription"}
                             
                             user = get_user(user_id)
@@ -859,23 +763,14 @@ async def check_payment(payment_id: str, user_id: str):
                                 referral_exists = db.collection('referrals').document(referral_id).get().exists
                                 
                                 if not referral_exists:
-                                    logger.info(f"🎁 Applying referral bonus for {user_id} referred by {referrer_id}")
                                     add_referral_bonus_immediately(referrer_id, user_id)
-                            
-                            # Получаем UUID
-                            updated_user = get_user(user_id)
-                            user_uuid = updated_user.get('vless_uuid') if updated_user else None
-                            
-                            logger.info(f"✅ Subscription activated for user {user_id}: +{tariff_days} days, UUID: {user_uuid}")
                             
                             return {
                                 "success": True,
                                 "status": status,
                                 "payment_id": payment_id,
                                 "amount": payment['amount'],
-                                "days_added": tariff_days,
-                                "user_uuid": user_uuid,
-                                "note": "⚠️ Не забудьте добавить UUID в Xray конфиг на VPN сервере"
+                                "days_added": tariff_days
                             }
         
         return {
@@ -917,43 +812,12 @@ async def get_vless_config(user_id: str):
             "success": True,
             "user_id": user_id,
             "vless_uuid": vless_uuid,
-            "configs": configs,
-            "note": "⚠️ UUID должен быть добавлен в Xray конфиг на VPN сервере для работы"
+            "configs": configs
         }
         
     except Exception as e:
         logger.error(f"❌ Error getting VLESS config: {e}")
         return {"error": f"Error getting VLESS config: {str(e)}"}
-
-# Админские эндпоинты для просмотра данных
-@app.get("/admin/users-with-uuids")
-async def get_users_with_uuids():
-    """Получить всех пользователей с UUID для ручного добавления в Xray"""
-    try:
-        if not db:
-            return {"error": "Database not connected"}
-        
-        users_ref = db.collection('users').where('vless_uuid', '!=', None).stream()
-        
-        users = []
-        for user_doc in users_ref:
-            user_data = user_doc.to_dict()
-            users.append({
-                "user_id": user_data.get('user_id'),
-                "vless_uuid": user_data.get('vless_uuid'),
-                "has_subscription": user_data.get('has_subscription', False),
-                "subscription_days": user_data.get('subscription_days', 0)
-            })
-        
-        return {
-            "success": True,
-            "users": users,
-            "count": len(users),
-            "note": "Добавьте эти UUID в Xray конфиг на VPN сервере"
-        }
-        
-    except Exception as e:
-        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
