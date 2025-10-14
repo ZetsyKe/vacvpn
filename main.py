@@ -11,8 +11,7 @@ import logging
 import re
 import json
 import urllib.parse
-import subprocess
-from typing import List
+from typing import List, Optional
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -29,8 +28,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Константы
-XRAY_CONFIG_PATH = "/usr/local/etc/xray/config.json"
+# Константы для Xray Manager
+XRAY_MANAGER_URL = "http://localhost:8001"
+XRAY_API_KEY = "vac-vpn-secret-key-2024"  # Должен совпадать с ключом в Xray Manager
 
 VLESS_SERVERS = [
     {
@@ -127,158 +127,87 @@ class BuyWithBalanceRequest(BaseModel):
     tariff_price: float
     tariff_days: int
 
-# Функции работы с Xray конфигом
-def add_user_to_xray(user_uuid: str):
-    """Добавляет пользователя в Xray конфиг и перезапускает сервис"""
+# Функции работы с Xray через API
+async def add_user_to_xray(user_uuid: str) -> bool:
+    """Добавить пользователя в Xray через API"""
     try:
-        # Читаем текущий конфиг
-        with open(XRAY_CONFIG_PATH, 'r') as f:
-            config = json.load(f)
-        
-        # Добавляем пользователя в массив clients
-        clients = config['inbounds'][0]['settings']['clients']
-        
-        # Проверяем нет ли уже такого UUID
-        existing_uuids = [client['id'] for client in clients]
-        if user_uuid not in existing_uuids:
-            clients.append({
-                "id": user_uuid,
-                "flow": ""
-            })
-            
-            # Сохраняем обновленный конфиг
-            with open(XRAY_CONFIG_PATH, 'w') as f:
-                json.dump(config, f, indent=2)
-            
-            # Перезапускаем Xray
-            result = subprocess.run(
-                ["systemctl", "restart", "xray"], 
-                capture_output=True, 
-                text=True,
-                timeout=30
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{XRAY_MANAGER_URL}/users",
+                json={"uuid": user_uuid, "flow": ""},
+                headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
+                timeout=10.0
             )
             
-            if result.returncode == 0:
-                logger.info(f"✅ UUID {user_uuid} добавлен в Xray конфиг")
+            if response.status_code == 200:
+                logger.info(f"✅ User {user_uuid} added to Xray via API")
                 return True
             else:
-                logger.error(f"❌ Ошибка перезапуска Xray: {result.stderr}")
+                logger.error(f"❌ Failed to add user to Xray: {response.status_code} - {response.text}")
                 return False
-        else:
-            logger.info(f"⚠️ UUID {user_uuid} уже существует в конфиге")
-            return True
-            
+                
     except Exception as e:
-        logger.error(f"❌ Ошибка обновления Xray конфига: {e}")
+        logger.error(f"❌ Error adding user to Xray via API: {e}")
         return False
 
-def get_current_uuids() -> List[str]:
-    """Получает список всех UUID из Xray конфига"""
+async def check_user_in_xray(user_uuid: str) -> bool:
+    """Проверить есть ли пользователь в Xray через API"""
     try:
-        with open(XRAY_CONFIG_PATH, 'r') as f:
-            config = json.load(f)
-        clients = config['inbounds'][0]['settings']['clients']
-        return [client['id'] for client in clients]
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{XRAY_MANAGER_URL}/users/{user_uuid}",
+                headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
+                timeout=5.0
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("exists", False)
+            return False
+            
     except Exception as e:
-        logger.error(f"❌ Ошибка чтения Xray конфига: {e}")
-        return []
-
-def check_user_in_xray(user_uuid: str):
-    """Проверяет есть ли пользователь в Xray конфиге"""
-    try:
-        with open(XRAY_CONFIG_PATH, 'r') as f:
-            config = json.load(f)
-        
-        clients = config['inbounds'][0]['settings']['clients']
-        existing_uuids = [client['id'] for client in clients]
-        
-        return user_uuid in existing_uuids
-    except Exception as e:
-        logger.error(f"❌ Ошибка проверки пользователя в Xray: {e}")
+        logger.error(f"❌ Error checking user in Xray: {e}")
         return False
 
-def migrate_existing_users_to_xray():
-    """Добавляет всех существующих пользователей с UUID в Xray конфиг"""
+async def get_xray_users_count() -> int:
+    """Получить количество пользователей в Xray"""
     try:
-        if not db:
-            logger.error("❌ Database not connected")
-            return {"success": 0, "errors": 1, "skipped": 0}
-        
-        # Получаем всех пользователей с UUID
-        users_ref = db.collection('users').stream()
-        
-        migrated_count = 0
-        skipped_count = 0
-        error_count = 0
-        
-        for user_doc in users_ref:
-            user_data = user_doc.to_dict()
-            user_id = user_data.get('user_id')
-            user_uuid = user_data.get('vless_uuid')
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{XRAY_MANAGER_URL}/users",
+                headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
+                timeout=5.0
+            )
             
-            if user_uuid:
-                # Добавляем UUID в Xray конфиг
-                success = add_user_to_xray(user_uuid)
-                if success:
-                    migrated_count += 1
-                    logger.info(f"✅ Мигрирован пользователь {user_id} с UUID {user_uuid}")
-                else:
-                    error_count += 1
-                    logger.error(f"❌ Ошибка миграции пользователя {user_id}")
+            if response.status_code == 200:
+                users = response.json()
+                return len(users)
+            return 0
+            
+    except Exception as e:
+        logger.error(f"❌ Error getting Xray users: {e}")
+        return 0
+
+async def remove_user_from_xray(user_uuid: str) -> bool:
+    """Удалить пользователя из Xray через API"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{XRAY_MANAGER_URL}/users/{user_uuid}",
+                headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
+                timeout=10.0
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"✅ User {user_uuid} removed from Xray via API")
+                return True
             else:
-                skipped_count += 1
-                logger.info(f"⏭️ Пропущен пользователь {user_id} (нет UUID)")
-        
-        logger.info(f"🎉 Миграция завершена! Успешно: {migrated_count}, Ошибки: {error_count}, Пропущено: {skipped_count}")
-        return {
-            "success": migrated_count,
-            "errors": error_count,
-            "skipped": skipped_count
-        }
-        
+                logger.error(f"❌ Failed to remove user from Xray: {response.status_code} - {response.text}")
+                return False
+                
     except Exception as e:
-        logger.error(f"❌ Ошибка миграции: {e}")
-        return {"success": 0, "errors": 1, "skipped": 0}
-
-def fix_missing_users():
-    """Добавляет пользователей которые есть в базе но нет в Xray"""
-    try:
-        if not db:
-            logger.error("❌ Database not connected")
-            return {"fixed": 0, "already_exists": 0}
-        
-        users_ref = db.collection('users').stream()
-        
-        fixed_count = 0
-        already_exists_count = 0
-        
-        for user_doc in users_ref:
-            user_data = user_doc.to_dict()
-            user_id = user_data.get('user_id')
-            user_uuid = user_data.get('vless_uuid')
-            
-            if user_uuid:
-                # Проверяем есть ли пользователь в Xray
-                if not check_user_in_xray(user_uuid):
-                    # Добавляем отсутствующего пользователя
-                    success = add_user_to_xray(user_uuid)
-                    if success:
-                        fixed_count += 1
-                        logger.info(f"✅ Добавлен отсутствующий пользователь {user_id}")
-                    else:
-                        logger.error(f"❌ Ошибка добавления пользователя {user_id}")
-                else:
-                    already_exists_count += 1
-        
-        logger.info(f"🔧 Исправлено пользователей: {fixed_count}, Уже были в Xray: {already_exists_count}")
-        return {
-            "fixed": fixed_count,
-            "already_exists": already_exists_count
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ Ошибка исправления пользователей: {e}")
-        return {"fixed": 0, "already_exists": 0}
+        logger.error(f"❌ Error removing user from Xray via API: {e}")
+        return False
 
 # Функции работы с Firebase
 def get_user(user_id: str):
@@ -322,7 +251,7 @@ def update_user_balance(user_id: str, amount: float):
 def generate_user_uuid():
     return str(uuid.uuid4())
 
-def update_subscription_days(user_id: str, additional_days: int):
+async def update_subscription_days(user_id: str, additional_days: int):
     if not db: 
         logger.error("❌ Database not connected")
         return False
@@ -352,8 +281,8 @@ def update_subscription_days(user_id: str, additional_days: int):
                 update_data['subscription_start'] = datetime.now().isoformat()
                 logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
                 
-                # ⚠️ ДОБАВЛЯЕМ UUID В XRAY КОНФИГ
-                add_user_to_xray(user_uuid)
+                # ⚠️ ДОБАВЛЯЕМ UUID В XRAY ЧЕРЕЗ API
+                await add_user_to_xray(user_uuid)
             
             user_ref.update(update_data)
             logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
@@ -585,19 +514,23 @@ def extract_referrer_id(start_param: str) -> str:
 # Эндпоинты API
 @app.get("/")
 async def root():
+    xray_users_count = await get_xray_users_count()
     return {
         "message": "VAC VPN API is running", 
         "status": "ok", 
         "firebase": "connected" if db else "disconnected",
+        "xray_users": xray_users_count,
         "timestamp": datetime.now().isoformat()
     }
 
 @app.get("/health")
 async def health_check():
+    xray_users_count = await get_xray_users_count()
     return {
         "status": "healthy", 
         "timestamp": datetime.now().isoformat(), 
         "firebase": "connected" if db else "disconnected",
+        "xray_users": xray_users_count,
         "database_connected": db is not None
     }
 
@@ -777,7 +710,7 @@ async def buy_with_balance(request: BuyWithBalanceRequest):
         update_user_balance(request.user_id, -request.tariff_price)
         
         # Активируем подписку - UUID будет сгенерирован и добавлен в Xray внутри update_subscription_days
-        success = update_subscription_days(request.user_id, request.tariff_days)
+        success = await update_subscription_days(request.user_id, request.tariff_days)
         
         if not success:
             return {"error": "Ошибка активации подписки"}
@@ -838,7 +771,7 @@ async def activate_tariff(request: ActivateTariffRequest):
             update_user_balance(request.user_id, -tariff_price)
             
             # Активируем подписку - UUID будет сгенерирован и добавлен в Xray внутри update_subscription_days
-            success = update_subscription_days(request.user_id, tariff_days)
+            success = await update_subscription_days(request.user_id, tariff_days)
             
             if not success:
                 return {"error": "Ошибка активации подписки"}
@@ -973,7 +906,7 @@ async def check_payment(payment_id: str, user_id: str):
                             tariff_days = TARIFFS[tariff]["days"]
                             tariff_price = TARIFFS[tariff]["price"]
                             
-                            success = update_subscription_days(user_id, tariff_days)
+                            success = await update_subscription_days(user_id, tariff_days)
                             
                             if not success:
                                 logger.error(f"❌ Failed to activate subscription for user {user_id}")
@@ -1029,10 +962,10 @@ async def get_vless_config(user_id: str):
         if not user.get('has_subscription', False):
             return {"error": "No active subscription"}
         
-        # ⚠️ ПРОВЕРЯЕМ ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ В XRAY
-        if not check_user_in_xray(vless_uuid):
+        # ⚠️ ПРОВЕРЯЕМ ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ В XRAY ЧЕРЕЗ API
+        if not await check_user_in_xray(vless_uuid):
             logger.warning(f"⚠️ Пользователь {user_id} есть в базе но нет в Xray. Добавляем...")
-            success = add_user_to_xray(vless_uuid)
+            success = await add_user_to_xray(vless_uuid)
             if not success:
                 return {"error": "User not found in Xray configuration. Please contact administrator."}
         
@@ -1052,7 +985,7 @@ async def get_vless_config(user_id: str):
         logger.error(f"❌ Error getting VLESS config: {e}")
         return {"error": f"Error getting VLESS config: {str(e)}"}
 
-# Новые эндпоинты для генерации UUID
+# Админские эндпоинты для управления Xray через API
 @app.post("/admin/generate-uuid-for-user")
 async def generate_uuid_for_user(user_id: str):
     """Принудительно сгенерировать UUID для пользователя и добавить в Xray"""
@@ -1068,8 +1001,8 @@ async def generate_uuid_for_user(user_id: str):
         existing_uuid = user.get('vless_uuid')
         if existing_uuid:
             # Проверяем есть ли в Xray, если нет - добавляем
-            if not check_user_in_xray(existing_uuid):
-                success = add_user_to_xray(existing_uuid)
+            if not await check_user_in_xray(existing_uuid):
+                success = await add_user_to_xray(existing_uuid)
                 if success:
                     return {
                         "success": True,
@@ -1098,7 +1031,7 @@ async def generate_uuid_for_user(user_id: str):
         })
         
         # Добавляем в Xray
-        success = add_user_to_xray(user_uuid)
+        success = await add_user_to_xray(user_uuid)
         if success:
             return {
                 "success": True,
@@ -1142,7 +1075,7 @@ async def generate_uuids_for_all():
                 })
                 
                 # Добавляем в Xray
-                success = add_user_to_xray(user_uuid)
+                success = await add_user_to_xray(user_uuid)
                 if success:
                     results["generated"] += 1
                     results["details"].append({
@@ -1162,8 +1095,8 @@ async def generate_uuids_for_all():
                 
                 # Проверяем есть ли в Xray
                 existing_uuid = user_data.get('vless_uuid')
-                if not check_user_in_xray(existing_uuid):
-                    add_user_to_xray(existing_uuid)
+                if not await check_user_in_xray(existing_uuid):
+                    await add_user_to_xray(existing_uuid)
                     results["details"].append({
                         "user_id": user_id,
                         "uuid": existing_uuid,
@@ -1180,44 +1113,30 @@ async def generate_uuids_for_all():
         logger.error(f"❌ Error generating UUIDs for all: {e}")
         return {"error": str(e)}
 
-# Админские эндпоинты для управления Xray
 @app.get("/admin/xray-users")
 async def get_xray_users():
-    """Показать всех пользователей в Xray конфиге"""
+    """Показать всех пользователей в Xray конфиге через API"""
     try:
-        with open(XRAY_CONFIG_PATH, 'r') as f:
-            config = json.load(f)
-        clients = config['inbounds'][0]['settings']['clients']
-        uuids = [client['id'] for client in clients]
-        return {"users": uuids, "count": len(uuids)}
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{XRAY_MANAGER_URL}/users",
+                headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
+                timeout=5.0
+            )
+            
+            if response.status_code == 200:
+                users = response.json()
+                return {"users": users, "count": len(users)}
+            else:
+                return {"error": f"Failed to get Xray users: {response.status_code}"}
     except Exception as e:
         return {"error": str(e)}
 
 @app.post("/admin/add-uuid-to-xray")
 async def admin_add_uuid_to_xray(uuid: str):
-    """Добавить UUID в Xray конфиг (для админа)"""
-    success = add_user_to_xray(uuid)
+    """Добавить UUID в Xray конфиг (для админа) через API"""
+    success = await add_user_to_xray(uuid)
     return {"success": success, "uuid": uuid}
-
-@app.post("/admin/migrate-users-to-xray")
-async def migrate_users_to_xray():
-    """Запустить миграцию всех пользователей в Xray"""
-    result = migrate_existing_users_to_xray()
-    return {
-        "success": True, 
-        "message": "Миграция завершена",
-        "result": result
-    }
-
-@app.post("/admin/fix-missing-users")
-async def fix_missing_users_endpoint():
-    """Добавить пользователей которые есть в базе но нет в Xray"""
-    result = fix_missing_users()
-    return {
-        "success": True, 
-        "message": "Проверка и исправление завершены",
-        "result": result
-    }
 
 @app.get("/admin/check-migration-status")
 async def check_migration_status():
@@ -1243,11 +1162,8 @@ async def check_migration_status():
             if user_data.get('has_subscription'):
                 users_with_subscription += 1
         
-        # Получаем статистику из Xray
-        with open(XRAY_CONFIG_PATH, 'r') as f:
-            xray_config = json.load(f)
-        
-        xray_users = len(xray_config['inbounds'][0]['settings']['clients'])
+        # Получаем статистику из Xray через API
+        xray_users_count = await get_xray_users_count()
         
         return {
             "database": {
@@ -1256,10 +1172,10 @@ async def check_migration_status():
                 "users_with_subscription": users_with_subscription
             },
             "xray": {
-                "total_users": xray_users
+                "total_users": xray_users_count
             },
-            "missing_users": users_with_uuid - xray_users,
-            "migration_complete": users_with_uuid == xray_users
+            "missing_users": users_with_uuid - xray_users_count,
+            "migration_complete": users_with_uuid == xray_users_count
         }
         
     except Exception as e:
@@ -1281,7 +1197,7 @@ async def add_single_user_to_xray(user_id: str):
             return {"error": "User doesn't have UUID"}
         
         # Проверяем есть ли уже в Xray
-        if check_user_in_xray(user_uuid):
+        if await check_user_in_xray(user_uuid):
             return {
                 "success": True,
                 "message": f"Пользователь {user_id} уже есть в Xray",
@@ -1289,7 +1205,7 @@ async def add_single_user_to_xray(user_id: str):
             }
         
         # Добавляем в Xray
-        success = add_user_to_xray(user_uuid)
+        success = await add_user_to_xray(user_uuid)
         if success:
             return {
                 "success": True,
@@ -1323,6 +1239,11 @@ async def admin_reset_user(user_id: str):
     try:
         if not db:
             return {"error": "Database not connected"}
+        
+        user = get_user(user_id)
+        if user and user.get('vless_uuid'):
+            # Удаляем пользователя из Xray
+            await remove_user_from_xray(user['vless_uuid'])
         
         user_ref = db.collection('users').document(user_id)
         user_ref.update({
