@@ -61,28 +61,64 @@ REFERRAL_BONUS_REFERRER = 50.0
 REFERRAL_BONUS_REFERRED = 100.0
 
 # Инициализация Firebase
-try:
-    if not firebase_admin._apps:
-        logger.info("🚀 Initializing Firebase from config file")
+def initialize_firebase():
+    try:
+        # Проверяем, не инициализирован ли уже Firebase
+        if firebase_admin._apps:
+            logger.info("✅ Firebase already initialized")
+            return firestore.client()
         
-        # Используем файл конфига
-        cred_path = "firebase-config.json"
-        if os.path.exists(cred_path):
-            cred = credentials.Certificate(cred_path)
+        # Вариант 1: Из переменных окружения JSON (рекомендуется для Railway)
+        firebase_config_json = os.environ.get('FIREBASE_CONFIG')
+        if firebase_config_json:
+            try:
+                config_dict = json.loads(firebase_config_json)
+                cred = credentials.Certificate(config_dict)
+                firebase_admin.initialize_app(cred)
+                logger.info("✅ Firebase initialized from environment variables")
+                return firestore.client()
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Invalid FIREBASE_CONFIG JSON: {e}")
+        
+        # Вариант 2: Из отдельных переменных окружения
+        service_account_info = {
+            "type": "service_account",
+            "project_id": os.environ.get("FIREBASE_PROJECT_ID"),
+            "private_key_id": os.environ.get("FIREBASE_PRIVATE_KEY_ID"),
+            "private_key": os.environ.get("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n'),
+            "client_email": os.environ.get("FIREBASE_CLIENT_EMAIL"),
+            "client_id": os.environ.get("FIREBASE_CLIENT_ID"),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": os.environ.get("FIREBASE_CLIENT_CERT_URL")
+        }
+        
+        # Проверяем, есть ли достаточно данных для инициализации
+        if service_account_info["project_id"] and service_account_info["private_key"]:
+            cred = credentials.Certificate(service_account_info)
+            firebase_admin.initialize_app(cred)
+            logger.info("✅ Firebase initialized from individual environment variables")
+            return firestore.client()
+        
+        # Вариант 3: Из файла (для локальной разработки)
+        try:
+            cred = credentials.Certificate('firebase-config.json')
             firebase_admin.initialize_app(cred)
             logger.info("✅ Firebase initialized from config file")
-        else:
-            logger.error(f"❌ Firebase config file not found: {cred_path}")
-            db = None
-    
-    db = firestore.client()
-    logger.info("✅ Firebase database connected successfully")
-    
-except Exception as e:
-    logger.error(f"❌ Firebase initialization failed: {str(e)}")
-    import traceback
-    logger.error(traceback.format_exc())
-    db = None
+            return firestore.client()
+        except FileNotFoundError:
+            logger.warning("⚠️ Firebase config file not found")
+        
+        logger.error("❌ All Firebase initialization methods failed")
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ Firebase initialization error: {e}")
+        return None
+
+# Инициализируем базу данных
+db = initialize_firebase()
 
 # Модели данных
 class PaymentRequest(BaseModel):
@@ -186,7 +222,6 @@ def update_subscription_days(user_id: str, additional_days: int) -> bool:
                     update_data['subscription_start'] = datetime.now().isoformat()
                     logger.info(f"🔑 Generated new UUID for user {user_id}: {user_uuid}")
                 
-                # ВАЖНО: UUID будет добавлен в Xray вручную или через синхронизацию
                 logger.info(f"📝 UUID {user_uuid} ready for manual addition to Xray config")
             
             user_ref.update(update_data)
@@ -487,7 +522,7 @@ async def init_user(request: InitUserRequest):
                 'has_subscription': False,
                 'subscription_days': 0,
                 'subscription_start': None,
-                'vless_uuid': None,  # UUID будет сгенерирован при активации подписки
+                'vless_uuid': None,
                 'created_at': firestore.SERVER_TIMESTAMP
             }
             
