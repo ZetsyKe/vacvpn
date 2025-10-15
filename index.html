@@ -873,21 +873,25 @@
 
             if (result.success) {
                 if (result.payment_url) {
-                    // Есть ссылка для оплаты - открываем её
                     currentPaymentId = result.payment_id;
                     paymentUrl = result.payment_url;
                     
                     closeAddBalanceModal();
                     showSuccess('💳 Открываю страницу оплаты...');
                     
-                    // Открываем в новом окне/вкладке
-                    window.open(paymentUrl, '_blank');
+                    // ИСПРАВЛЕНИЕ: Используем Telegram WebApp метод для открытия ссылки
+                    if (window.Telegram && window.Telegram.WebApp) {
+                        // Метод 1: Прямое открытие через Telegram
+                        window.Telegram.WebApp.openLink(paymentUrl);
+                    } else {
+                        // Метод 2: Открытие в новом окне для браузера
+                        window.open(paymentUrl, '_blank');
+                    }
                     
                     // Начинаем проверку статуса платежа
                     startBalancePaymentChecking();
                     
                 } else if (result.balance_added) {
-                    // Баланс уже пополнен (например, при тестировании)
                     closeAddBalanceModal();
                     showSuccess(`✅ Баланс пополнен на ${result.balance_added}₽!`);
                     await loadUserData();
@@ -950,7 +954,6 @@
                         clearInterval(checkInterval);
                         showError('❌ Платеж отменен или не прошел');
                     }
-                    // Если статус 'pending', продолжаем проверять
                 } else {
                     console.warn('⚠️ Payment check warning:', result.error);
                 }
@@ -1151,8 +1154,12 @@
     // Функция для перехода к оплате
     function proceedToPayment() {
         if (paymentUrl) {
-            // Открываем платежную страницу в новом окне
-            window.open(paymentUrl, '_blank');
+            // ИСПРАВЛЕНИЕ: Используем Telegram WebApp метод для открытия ссылки
+            if (window.Telegram && window.Telegram.WebApp) {
+                window.Telegram.WebApp.openLink(paymentUrl);
+            } else {
+                window.open(paymentUrl, '_blank');
+            }
             closePaymentModal();
             showSuccess('🔗 Открыта страница оплаты. После оплаты обновите страницу.');
             
