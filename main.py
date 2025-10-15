@@ -809,11 +809,15 @@ async def get_user_info(user_id: str):
 @app.post("/add-balance")
 async def add_balance(request: AddBalanceRequest):
     try:
+        logger.info(f"💰 ADD-BALANCE START: user_id={request.user_id}, amount={request.amount}, payment_method={request.payment_method}")
+        
         if not db:
+            logger.error("❌ Database not connected")
             return {"error": "Database not connected"}
             
         user = get_user(request.user_id)
         if not user:
+            logger.error(f"❌ User not found: {request.user_id}")
             return {"error": "User not found"}
         
         if request.amount < 10:  # Минимум 10 рублей
@@ -827,6 +831,7 @@ async def add_balance(request: AddBalanceRequest):
             API_KEY = os.getenv("API_KEY")
             
             if not SHOP_ID or not API_KEY:
+                logger.error("❌ Payment gateway not configured")
                 return {"error": "Payment gateway not configured"}
             
             payment_id = str(uuid.uuid4())
@@ -845,6 +850,8 @@ async def add_balance(request: AddBalanceRequest):
                 }
             }
             
+            logger.info(f"💳 Creating YooKassa payment for user {request.user_id}, amount: {request.amount}₽")
+            
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     "https://api.yookassa.ru/v3/payments",
@@ -862,6 +869,7 @@ async def add_balance(request: AddBalanceRequest):
                 update_payment_status(payment_id, "pending", payment_data.get("id"))
                 
                 logger.info(f"💳 Balance payment created: {payment_id} for user {request.user_id}, amount: {request.amount}₽")
+                logger.info(f"🔗 Payment URL: {payment_data['confirmation']['confirmation_url']}")
                 
                 return {
                     "success": True,
@@ -872,6 +880,7 @@ async def add_balance(request: AddBalanceRequest):
                     "message": f"Перейдите по ссылке для пополнения баланса на {request.amount}₽"
                 }
             else:
+                logger.error(f"❌ YooKassa error: {response.status_code} - {response.text}")
                 return {"error": f"Payment gateway error: {response.status_code}"}
         else:
             return {"error": "Invalid payment method"}
@@ -1069,14 +1078,26 @@ async def check_payment(payment_id: str, user_id: str):
         if not payment:
             return {"error": "Payment not found"}
         
+        # Если платеж уже подтвержден
         if payment['status'] == 'succeeded':
-            return {
-                "success": True,
-                "status": "succeeded",
-                "payment_id": payment_id,
-                "amount": payment['amount']
-            }
+            # Для пополнения баланса возвращаем информацию о пополнении
+            if payment['payment_type'] == 'balance':
+                return {
+                    "success": True,
+                    "status": "succeeded",
+                    "payment_id": payment_id,
+                    "amount": payment['amount'],
+                    "balance_added": payment['amount']
+                }
+            else:
+                return {
+                    "success": True,
+                    "status": "succeeded",
+                    "payment_id": payment_id,
+                    "amount": payment['amount']
+                }
         
+        # Проверяем статус в ЮKassa
         if payment.get('payment_method') == 'yookassa':
             yookassa_id = payment.get('yookassa_id')
             if yookassa_id:
