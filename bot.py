@@ -4,24 +4,12 @@ import httpx
 import signal
 import sys
 from aiogram import Bot, Dispatcher, types
-from aiogram.enums import ParseMode
+from aiogram.types import ParseMode
 from aiogram.filters import Command
-from aiogram.client.default import DefaultBotProperties
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder, WebAppInfo
 import logging
 
-# Добавляем текущую директорию в путь для импортов
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-# Теперь можно импортировать main
-try:
-    from main import app
-    logger = logging.getLogger(__name__)
-    logger.info("✅ Successfully imported main app")
-except ImportError as e:
-    logger.error(f"❌ Failed to import main app: {e}")
-
-# Настройка логирования ОДИН РАЗ
+# Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -34,27 +22,24 @@ logger.info("🤖 BOT STARTUP CHECK")
 logger.info("=" * 50)
 logger.info(f"Python: {sys.version}")
 logger.info(f"Directory: {os.getcwd()}")
-logger.info(f"Files: {os.listdir('.')}")
 logger.info(f"TOKEN: {'✅ SET' if os.getenv('TOKEN') else '❌ MISSING'}")
-logger.info(f"RAILWAY_STATIC_URL: {os.getenv('RAILWAY_STATIC_URL')}")
-logger.info("=" * 50)
 
 if not os.getenv('TOKEN'):
     logger.error("❌ CRITICAL: TOKEN environment variable is missing!")
     sys.exit(1)
 
-# Получаем переменные окружения из Railway
+# Получаем переменные окружения
 TOKEN = os.getenv("TOKEN")
 WEB_APP_URL = os.getenv("WEB_APP_URL", "https://vacvpn.vercel.app")
 SUPPORT_NICK = os.getenv("SUPPORT_NICK", "@vacvpn_support")
 TG_CHANNEL = os.getenv("TG_CHANNEL", "@vac_vpn")
 
-# ВАЖНО: Используем тот же URL что и бэкенд
+# URL API - используем Railway URL
 RAILWAY_STATIC_URL = os.getenv("RAILWAY_STATIC_URL")
 if RAILWAY_STATIC_URL:
     API_BASE_URL = f"https://{RAILWAY_STATIC_URL}"
 else:
-    API_BASE_URL = "http://localhost:8000"  # для локальной разработки
+    API_BASE_URL = "http://localhost:8443"
 
 BOT_USERNAME = os.getenv("BOT_USERNAME", "vaaaac_bot")
 
@@ -62,17 +47,16 @@ logger.info("🚀 Бот запускается на Railway...")
 logger.info(f"🌐 API сервер: {API_BASE_URL}")
 
 # Настройка бота
-bot = Bot(
-    token=TOKEN, 
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
+bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
 # Функции для работы с API
-async def make_api_request(url: str, method: str = "GET", json_data: dict = None, params: dict = None):
+async def make_api_request(endpoint: str, method: str = "GET", json_data: dict = None, params: dict = None):
     """Упрощенная функция для запросов к API"""
     try:
+        url = f"{API_BASE_URL}{endpoint}"
         timeout_config = httpx.Timeout(30.0, connect=10.0)
+        
         async with httpx.AsyncClient(timeout=timeout_config) as client:
             if method.upper() == "GET":
                 response = await client.get(url, params=params)
@@ -93,20 +77,15 @@ async def make_api_request(url: str, method: str = "GET", json_data: dict = None
 
 async def get_user_info(user_id: int):
     """Получает информацию о пользователе через API"""
-    url = f"{API_BASE_URL}/user-data"
-    params = {"user_id": str(user_id)}
-    return await make_api_request(url, "GET", params=params)
+    return await make_api_request("/user-data", "GET", params={"user_id": str(user_id)})
 
 async def create_user(user_data: dict):
     """Создает пользователя через API"""
-    url = f"{API_BASE_URL}/init-user"
-    return await make_api_request(url, "POST", json_data=user_data)
+    return await make_api_request("/init-user", "POST", json_data=user_data)
 
 async def get_vless_config(user_id: int):
     """Получает VLESS конфигурацию через API"""
-    url = f"{API_BASE_URL}/get-vless-config"
-    params = {"user_id": str(user_id)}
-    return await make_api_request(url, "GET", params=params)
+    return await make_api_request("/get-vless-config", "GET", params={"user_id": str(user_id)})
 
 async def send_referral_notification(referrer_id: int, referred_user):
     """Отправляет уведомление рефереру о новом реферале"""
@@ -481,7 +460,7 @@ async def errors_handler(update: types.Update, exception: Exception):
 
 # Запуск бота
 async def main():
-    logger.info("🤖 Бот VAC VPN запускается на Railway...")
+    logger.info("🤖 Бот VAC VPN запускается...")
     logger.info(f"🌐 API сервер: {API_BASE_URL}")
     logger.info(f"🌐 Веб-приложение: {WEB_APP_URL}")
     
