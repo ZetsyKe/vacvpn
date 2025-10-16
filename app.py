@@ -52,7 +52,7 @@ bot_status = {
 }
 
 # =============================================================================
-# ИМПОРТЫ МОДУЛЕЙ ПРОЕКТА
+# УЛУЧШЕННАЯ ЗАГРУЗКА МОДУЛЕЙ
 # =============================================================================
 
 def load_config():
@@ -72,59 +72,89 @@ def load_config():
         logger.error(f"Error loading config: {e}")
         return {}
 
-def initialize_modules():
-    """Инициализация всех модулей проекта"""
-    modules_status = {}
-    
+def safe_import_module(module_name, function_names):
+    """Безопасный импорт модуля с обработкой ошибок"""
     try:
-        # Пытаемся импортировать бота
-        try:
-            from bot import main as bot_main, start_bot, stop_bot, process_message
-            modules_status["bot"] = {
-                "status": "loaded",
-                "functions": ["main", "start_bot", "stop_bot", "process_message"]
-            }
-            bot_modules = {
-                "main": bot_main,
-                "start_bot": start_bot,
-                "stop_bot": stop_bot,
-                "process_message": process_message
-            }
-        except ImportError as e:
-            logger.warning(f"Bot module not available: {e}")
-            modules_status["bot"] = {"status": "not_available", "error": str(e)}
-            bot_modules = None
+        module = __import__(module_name)
+        functions = {}
         
-        # Пытаемся импортировать xray_manager
-        try:
-            from xray_manager import process_xray, analyze_image, generate_report
-            modules_status["xray_manager"] = {
-                "status": "loaded",
-                "functions": ["process_xray", "analyze_image", "generate_report"]
-            }
-            xray_modules = {
-                "process_xray": process_xray,
-                "analyze_image": analyze_image,
-                "generate_report": generate_report
-            }
-        except ImportError as e:
-            logger.warning(f"XRay manager not available: {e}")
-            modules_status["xray_manager"] = {"status": "not_available", "error": str(e)}
-            xray_modules = None
+        for func_name in function_names:
+            if hasattr(module, func_name):
+                functions[func_name] = getattr(module, func_name)
+            else:
+                logger.warning(f"Function {func_name} not found in {module_name}")
+                functions[func_name] = None
         
         return {
-            "bot": bot_modules,
-            "xray_manager": xray_modules,
-            "status": modules_status
+            "module": module,
+            "functions": functions,
+            "status": "loaded"
         }
-    
+    except ImportError as e:
+        logger.warning(f"Module {module_name} import error: {e}")
+        return {
+            "module": None,
+            "functions": {name: None for name in function_names},
+            "status": "not_available",
+            "error": str(e)
+        }
     except Exception as e:
-        logger.error(f"Error initializing modules: {e}")
-        return {"bot": None, "xray_manager": None, "status": {}}
+        logger.error(f"Unexpected error importing {module_name}: {e}")
+        return {
+            "module": None,
+            "functions": {name: None for name in function_names},
+            "status": "error",
+            "error": str(e)
+        }
+
+def initialize_modules():
+    """Инициализация всех модулей проекта с улучшенной обработкой ошибок"""
+    modules_status = {}
+    
+    # Загружаем bot.py с базовыми функциями
+    bot_functions = ["main", "start_bot", "stop_bot", "process_message", "bot_main"]
+    bot_result = safe_import_module("bot", bot_functions)
+    modules_status["bot"] = bot_result
+    
+    # Загружаем xray_manager.py с альтернативными именами функций
+    xray_functions = ["process_xray", "analyze_image", "generate_report", "process_image", "analyze_xray"]
+    xray_result = safe_import_module("xray_manager", xray_functions)
+    modules_status["xray_manager"] = xray_result
+    
+    # Создаем удобный доступ к функциям
+    available_functions = {}
+    
+    # Для бота
+    bot_funcs = {}
+    for func_name in bot_functions:
+        if bot_result["functions"].get(func_name):
+            bot_funcs[func_name] = bot_result["functions"][func_name]
+    available_functions["bot"] = bot_funcs if bot_funcs else None
+    
+    # Для xray_manager
+    xray_funcs = {}
+    for func_name in xray_functions:
+        if xray_result["functions"].get(func_name):
+            xray_funcs[func_name] = xray_result["functions"][func_name]
+    available_functions["xray_manager"] = xray_funcs if xray_funcs else None
+    
+    return {
+        "functions": available_functions,
+        "status": modules_status
+    }
 
 # Инициализация при старте
 config = load_config()
 modules = initialize_modules()
+
+# Вспомогательные функции для удобного доступа
+def get_bot_function(name):
+    func = modules["functions"]["bot"].get(name) if modules["functions"]["bot"] else None
+    return func if callable(func) else None
+
+def get_xray_function(name):
+    func = modules["functions"]["xray_manager"].get(name) if modules["functions"]["xray_manager"] else None
+    return func if callable(func) else None
 
 # =============================================================================
 # MIDDLEWARE И ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -157,284 +187,83 @@ def update_bot_status(is_running: bool = None, error: str = None):
     bot_status["last_activity"] = datetime.now().isoformat()
 
 # =============================================================================
-# ОСНОВНЫЕ МАРШРУТЫ
+# ОСНОВНЫЕ МАРШРУТЫ (упрощенная версия)
 # =============================================================================
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Главная страница"""
-    if os.path.exists("index.html"):
-        with open("index.html", "r", encoding="utf-8") as f:
-            return f.read()
-    else:
-        return """
-        <!DOCTYPE html>
-        <html lang="ru">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>ZetayKe Bot</title>
-            <style>
-                * { margin: 0; padding: 0; box-sizing: border-box; }
-                body { 
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    min-height: 100vh;
-                    padding: 20px;
-                }
-                .container { 
-                    max-width: 1200px; 
-                    margin: 0 auto;
-                    background: white;
-                    border-radius: 15px;
-                    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-                    overflow: hidden;
-                }
-                .header {
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                    padding: 40px 20px;
-                    text-align: center;
-                }
-                .header h1 {
-                    font-size: 2.5em;
-                    margin-bottom: 10px;
-                }
-                .header p {
-                    font-size: 1.2em;
-                    opacity: 0.9;
-                }
-                .content {
-                    padding: 40px;
-                }
-                .status-grid {
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-                    gap: 20px;
-                    margin-bottom: 40px;
-                }
-                .status-card {
-                    background: #f8f9fa;
-                    padding: 25px;
-                    border-radius: 10px;
-                    border-left: 4px solid #667eea;
-                }
-                .status-card h3 {
-                    color: #333;
-                    margin-bottom: 10px;
-                }
-                .status-card .status {
-                    font-weight: bold;
-                    padding: 5px 10px;
-                    border-radius: 5px;
-                    display: inline-block;
-                }
-                .status.online { background: #d4edda; color: #155724; }
-                .status.offline { background: #f8d7da; color: #721c24; }
-                .actions {
-                    display: flex;
-                    gap: 15px;
-                    flex-wrap: wrap;
-                    margin-bottom: 30px;
-                }
-                .btn {
-                    padding: 12px 25px;
-                    border: none;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    font-size: 16px;
-                    font-weight: 600;
-                    transition: all 0.3s ease;
-                    text-decoration: none;
-                    display: inline-block;
-                }
-                .btn-primary {
-                    background: #667eea;
-                    color: white;
-                }
-                .btn-secondary {
-                    background: #6c757d;
-                    color: white;
-                }
-                .btn-success {
-                    background: #28a745;
-                    color: white;
-                }
-                .btn-danger {
-                    background: #dc3545;
-                    color: white;
-                }
-                .btn:hover {
-                    transform: translateY(-2px);
-                    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-                }
-                .endpoints {
-                    background: #f8f9fa;
-                    padding: 25px;
-                    border-radius: 10px;
-                }
-                .endpoints h3 {
-                    margin-bottom: 15px;
-                }
-                .endpoint {
-                    background: white;
-                    padding: 15px;
-                    margin: 10px 0;
-                    border-radius: 8px;
-                    border-left: 4px solid #28a745;
-                }
-                .method {
-                    font-weight: bold;
-                    color: #28a745;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>🚀 ZetayKe Bot</h1>
-                    <p>Complete AI-powered application with file processing and management</p>
-                </div>
-                
-                <div class="content">
-                    <div class="status-grid">
-                        <div class="status-card">
-                            <h3>API Status</h3>
-                            <span class="status online">ONLINE</span>
-                            <p>Server is running smoothly</p>
-                        </div>
-                        <div class="status-card">
-                            <h3>Bot Status</h3>
-                            <span class="status" id="botStatus">Loading...</span>
-                            <p id="botMessage">Checking bot status</p>
-                        </div>
-                        <div class="status-card">
-                            <h3>XRay Manager</h3>
-                            <span class="status" id="xrayStatus">Loading...</span>
-                            <p id="xrayMessage">Checking XRay status</p>
-                        </div>
-                        <div class="status-card">
-                            <h3>Uploads</h3>
-                            <span class="status online">ACTIVE</span>
-                            <p id="uploadsCount">Checking files...</p>
-                        </div>
-                    </div>
-                    
-                    <div class="actions">
-                        <a href="/docs" class="btn btn-primary">API Documentation</a>
-                        <a href="/health" class="btn btn-secondary">Health Check</a>
-                        <a href="/status" class="btn btn-success">System Status</a>
-                        <a href="/files" class="btn btn-primary">File Manager</a>
-                    </div>
-                    
-                    <div class="endpoints">
-                        <h3>Available Endpoints</h3>
-                        <div class="endpoint">
-                            <span class="method">GET</span> /health - System health check
-                        </div>
-                        <div class="endpoint">
-                            <span class="method">POST</span> /upload - Upload files
-                        </div>
-                        <div class="endpoint">
-                            <span class="method">GET</span> /files - List uploaded files
-                        </div>
-                        <div class="endpoint">
-                            <span class="method">POST</span> /bot/start - Start bot
-                        </div>
-                        <div class="endpoint">
-                            <span class="method">POST</span> /bot/stop - Stop bot
-                        </div>
-                        <div class="endpoint">
-                            <span class="method">POST</span> /xray/process - Process XRay images
-                        </div>
-                    </div>
-                </div>
+    return """
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ZetayKe Bot</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+            .success { background: #d4edda; color: #155724; }
+            .warning { background: #fff3cd; color: #856404; }
+            .error { background: #f8d7da; color: #721c24; }
+            .btn { display: inline-block; padding: 10px 20px; margin: 5px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🚀 ZetayKe Bot API</h1>
+            <p>Сервер работает успешно!</p>
+            
+            <div class="status success">
+                <strong>✅ API Status:</strong> ONLINE
             </div>
             
-            <script>
-                // Обновление статуса в реальном времени
-                async function updateStatus() {
-                    try {
-                        const response = await fetch('/status');
-                        const data = await response.json();
-                        
-                        // Обновляем статус бота
-                        const botStatus = document.getElementById('botStatus');
-                        const botMessage = document.getElementById('botMessage');
-                        if (data.bot_status.is_running) {
-                            botStatus.className = 'status online';
-                            botStatus.textContent = 'RUNNING';
-                            botMessage.textContent = 'Bot is active';
-                        } else {
-                            botStatus.className = 'status offline';
-                            botStatus.textContent = 'STOPPED';
-                            botMessage.textContent = 'Bot is not running';
-                        }
-                        
-                        // Обновляем статус XRay
-                        const xrayStatus = document.getElementById('xrayStatus');
-                        const xrayMessage = document.getElementById('xrayMessage');
-                        if (data.modules_status.xray_manager.status === 'loaded') {
-                            xrayStatus.className = 'status online';
-                            xrayStatus.textContent = 'READY';
-                            xrayMessage.textContent = 'XRay manager loaded';
-                        } else {
-                            xrayStatus.className = 'status offline';
-                            xrayStatus.textContent = 'UNAVAILABLE';
-                            xrayMessage.textContent = 'XRay manager not available';
-                        }
-                        
-                        // Обновляем счетчик файлов
-                        const uploadsCount = document.getElementById('uploadsCount');
-                        uploadsCount.textContent = `${data.uploads_count} files uploaded`;
-                        
-                    } catch (error) {
-                        console.error('Error updating status:', error);
-                    }
-                }
-                
-                // Обновляем статус каждые 5 секунд
-                updateStatus();
-                setInterval(updateStatus, 5000);
-            </script>
-        </body>
-        </html>
-        """
+            <div class="status warning">
+                <strong>⚠️ Bot Module:</strong> {{ bot_status }}
+            </div>
+            
+            <div class="status warning">
+                <strong>⚠️ XRay Module:</strong> {{ xray_status }}
+            </div>
+            
+            <div style="margin-top: 20px;">
+                <a href="/docs" class="btn">API Documentation</a>
+                <a href="/health" class="btn">Health Check</a>
+                <a href="/status" class="btn">System Status</a>
+            </div>
+        </div>
+    </body>
+    </html>
+    """.replace(
+        "{{ bot_status }}", 
+        modules["status"]["bot"]["status"]
+    ).replace(
+        "{{ xray_status }}", 
+        modules["status"]["xray_manager"]["status"]
+    )
 
 @app.get("/health")
 async def health_check():
     """Проверка здоровья системы"""
-    health_status = {
+    return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "service": "ZetayKe Bot API",
-        "version": config.get("version", "2.0.0"),
-        "environment": "production",
-        "dependencies": {
-            "bot_module": modules["status"].get("bot", {}).get("status", "unknown"),
-            "xray_module": modules["status"].get("xray_manager", {}).get("status", "unknown"),
-            "upload_directory": os.path.exists("uploads"),
-            "temp_directory": os.path.exists("temp")
+        "modules": {
+            "bot": modules["status"]["bot"]["status"],
+            "xray_manager": modules["status"]["xray_manager"]["status"]
         }
     }
-    return health_status
 
 @app.get("/status")
 async def system_status():
     """Полный статус системы"""
-    uploads_count = len(os.listdir("uploads")) if os.path.exists("uploads") else 0
-    
     return {
         "status": "operational",
         "timestamp": datetime.now().isoformat(),
-        "bot_status": bot_status,
-        "modules_status": modules["status"],
-        "uploads_count": uploads_count,
-        "system": {
-            "python_version": os.sys.version,
-            "platform": os.sys.platform,
-            "working_directory": os.getcwd()
-        }
+        "modules": modules["status"],
+        "bot_status": bot_status
     }
 
 # =============================================================================
@@ -442,39 +271,21 @@ async def system_status():
 # =============================================================================
 
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
+async def upload_file(file: UploadFile = File(...)):
     """Загрузка файла"""
     try:
-        # Проверяем тип файла
-        allowed_types = [
-            'image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/tiff',
-            'application/pdf', 'text/plain', 'application/json'
-        ]
-        
-        if file.content_type not in allowed_types:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"File type {file.content_type} not allowed"
-            )
-        
         # Сохраняем файл
         file_location = f"uploads/{file.filename}"
         with open(file_location, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
         
-        logger.info(f"File {file.filename} uploaded successfully ({len(content)} bytes)")
-        
-        # Если это изображение, запускаем обработку в фоне
-        if file.content_type.startswith('image/'):
-            background_tasks.add_task(process_uploaded_image, file_location)
+        logger.info(f"File {file.filename} uploaded successfully")
         
         return {
             "message": "File uploaded successfully",
             "filename": file.filename,
-            "content_type": file.content_type,
-            "size": len(content),
-            "saved_path": file_location
+            "size": len(content)
         }
         
     except Exception as e:
@@ -484,71 +295,51 @@ async def upload_file(file: UploadFile = File(...), background_tasks: Background
 @app.get("/files")
 async def list_files():
     """Список всех загруженных файлов"""
-    try:
-        files = []
-        if os.path.exists("uploads"):
-            for filename in os.listdir("uploads"):
-                file_path = os.path.join("uploads", filename)
-                if os.path.isfile(file_path):
-                    stat = os.stat(file_path)
-                    files.append({
-                        "name": filename,
-                        "size": stat.st_size,
-                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                        "path": file_path
-                    })
-        
-        return {
-            "files": files,
-            "total_count": len(files),
-            "total_size": sum(f["size"] for f in files)
-        }
-    except Exception as e:
-        logger.error(f"List files error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to list files")
-
-@app.get("/files/{filename}")
-async def get_file(filename: str):
-    """Получить конкретный файл"""
-    try:
-        file_path = f"uploads/{filename}"
-        if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="File not found")
-        
-        return FileResponse(
-            file_path,
-            filename=filename,
-            media_type='application/octet-stream'
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Get file error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to get file")
+    files = []
+    if os.path.exists("uploads"):
+        for filename in os.listdir("uploads"):
+            file_path = os.path.join("uploads", filename)
+            if os.path.isfile(file_path):
+                stat = os.stat(file_path)
+                files.append({
+                    "name": filename,
+                    "size": stat.st_size,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                })
+    
+    return {"files": files}
 
 # =============================================================================
-# БОТ МОДУЛЬ
+# БОТ МОДУЛЬ (с улучшенной обработкой)
 # =============================================================================
 
 @app.post("/bot/start")
 async def start_bot():
     """Запуск бота"""
     try:
-        if modules["bot"] is None:
-            raise HTTPException(status_code=501, detail="Bot module not available")
+        if modules["status"]["bot"]["status"] != "loaded":
+            raise HTTPException(
+                status_code=501, 
+                detail=f"Bot module not available: {modules['status']['bot'].get('error', 'Unknown error')}"
+            )
+        
+        # Пробуем разные функции запуска
+        start_func = (get_bot_function("start_bot") or 
+                     get_bot_function("main") or 
+                     get_bot_function("bot_main"))
+        
+        if not start_func:
+            raise HTTPException(status_code=501, detail="No start function found in bot module")
         
         if bot_status["is_running"]:
             return {"message": "Bot is already running", "status": "running"}
         
-        # Запускаем бота в фоновом режиме
+        # Запускаем бота
         import threading
         
         def run_bot():
             try:
-                if hasattr(modules["bot"]["main"], '__call__'):
-                    modules["bot"]["main"]()
-                elif hasattr(modules["bot"]["start_bot"], '__call__'):
-                    modules["bot"]["start_bot"]()
+                start_func()
                 update_bot_status(True)
             except Exception as e:
                 update_bot_status(False, f"Bot error: {str(e)}")
@@ -558,100 +349,51 @@ async def start_bot():
         bot_thread.start()
         
         update_bot_status(True)
-        logger.info("Bot started successfully")
-        
-        return {
-            "message": "Bot started successfully",
-            "status": "running",
-            "timestamp": datetime.now().isoformat()
-        }
+        return {"message": "Bot started successfully", "status": "running"}
         
     except Exception as e:
         error_msg = f"Failed to start bot: {str(e)}"
         logger.error(error_msg)
-        update_bot_status(False, error_msg)
         raise HTTPException(status_code=500, detail=error_msg)
 
 @app.post("/bot/stop")
 async def stop_bot():
     """Остановка бота"""
     try:
-        if modules["bot"] is None:
-            raise HTTPException(status_code=501, detail="Bot module not available")
-        
-        if not bot_status["is_running"]:
-            return {"message": "Bot is not running", "status": "stopped"}
-        
-        # Останавливаем бота
-        if hasattr(modules["bot"]["stop_bot"], '__call__'):
-            modules["bot"]["stop_bot"]()
+        stop_func = get_bot_function("stop_bot")
+        if stop_func:
+            stop_func()
         
         update_bot_status(False)
-        logger.info("Bot stopped successfully")
-        
-        return {
-            "message": "Bot stopped successfully",
-            "status": "stopped",
-            "timestamp": datetime.now().isoformat()
-        }
+        return {"message": "Bot stopped successfully", "status": "stopped"}
         
     except Exception as e:
         error_msg = f"Failed to stop bot: {str(e)}"
         logger.error(error_msg)
         raise HTTPException(status_code=500, detail=error_msg)
 
-@app.post("/bot/webhook")
-async def bot_webhook(request: Request):
-    """Webhook для бота"""
-    try:
-        data = await request.json()
-        
-        if modules["bot"] is None:
-            raise HTTPException(status_code=501, detail="Bot module not available")
-        
-        # Обрабатываем сообщение через бот
-        if hasattr(modules["bot"]["process_message"], '__call__'):
-            result = modules["bot"]["process_message"](data)
-        else:
-            result = {"status": "received", "data": data}
-        
-        update_bot_status(True)
-        
-        return {
-            "status": "success",
-            "result": result,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        error_msg = f"Webhook error: {str(e)}"
-        logger.error(error_msg)
-        update_bot_status(False, error_msg)
-        raise HTTPException(status_code=500, detail=error_msg)
-
-@app.get("/bot/status")
-async def get_bot_status():
-    """Статус бота"""
-    return {
-        "bot_status": bot_status,
-        "module_available": modules["bot"] is not None,
-        "timestamp": datetime.now().isoformat()
-    }
-
 # =============================================================================
-# XRAY МОДУЛЬ
+# XRAY МОДУЛЬ (с улучшенной обработкой)
 # =============================================================================
 
 @app.post("/xray/process")
-async def process_xray_image(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
+async def process_xray_image(file: UploadFile = File(...)):
     """Обработка XRay изображения"""
     try:
-        if modules["xray_manager"] is None:
-            raise HTTPException(status_code=501, detail="XRay manager not available")
+        if modules["status"]["xray_manager"]["status"] != "loaded":
+            raise HTTPException(
+                status_code=501, 
+                detail=f"XRay manager not available: {modules['status']['xray_manager'].get('error', 'Unknown error')}"
+            )
         
-        # Проверяем что это изображение
-        if not file.content_type.startswith('image/'):
-            raise HTTPException(status_code=400, detail="File must be an image")
+        # Пробуем разные функции обработки
+        process_func = (get_xray_function("process_xray") or 
+                       get_xray_function("process_image") or 
+                       get_xray_function("analyze_image") or
+                       get_xray_function("analyze_xray"))
+        
+        if not process_func:
+            raise HTTPException(status_code=501, detail="No processing function found in xray_manager")
         
         # Сохраняем временный файл
         temp_path = f"temp/{file.filename}"
@@ -660,95 +402,25 @@ async def process_xray_image(file: UploadFile = File(...), background_tasks: Bac
             buffer.write(content)
         
         # Обрабатываем изображение
-        if hasattr(modules["xray_manager"]["process_xray"], '__call__'):
-            result = modules["xray_manager"]["process_xray"](temp_path)
-        elif hasattr(modules["xray_manager"]["analyze_image"], '__call__'):
-            result = modules["xray_manager"]["analyze_image"](temp_path)
-        else:
-            result = {"status": "processed", "filename": file.filename}
+        result = process_func(temp_path)
         
         # Удаляем временный файл
         if os.path.exists(temp_path):
             os.remove(temp_path)
         
-        logger.info(f"XRay image {file.filename} processed successfully")
-        
         return {
             "status": "success",
             "result": result,
-            "filename": file.filename,
-            "timestamp": datetime.now().isoformat()
+            "filename": file.filename
         }
         
     except Exception as e:
         logger.error(f"XRay processing error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"XRay processing failed: {str(e)}")
 
-@app.post("/xray/analyze")
-async def analyze_xray_image(file: UploadFile = File(...)):
-    """Анализ XRay изображения"""
-    try:
-        if modules["xray_manager"] is None:
-            raise HTTPException(status_code=501, detail="XRay manager not available")
-        
-        if not file.content_type.startswith('image/'):
-            raise HTTPException(status_code=400, detail="File must be an image")
-        
-        # Сохраняем временный файл
-        temp_path = f"temp/{file.filename}"
-        with open(temp_path, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
-        
-        # Анализируем изображение
-        if hasattr(modules["xray_manager"]["analyze_image"], '__call__'):
-            analysis_result = modules["xray_manager"]["analyze_image"](temp_path)
-        else:
-            analysis_result = {
-                "analysis": "basic_analysis",
-                "findings": [],
-                "confidence": 0.95,
-                "filename": file.filename
-            }
-        
-        # Генерируем отчет если доступно
-        if hasattr(modules["xray_manager"]["generate_report"], '__call__'):
-            report = modules["xray_manager"]["generate_report"](analysis_result)
-        else:
-            report = {"summary": "Analysis completed", "details": analysis_result}
-        
-        # Удаляем временный файл
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        
-        return {
-            "status": "success",
-            "analysis": analysis_result,
-            "report": report,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"XRay analysis error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"XRay analysis failed: {str(e)}")
-
 # =============================================================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ЗАПУСК ПРИЛОЖЕНИЯ
 # =============================================================================
-
-async def process_uploaded_image(file_path: str):
-    """Фоновая обработка загруженного изображения"""
-    try:
-        logger.info(f"Background processing image: {file_path}")
-        
-        # Здесь может быть любая логика обработки изображений
-        # Например, сжатие, анализ, классификация и т.д.
-        
-        await asyncio.sleep(1)  # Имитация обработки
-        logger.info(f"Background processing completed for: {file_path}")
-        
-    except Exception as e:
-        logger.error(f"Background processing error for {file_path}: {e}")
 
 @app.on_event("startup")
 async def startup_event():
@@ -762,29 +434,12 @@ async def startup_event():
 async def shutdown_event():
     """Действия при остановке приложения"""
     logger.info("🛑 ZetayKe Bot API shutting down...")
-    
-    # Останавливаем бота при завершении работы
-    if bot_status["is_running"] and modules["bot"] is not None:
-        try:
-            if hasattr(modules["bot"]["stop_bot"], '__call__'):
-                modules["bot"]["stop_bot"]()
-            logger.info("✅ Bot stopped gracefully")
-        except Exception as e:
-            logger.error(f"❌ Error stopping bot: {e}")
-
-# =============================================================================
-# ЗАПУСК ПРИЛОЖЕНИЯ
-# =============================================================================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8443))
-    debug = os.environ.get("DEBUG", "False").lower() == "true"
-    
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
         port=port,
-        reload=debug,
-        log_level="info",
-        access_log=True
+        reload=True
     )
