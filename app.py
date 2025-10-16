@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 import os
 import logging
@@ -16,8 +17,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="VAC VPN API",
-    description="VPN Service with Telegram Bot",
+    title="VAC VPN Web Server",
+    description="Web interface for VAC VPN",
     version="1.0.0"
 )
 
@@ -29,6 +30,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Монтируем статические файлы
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Глобальные переменные для состояния приложения
 bot_status = {
@@ -74,7 +79,7 @@ def run_bot():
 @app.on_event("startup")
 async def startup_event():
     """Действия при запуске приложения"""
-    logger.info("🚀 VAC VPN API starting up...")
+    logger.info("🚀 VAC VPN Web Server starting up...")
     
     # Автоматически запускаем бота при старте
     if bot_module["status"] == "loaded" and not bot_status["is_running"]:
@@ -88,12 +93,48 @@ async def startup_event():
 @app.get("/")
 async def root():
     """Главная страница"""
-    return {
-        "message": "VAC VPN API is running",
-        "status": "ok",
-        "bot_status": bot_status,
-        "timestamp": datetime.now().isoformat()
-    }
+    # Отдаем index.html
+    if os.path.exists("index.html"):
+        with open("index.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    
+    # Если index.html нет, показываем базовую страницу
+    return HTMLResponse("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>VAC VPN</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+            .success { background: #d4edda; color: #155724; }
+            .warning { background: #fff3cd; color: #856404; }
+            .btn { display: inline-block; padding: 10px 20px; margin: 5px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🚀 VAC VPN Web Server</h1>
+            <p>Сервер работает успешно!</p>
+            
+            <div class="status success">
+                <strong>✅ Web Server Status:</strong> ONLINE
+            </div>
+            
+            <div class="status warning">
+                <strong>🤖 Bot Status:</strong> {{ bot_status }}
+            </div>
+            
+            <div style="margin-top: 20px;">
+                <a href="/health" class="btn">Health Check</a>
+                <a href="/status" class="btn">System Status</a>
+                <a href="/bot/info" class="btn">Bot Info</a>
+            </div>
+        </div>
+    </body>
+    </html>
+    """.replace("{{ bot_status }}", "RUNNING" if bot_status["is_running"] else "STOPPED"))
 
 @app.get("/health")
 async def health_check():
@@ -101,6 +142,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
+        "service": "VAC VPN Web Server",
         "bot": {
             "is_running": bot_status["is_running"],
             "module_loaded": bot_module["status"] == "loaded"
@@ -114,7 +156,8 @@ async def system_status():
         "status": "operational",
         "timestamp": datetime.now().isoformat(),
         "bot_status": bot_status,
-        "environment": "production"
+        "environment": "production",
+        "web_server": "running"
     }
 
 # Эндпоинты для управления ботом
@@ -174,11 +217,16 @@ async def bot_info():
         "timestamp": datetime.now().isoformat()
     }
 
+# Статические файлы
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse("static/favicon.ico" if os.path.exists("static/favicon.ico") else None)
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8443))
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
         port=port,
-        reload=False  # На продакшене лучше False
+        reload=False
     )
