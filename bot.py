@@ -10,10 +10,14 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder, WebAppInfo
 import logging
 
-# Проверка окружения
-logging.basicConfig(level=logging.INFO)
+# Настройка логирования ОДИН РАЗ
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
+# Проверка окружения
 logger.info("=" * 50)
 logger.info("🤖 BOT STARTUP CHECK")
 logger.info("=" * 50)
@@ -27,15 +31,6 @@ logger.info("=" * 50)
 if not os.getenv('TOKEN'):
     logger.error("❌ CRITICAL: TOKEN environment variable is missing!")
     sys.exit(1)
-
-# Остальной код бота...
-
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 # Получаем переменные окружения из Railway
 TOKEN = os.getenv("TOKEN")
@@ -51,9 +46,6 @@ else:
     API_BASE_URL = "http://localhost:8000"  # для локальной разработки
 
 BOT_USERNAME = os.getenv("BOT_USERNAME", "vaaaac_bot")
-
-if not TOKEN:
-    raise ValueError("❌ Переменная TOKEN не найдена в окружении")
 
 logger.info("🚀 Бот запускается на Railway...")
 logger.info(f"🌐 API сервер: {API_BASE_URL}")
