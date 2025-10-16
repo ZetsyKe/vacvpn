@@ -224,15 +224,11 @@ def extract_referrer_id(start_param: str) -> str:
     if not start_param:
         return None
     
-    logger.info(f"🔍 Extracting referrer_id from: '{start_param}'")
-    
     if start_param.startswith('ref_'):
         referrer_id = start_param.replace('ref_', '')
-        logger.info(f"✅ Found ref_ format: {referrer_id}")
         return referrer_id
     
     if start_param.isdigit():
-        logger.info(f"✅ Found digit format: {start_param}")
         return start_param
     
     patterns = [
@@ -245,11 +241,8 @@ def extract_referrer_id(start_param: str) -> str:
     for pattern in patterns:
         match = re.search(pattern, start_param)
         if match:
-            referrer_id = match.group(1)
-            logger.info(f"✅ Found with pattern '{pattern}': {referrer_id}")
-            return referrer_id
+            return match.group(1)
     
-    logger.info(f"⚠️ Using raw start_param as referrer_id: {start_param}")
     return start_param
 
 def get_referrals(referrer_id: str):
@@ -261,6 +254,89 @@ def get_referrals(referrer_id: str):
     except Exception as e:
         logger.error(f"❌ Error getting referrals: {e}")
         return []
+
+def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_type: str = "tariff", payment_method: str = "yookassa"):
+    if not db: 
+        return
+    try:
+        db.collection('payments').document(payment_id).set({
+            'payment_id': payment_id,
+            'user_id': user_id,
+            'amount': amount,
+            'tariff': tariff,
+            'status': 'pending',
+            'payment_type': payment_type,
+            'payment_method': payment_method,
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'yookassa_id': None
+        })
+        logger.info(f"✅ Payment saved: {payment_id} for user {user_id}")
+    except Exception as e:
+        logger.error(f"❌ Error saving payment: {e}")
+
+def update_payment_status(payment_id: str, status: str, yookassa_id: str = None):
+    if not db: 
+        return
+    try:
+        update_data = {
+            'status': status,
+            'yookassa_id': yookassa_id
+        }
+        if status == 'succeeded':
+            update_data['confirmed_at'] = firestore.SERVER_TIMESTAMP
+        
+        db.collection('payments').document(payment_id).update(update_data)
+        logger.info(f"✅ Payment status updated: {payment_id} -> {status}")
+    except Exception as e:
+        logger.error(f"❌ Error updating payment status: {e}")
+
+def get_payment(payment_id: str):
+    if not db: 
+        return None
+    try:
+        doc = db.collection('payments').document(payment_id).get()
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        logger.error(f"❌ Error getting payment: {e}")
+        return None
+
+async def update_subscription_days(user_id: str, additional_days: int):
+    if not db: 
+        return False
+    try:
+        user_ref = db.collection('users').document(user_id)
+        user = user_ref.get()
+        
+        if user.exists:
+            user_data = user.to_dict()
+            current_days = user_data.get('subscription_days', 0)
+            new_days = current_days + additional_days
+            
+            has_subscription = user_data.get('has_subscription', False)
+            if not has_subscription and additional_days > 0:
+                has_subscription = True
+            
+            update_data = {
+                'subscription_days': new_days,
+                'has_subscription': has_subscription,
+                'updated_at': firestore.SERVER_TIMESTAMP
+            }
+            
+            # Генерируем UUID если его нет
+            if has_subscription and not user_data.get('vless_uuid'):
+                vless_uuid = generate_user_uuid()
+                update_data['vless_uuid'] = vless_uuid
+                update_data['subscription_start'] = datetime.now().isoformat()
+            
+            user_ref.update(update_data)
+            logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days})")
+            return True
+        else:
+            logger.error(f"❌ User {user_id} not found")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Error updating subscription days: {e}")
+        return False
 
 # Функция для запуска бота в отдельном процессе
 def run_bot():
@@ -330,7 +406,6 @@ async def init_user(request: InitUserRequest):
         
         if request.start_param:
             referrer_id = extract_referrer_id(request.start_param)
-            logger.info(f"🎯 Extracted referrer_id: {referrer_id}")
             
             if referrer_id:
                 referrer = get_user(referrer_id)
@@ -344,7 +419,6 @@ async def init_user(request: InitUserRequest):
                         bonus_result = add_referral_bonus_immediately(referrer_id, request.user_id)
                         if bonus_result:
                             bonus_applied = True
-                            logger.info(f"🎉 Referral bonuses applied immediately for {request.user_id}")
         
         user_ref = db.collection('users').document(request.user_id)
         user_doc = user_ref.get()
@@ -365,7 +439,6 @@ async def init_user(request: InitUserRequest):
             
             if is_referral and referrer_id:
                 user_data['referred_by'] = referrer_id
-                logger.info(f"🔗 User {request.user_id} referred by {referrer_id}")
             
             user_ref.set(user_data)
             logger.info(f"✅ User created: {request.user_id}")
@@ -439,7 +512,7 @@ async def get_user_info(user_id: str):
 @app.post("/add-balance")
 async def add_balance(request: AddBalanceRequest):
     try:
-        logger.info(f"💰 ADD-BALANCE: user_id={request.user_id}, amount={request.amount}")
+        logger.info(f"💰 ADD-BALANCE: user_id={request.user_id}, amount={request.amount}, method={request.payment_method}")
         
         if not db:
             return JSONResponse(status_code=500, content={"error": "Database not connected"})
@@ -454,21 +527,330 @@ async def add_balance(request: AddBalanceRequest):
         if request.amount > 50000:
             return JSONResponse(status_code=400, content={"error": "Максимальная сумма пополнения 50,000₽"})
         
-        # Просто добавляем баланс (без реальной оплаты для демо)
-        success = update_user_balance(request.user_id, request.amount)
-        
-        if success:
-            return {
-                "success": True,
-                "message": f"Баланс пополнен на {request.amount}₽",
-                "balance_added": request.amount
+        if request.payment_method == "yookassa":
+            SHOP_ID = os.getenv("SHOP_ID")
+            API_KEY = os.getenv("API_KEY")
+            
+            if not SHOP_ID or not API_KEY:
+                return JSONResponse(status_code=500, content={"error": "Payment gateway not configured"})
+            
+            payment_id = str(uuid.uuid4())
+            save_payment(payment_id, request.user_id, request.amount, "balance", "balance", "yookassa")
+            
+            yookassa_data = {
+                "amount": {"value": f"{request.amount:.2f}", "currency": "RUB"},
+                "confirmation": {"type": "redirect", "return_url": "https://t.me/vaaaac_bot"},
+                "capture": True,
+                "description": f"Пополнение баланса VAC VPN на {request.amount}₽",
+                "metadata": {
+                    "payment_id": payment_id,
+                    "user_id": request.user_id,
+                    "payment_type": "balance",
+                    "amount": request.amount
+                }
             }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.yookassa.ru/v3/payments",
+                    auth=(SHOP_ID, API_KEY),
+                    headers={
+                        "Content-Type": "application/json",
+                        "Idempotence-Key": payment_id
+                    },
+                    json=yookassa_data,
+                    timeout=30.0
+                )
+            
+            if response.status_code in [200, 201]:
+                payment_data = response.json()
+                update_payment_status(payment_id, "pending", payment_data.get("id"))
+                
+                return {
+                    "success": True,
+                    "payment_id": payment_id,
+                    "payment_url": payment_data["confirmation"]["confirmation_url"],
+                    "amount": request.amount,
+                    "status": "pending",
+                    "message": f"Перейдите по ссылке для пополнения баланса на {request.amount}₽"
+                }
+            else:
+                return JSONResponse(status_code=500, content={"error": f"Payment gateway error: {response.status_code}"})
         else:
-            return JSONResponse(status_code=500, content={"error": "Ошибка пополнения баланса"})
+            return JSONResponse(status_code=400, content={"error": "Invalid payment method"})
         
     except Exception as e:
         logger.error(f"❌ Error adding balance: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/activate-tariff")
+async def activate_tariff(request: ActivateTariffRequest):
+    try:
+        if not db:
+            return JSONResponse(status_code=500, content={"error": "Database not connected"})
+            
+        user = get_user(request.user_id)
+        if not user:
+            return JSONResponse(status_code=404, content={"error": "User not found"})
+        
+        if request.tariff not in TARIFFS:
+            return JSONResponse(status_code=400, content={"error": "Invalid tariff"})
+            
+        tariff_data = TARIFFS[request.tariff]
+        tariff_price = tariff_data["price"]
+        tariff_days = tariff_data["days"]
+        
+        if request.payment_method == "balance":
+            user_balance = user.get('balance', 0.0)
+            
+            if user_balance < tariff_price:
+                return JSONResponse(status_code=400, content={"error": f"Недостаточно средств на балансе. Необходимо: {tariff_price}₽, доступно: {user_balance}₽"})
+            
+            payment_id = str(uuid.uuid4())
+            save_payment(payment_id, request.user_id, tariff_price, request.tariff, "tariff", "balance")
+            
+            update_user_balance(request.user_id, -tariff_price)
+            
+            success = await update_subscription_days(request.user_id, tariff_days)
+            
+            if not success:
+                return JSONResponse(status_code=500, content={"error": "Ошибка активации подписки"})
+            
+            if user.get('referred_by'):
+                referrer_id = user['referred_by']
+                referral_id = f"{referrer_id}_{request.user_id}"
+                
+                referral_exists = db.collection('referrals').document(referral_id).get().exists
+                
+                if not referral_exists:
+                    add_referral_bonus_immediately(referrer_id, request.user_id)
+            
+            update_payment_status(payment_id, "succeeded")
+            
+            return {
+                "success": True,
+                "payment_id": payment_id,
+                "amount": tariff_price,
+                "days": tariff_days,
+                "status": "succeeded",
+                "message": "Подписка успешно активирована с баланса!"
+            }
+        
+        elif request.payment_method == "yookassa":
+            SHOP_ID = os.getenv("SHOP_ID")
+            API_KEY = os.getenv("API_KEY")
+            
+            if not SHOP_ID or not API_KEY:
+                return JSONResponse(status_code=500, content={"error": "Payment gateway not configured"})
+            
+            payment_id = str(uuid.uuid4())
+            save_payment(payment_id, request.user_id, tariff_price, request.tariff, "tariff", "yookassa")
+            
+            yookassa_data = {
+                "amount": {"value": f"{tariff_price:.2f}", "currency": "RUB"},
+                "confirmation": {"type": "redirect", "return_url": "https://t.me/vaaaac_bot"},
+                "capture": True,
+                "description": f"Покупка подписки {tariff_data['name']} - VAC VPN",
+                "metadata": {
+                    "payment_id": payment_id,
+                    "user_id": request.user_id,
+                    "tariff": request.tariff,
+                    "payment_type": "tariff",
+                    "tariff_days": tariff_days
+                }
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.yookassa.ru/v3/payments",
+                    auth=(SHOP_ID, API_KEY),
+                    headers={
+                        "Content-Type": "application/json",
+                        "Idempotence-Key": payment_id
+                    },
+                    json=yookassa_data,
+                    timeout=30.0
+                )
+            
+            if response.status_code in [200, 201]:
+                payment_data = response.json()
+                update_payment_status(payment_id, "pending", payment_data.get("id"))
+                
+                return {
+                    "success": True,
+                    "payment_id": payment_id,
+                    "payment_url": payment_data["confirmation"]["confirmation_url"],
+                    "amount": tariff_price,
+                    "days": tariff_days,
+                    "status": "pending",
+                    "message": "Перейдите по ссылке для оплаты подписки"
+                }
+            else:
+                return JSONResponse(status_code=500, content={"error": f"Payment gateway error: {response.status_code}"})
+        
+        else:
+            return JSONResponse(status_code=400, content={"error": "Invalid payment method"})
+        
+    except Exception as e:
+        logger.error(f"❌ Error activating tariff: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/buy-with-balance")
+async def buy_with_balance(request: BuyWithBalanceRequest):
+    try:
+        logger.info(f"💰 BUY-WITH-BALANCE: user_id={request.user_id}, tariff={request.tariff_id}, price={request.tariff_price}")
+        
+        if not db:
+            return JSONResponse(status_code=500, content={"error": "Database not connected"})
+        
+        user = get_user(request.user_id)
+        if not user:
+            return JSONResponse(status_code=404, content={"error": "User not found"})
+        
+        user_balance = user.get('balance', 0.0)
+        
+        if user_balance < request.tariff_price:
+            return JSONResponse(status_code=400, content={
+                "success": False,
+                "error": f"Недостаточно средств на балансе. На вашем балансе {user_balance}₽, а требуется {request.tariff_price}₽"
+            })
+        
+        payment_id = str(uuid.uuid4())
+        save_payment(payment_id, request.user_id, request.tariff_price, request.tariff_id, "tariff", "balance")
+        
+        update_user_balance(request.user_id, -request.tariff_price)
+        
+        success = await update_subscription_days(request.user_id, request.tariff_days)
+        
+        if not success:
+            return JSONResponse(status_code=500, content={"error": "Ошибка активации подписки"})
+        
+        if user.get('referred_by'):
+            referrer_id = user['referred_by']
+            referral_id = f"{referrer_id}_{request.user_id}"
+            
+            referral_exists = db.collection('referrals').document(referral_id).get().exists
+            
+            if not referral_exists:
+                add_referral_bonus_immediately(referrer_id, request.user_id)
+        
+        update_payment_status(payment_id, "succeeded")
+        
+        return {
+            "success": True,
+            "payment_id": payment_id,
+            "amount": request.tariff_price,
+            "days": request.tariff_days,
+            "status": "succeeded",
+            "message": "Подписка успешно активирована с баланса!"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error in buy-with-balance: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/payment-status")
+async def check_payment(payment_id: str, user_id: str):
+    try:
+        if not db:
+            return JSONResponse(status_code=500, content={"error": "Database not connected"})
+            
+        if not payment_id or payment_id == 'undefined':
+            return JSONResponse(status_code=400, content={"error": "Invalid payment ID"})
+            
+        payment = get_payment(payment_id)
+        if not payment:
+            return JSONResponse(status_code=404, content={"error": "Payment not found"})
+        
+        if payment['status'] == 'succeeded':
+            if payment['payment_type'] == 'balance':
+                return {
+                    "success": True,
+                    "status": "succeeded",
+                    "payment_id": payment_id,
+                    "amount": payment['amount'],
+                    "balance_added": payment['amount']
+                }
+            else:
+                return {
+                    "success": True,
+                    "status": "succeeded",
+                    "payment_id": payment_id,
+                    "amount": payment['amount']
+                }
+        
+        if payment.get('payment_method') == 'yookassa':
+            yookassa_id = payment.get('yookassa_id')
+            if yookassa_id:
+                SHOP_ID = os.getenv("SHOP_ID")
+                API_KEY = os.getenv("API_KEY")
+                
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"https://api.yookassa.ru/v3/payments/{yookassa_id}",
+                        auth=(SHOP_ID, API_KEY),
+                        timeout=30.0
+                    )
+                    
+                    if response.status_code == 200:
+                        yookassa_data = response.json()
+                        status = yookassa_data.get('status')
+                        
+                        update_payment_status(payment_id, status, yookassa_id)
+                        
+                        if status == 'succeeded':
+                            if payment['payment_type'] == 'balance':
+                                amount = payment['amount']
+                                success = update_user_balance(user_id, amount)
+                                
+                                if success:
+                                    return {
+                                        "success": True,
+                                        "status": status,
+                                        "payment_id": payment_id,
+                                        "amount": amount,
+                                        "balance_added": amount,
+                                        "message": f"Баланс успешно пополнен на {amount}₽!"
+                                    }
+                                else:
+                                    return JSONResponse(status_code=500, content={"error": "Ошибка пополнения баланса"})
+                            
+                            user_id = payment['user_id']
+                            tariff = payment['tariff']
+                            tariff_days = TARIFFS[tariff]["days"]
+                            
+                            success = await update_subscription_days(user_id, tariff_days)
+                            
+                            if not success:
+                                return JSONResponse(status_code=500, content={"error": "Failed to activate subscription"})
+                            
+                            user = get_user(user_id)
+                            if user and user.get('referred_by'):
+                                referrer_id = user['referred_by']
+                                referral_id = f"{referrer_id}_{user_id}"
+                                
+                                referral_exists = db.collection('referrals').document(referral_id).get().exists
+                                
+                                if not referral_exists:
+                                    add_referral_bonus_immediately(referrer_id, user_id)
+                            
+                            return {
+                                "success": True,
+                                "status": status,
+                                "payment_id": payment_id,
+                                "amount": payment['amount'],
+                                "days_added": tariff_days
+                            }
+        
+        return {
+            "success": True,
+            "status": payment['status'],
+            "payment_id": payment_id
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error checking payment: {e}")
+        return JSONResponse(status_code=500, content={"error": f"Error checking payment: {str(e)}"})
 
 @app.get("/get-vless-config")
 async def get_vless_config(user_id: str):
@@ -480,7 +862,6 @@ async def get_vless_config(user_id: str):
         if not user:
             return JSONResponse(status_code=404, content={"error": "User not found"})
         
-        # Проверяем активную подписку
         if not user.get('has_subscription', False):
             return JSONResponse(status_code=400, content={"error": "No active subscription"})
         
@@ -493,7 +874,6 @@ async def get_vless_config(user_id: str):
                 'updated_at': firestore.SERVER_TIMESTAMP
             })
         
-        # Создаем конфигурацию
         configs = []
         for server in VLESS_SERVERS:
             vless_link = (
@@ -549,7 +929,6 @@ async def favicon():
 
 @app.get("/{filename}")
 async def serve_static(filename: str):
-    """Serve static files"""
     if os.path.exists(filename):
         return FileResponse(filename)
     raise HTTPException(status_code=404, detail="File not found")
