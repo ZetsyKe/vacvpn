@@ -6,24 +6,27 @@ from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder, WebAppInfo
-from dotenv import load_dotenv
 import logging
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# Загрузка переменных окружения
-load_dotenv("backend/key.env")
+# Получаем переменные окружения из Railway
 TOKEN = os.getenv("TOKEN")
-WEB_APP_URL = "https://vacvpn.vercel.app"
-SUPPORT_NICK = "@vacvpn_support"
-TG_CHANNEL = "@vac_vpn"
+WEB_APP_URL = os.getenv("WEB_APP_URL", "https://vacvpn.vercel.app")
+SUPPORT_NICK = os.getenv("SUPPORT_NICK", "@vacvpn_support")
+TG_CHANNEL = os.getenv("TG_CHANNEL", "@vac_vpn")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://vacvpn-api-production-d067.up.railway.app")
-BOT_USERNAME = "vaaaac_bot"
+BOT_USERNAME = os.getenv("BOT_USERNAME", "vaaaac_bot")
 
 if not TOKEN:
-    raise ValueError("❌ Переменная TOKEN не найдена в key.env")
+    raise ValueError("❌ Переменная TOKEN не найдена в окружении")
+
+logger.info("🚀 Бот запускается на Railway...")
 
 # Настройка бота
 bot = Bot(
@@ -32,10 +35,7 @@ bot = Bot(
 )
 dp = Dispatcher()
 
-# Хранилище для отслеживания уже обработанных рефералов
-processed_referrals = set()
-
-# Функции для работы с API
+# Функции для работы с API (остаются без изменений)
 async def make_api_request(url: str, method: str = "GET", json_data: dict = None, params: dict = None):
     """Упрощенная функция для запросов к API"""
     try:
@@ -69,36 +69,36 @@ async def create_user(user_data: dict):
     url = f"{API_BASE_URL}/init-user"
     return await make_api_request(url, "POST", json_data=user_data)
 
-async def add_referral_api(referrer_id: str, referred_id: str):
-    """Добавляет реферала через API"""
-    url = f"{API_BASE_URL}/add-referral"
-    return await make_api_request(url, "POST", json_data={
-        "referrer_id": referrer_id,
-        "referred_id": referred_id
-    })
+async def get_vless_config(user_id: int):
+    """Получает VLESS конфигурацию через API"""
+    url = f"{API_BASE_URL}/get-vless-config"
+    params = {"user_id": str(user_id)}
+    return await make_api_request(url, "GET", params=params)
 
-async def update_user_balance(user_id: str, amount: float):
-    """Начисляет бонус на баланс пользователя через API"""
+async def send_referral_notification(referrer_id: int, referred_user):
+    """Отправляет уведомление рефереру о новом реферале"""
     try:
-        url = f"{API_BASE_URL}/update-balance"
-        result = await make_api_request(url, "POST", json_data={
-            "user_id": user_id,
-            "amount": amount
-        })
+        referred_username = f"@{referred_user.username}" if referred_user.username else referred_user.first_name
         
-        if result and result.get('success'):
-            logger.info(f"✅ Бонус {amount}₽ успешно начислен пользователю {user_id}")
-            return True
-        else:
-            error_msg = result.get('error', 'Unknown error') if result else 'No response'
-            logger.error(f"❌ Ошибка начисления бонуса пользователю {user_id}: {error_msg}")
-            return False
-            
+        message = (
+            f"🎉 <b>У вас новый реферал!</b>\n\n"
+            f"👤 Пользователь: {referred_username}\n"
+            f"💰 <b>Бонус 50₽ уже начислен на ваш баланс!</b>\n\n"
+            f"Продолжайте приглашать друзей и зарабатывать больше! 🚀"
+        )
+        
+        await bot.send_message(
+            chat_id=referrer_id,
+            text=message
+        )
+        logger.info(f"✅ Уведомление отправлено рефереру {referrer_id}")
+        return True
+        
     except Exception as e:
-        logger.error(f"❌ Ошибка при вызове API обновления баланса: {e}")
+        logger.error(f"❌ Не удалось отправить уведомление рефереру {referrer_id}: {e}")
         return False
 
-# Клавиатуры
+# Клавиатуры (остаются без изменений)
 def get_main_keyboard():
     builder = ReplyKeyboardBuilder()
     builder.row(
@@ -108,6 +108,9 @@ def get_main_keyboard():
     builder.row(
         types.KeyboardButton(text="🛠️ Техподдержка"),
         types.KeyboardButton(text="🌐 Веб-кабинет")
+    )
+    builder.row(
+        types.KeyboardButton(text="🔧 VLESS Конфиг")
     )
     return builder.as_markup(resize_keyboard=True)
 
@@ -152,7 +155,15 @@ def get_support_keyboard():
     )
     return builder.as_markup()
 
-# Текстовые сообщения
+def get_vless_keyboard():
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_vless"),
+        types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")
+    )
+    return builder.as_markup()
+
+# Текстовые сообщения (остаются без изменений)
 def get_welcome_message(user_name: str, is_referral: bool = False):
     message = f"""
 <b>Добро пожаловать в VAC VPN, {user_name}!</b>
@@ -167,11 +178,11 @@ def get_welcome_message(user_name: str, is_referral: bool = False):
 
 💳 <b>Оплата подписки:</b>
 Для покупки подписки перейдите в веб-кабинет через меню бота.
-
-👫 <b>Пригласите друга и получите бонус!</b>
 """
     if is_referral:
-        message += "\n🎉 Вы зарегистрировались по реферальной ссылке! Бонус 50₽ уже начислен на ваш баланс!"
+        message += "\n🎉 <b>Вы зарегистрировались по реферальной ссылке! Бонус 100₽ уже начислен на ваш баланс!</b>"
+    
+    message += "\n\n👫 <b>Пригласите друга и получите бонус!</b>"
     
     return message
 
@@ -190,29 +201,30 @@ async def get_cabinet_message(user_id: int):
     
     balance = user_data.get('balance', 0)
     has_subscription = user_data.get('has_subscription', False)
-    subscription_end = user_data.get('subscription_end')
-    days_remaining = user_data.get('days_remaining', 0)
-    tariff_type = user_data.get('tariff_type', 'нет')
+    subscription_days = user_data.get('subscription_days', 0)
     
     status_text = "✅ Активна" if has_subscription else "❌ Неактивна"
     
-    if has_subscription and subscription_end:
-        try:
-            from datetime import datetime
-            end_date = datetime.fromisoformat(subscription_end.replace('Z', '+00:00'))
-            subscription_info = f"до {end_date.strftime('%d.%m.%Y')} ({days_remaining} дней)"
-        except:
-            subscription_info = "ошибка даты"
+    if has_subscription:
+        subscription_info = f"{subscription_days} дней осталось"
     else:
         subscription_info = "нет активной подписки"
+    
+    # Получаем реферальную статистику
+    referral_stats = user_data.get('referral_stats', {})
+    total_referrals = referral_stats.get('total_referrals', 0)
+    total_bonus_money = referral_stats.get('total_bonus_money', 0)
     
     return f"""
 <b>Личный кабинет VAC VPN</b>
 
 💰 Баланс: <b>{balance}₽</b>
 📅 Статус подписки: <b>{status_text}</b>
-🎯 Тариф: <b>{tariff_type}</b>
-⏰ Срок действия: <b>{subscription_info}</b>
+⏰ Осталось дней: <b>{subscription_info}</b>
+
+👥 Реферальная статистика:
+• Приглашено друзей: <b>{total_referrals}</b>
+• Получено бонусов: <b>{total_bonus_money}₽</b>
 
 💡 Для покупки подписки используйте веб-кабинет.
 """
@@ -225,8 +237,9 @@ def get_ref_message(user_id: int):
 <code>https://t.me/{BOT_USERNAME}?start=ref_{user_id}</code>
 
 🎁 <b>Бонус за приглашение:</b>
-• 50₽ на баланс за каждого друга
-• Бонус начисляется сразу после регистрации по вашей ссылке
+• Вы получаете <b>50₽</b> на баланс
+• Ваш друг получает <b>100₽</b> на баланс
+• Бонусы начисляются сразу после регистрации!
 
 💡 Делитесь ссылкой и получайте бонусы!
 """
@@ -243,76 +256,84 @@ def get_support_message():
 ⏰ Время ответа: обычно в течение 1-2 часов
 """
 
-# Обработчики команд
+async def get_vless_message(user_id: int):
+    """Получает VLESS конфигурацию через API"""
+    vless_data = await get_vless_config(user_id)
+    
+    if vless_data.get('error'):
+        return f"""
+<b>VLESS Конфигурация</b>
+
+❌ Ошибка: {vless_data['error']}
+
+💡 Для получения конфигурации необходима активная подписка.
+"""
+    
+    if not vless_data.get('configs'):
+        return """
+<b>VLESS Конфигурация</b>
+
+❌ Конфигурация не найдена.
+
+💡 Для получения конфигурации необходима активная подписка.
+"""
+    
+    message = "<b>🔧 VLESS Конфигурация</b>\n\n"
+    
+    for config_data in vless_data['configs']:
+        config = config_data['config']
+        vless_link = config_data['vless_link']
+        
+        message += f"""
+<strong>{config['name']}</strong>
+<code>{vless_link}</code>
+
+📱 <b>Для подключения:</b>
+1. Скопируйте ссылку выше
+2. Вставьте в ваше VPN-приложение
+3. Импортируйте конфигурацию
+
+💡 <b>Рекомендуемые приложения:</b>
+• Android: V2RayNG
+• iOS: Shadowrocket
+• Windows: V2RayN
+• macOS: V2RayU
+"""
+    
+    return message
+
+# Обработчики команд (остаются без изменений)
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user = message.from_user
     args = message.text.split()
     is_referral = False
+    referrer_id = None
+
+    # Обработка реферальной ссылки
+    if len(args) > 1 and args[1].startswith('ref_'):
+        try:
+            referrer_id = args[1][4:]
+            if referrer_id.isdigit() and int(referrer_id) != user.id:
+                is_referral = True
+                logger.info(f"🎯 Реферальная регистрация: {user.id} от {referrer_id}")
+        except:
+            pass
 
     # Создаем/обновляем пользователя в API
     user_create_result = await create_user({
         "user_id": str(user.id),
         "username": user.username or "",
         "first_name": user.first_name or "",
-        "last_name": user.last_name or ""
+        "last_name": user.last_name or "",
+        "start_param": args[1] if len(args) > 1 else ""
     })
 
     logger.info(f"User create result: {user_create_result}")
 
-    # Обработка реферальной ссылки
-    if len(args) > 1 and args[1].startswith('ref_'):
-        try:
-            referrer_id = args[1][4:]
-            referred_id = str(user.id)
-            
-            # Проверяем валидность ID
-            if not referrer_id.isdigit():
-                logger.warning(f"Неверный формат referrer_id: {referrer_id}")
-            elif referred_id == referrer_id:
-                logger.info("Пользователь пытается использовать свою ссылку")
-            else:
-                # Создаем уникальный ключ для этого реферала
-                referral_key = f"{referrer_id}_{referred_id}"
-                
-                # Проверяем, не обрабатывали ли мы уже этого реферала
-                if referral_key not in processed_referrals:
-                    # Добавляем в обработанные
-                    processed_referrals.add(referral_key)
-                    
-                    # Добавляем реферала в систему
-                    referral_result = await add_referral_api(referrer_id, referred_id)
-                    logger.info(f"Referral result: {referral_result}")
-                    
-                    # НАЧИСЛЯЕМ БОНУС 50₽ СРАЗУ
-                    bonus_amount = 50.0
-                    bonus_result = await update_user_balance(referrer_id, bonus_amount)
-                    
-                    if bonus_result:
-                        logger.info(f"✅ Бонус 50₽ начислен рефереру {referrer_id}")
-                        is_referral = True
-                        
-                        # Уведомляем реферера только если бонус успешно начислен
-                        try:
-                            await bot.send_message(
-                                chat_id=int(referrer_id),
-                                text=f"🎉 <b>У вас новый реферал!</b>\n\n"
-                                     f"👤 Пользователь: @{user.username or user.first_name}\n"
-                                     f"💰 <b>Бонус 50₽ уже начислен на ваш баланс!</b>\n\n"
-                                     f"Продолжайте приглашать друзей и зарабатывать больше! 🚀"
-                            )
-                            logger.info(f"✅ Уведомление отправлено рефереру {referrer_id}")
-                        except Exception as e:
-                            logger.error(f"❌ Не удалось уведомить реферера {referrer_id}: {e}")
-                    else:
-                        logger.error(f"❌ Не удалось начислить бонус рефереру {referrer_id}")
-                        # Удаляем из обработанных, чтобы попробовать снова
-                        processed_referrals.discard(referral_key)
-                else:
-                    logger.info(f"Реферал {referral_key} уже обработан ранее")
-                    
-        except Exception as e:
-            logger.error(f"❌ Ошибка обработки реферальной ссылки: {e}")
+    # Отправляем уведомление рефереру
+    if is_referral and referrer_id:
+        await send_referral_notification(int(referrer_id), user)
 
     await message.answer(
         text=get_welcome_message(user.first_name, is_referral),
@@ -334,7 +355,13 @@ async def cmd_referral(message: types.Message):
 async def cmd_support(message: types.Message):
     await message.answer(get_support_message(), reply_markup=get_support_keyboard())
 
-# Обработчики кнопок
+@dp.message(Command("vless"))
+async def cmd_vless(message: types.Message):
+    user_id = message.from_user.id
+    vless_text = await get_vless_message(user_id)
+    await message.answer(vless_text, reply_markup=get_vless_keyboard(), disable_web_page_preview=True)
+
+# Обработчики кнопок (остаются без изменений)
 @dp.message(lambda message: message.text == "🔐 Личный кабинет")
 async def cabinet_handler(message: types.Message):
     await cmd_cabinet(message)
@@ -363,7 +390,11 @@ async def web_app_handler(message: types.Message):
         reply_markup=builder.as_markup()
     )
 
-# Обработчики callback-кнопок
+@dp.message(lambda message: message.text == "🔧 VLESS Конфиг")
+async def vless_handler(message: types.Message):
+    await cmd_vless(message)
+
+# Обработчики callback-кнопок (остаются без изменений)
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu_handler(callback: types.CallbackQuery):
     await callback.message.delete()
@@ -397,10 +428,29 @@ async def refresh_refs_handler(callback: types.CallbackQuery):
         await callback.message.answer(new_ref_message, reply_markup=get_ref_keyboard(user_id))
         await callback.answer("✅ Статистика обновлены")
 
+@dp.callback_query(lambda c: c.data == "refresh_vless")
+async def refresh_vless_handler(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    vless_text = await get_vless_message(user_id)
+    
+    try:
+        await callback.message.edit_text(vless_text, reply_markup=get_vless_keyboard(), disable_web_page_preview=True)
+        await callback.answer("✅ Конфигурация обновлена")
+    except Exception as e:
+        await callback.message.answer(vless_text, reply_markup=get_vless_keyboard(), disable_web_page_preview=True)
+        await callback.answer("✅ Конфигурация обновлена")
+
+# Обработка ошибок
+@dp.errors()
+async def errors_handler(update: types.Update, exception: Exception):
+    logger.error(f"Ошибка при обработке обновления {update}: {exception}")
+    return True
+
 # Запуск бота
 async def main():
-    logger.info("🤖 Бот VAC VPN запускается...")
+    logger.info("🤖 Бот VAC VPN запускается на Railway...")
     logger.info(f"🌐 API сервер: {API_BASE_URL}")
+    logger.info(f"🌐 Веб-приложение: {WEB_APP_URL}")
     
     try:
         await dp.start_polling(bot)
