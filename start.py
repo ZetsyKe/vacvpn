@@ -16,7 +16,6 @@ async def run_command(command, service_name):
         stderr=subprocess.PIPE
     )
     
-    # Логируем вывод в реальном времени
     async def log_stream(stream, stream_type):
         while True:
             line = await stream.readline()
@@ -33,10 +32,13 @@ async def run_command(command, service_name):
 
 async def main():
     """Запускает все сервисы"""
+    # Получаем порт из переменной окружения
+    port = os.getenv("PORT", "8000")
+    
     # Запускаем API
     api_task = asyncio.create_task(
         run_command([
-            "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"
+            "uvicorn", "main:app", "--host", "0.0.0.0", "--port", port
         ], "API")
     )
     
