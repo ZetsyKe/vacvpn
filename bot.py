@@ -10,6 +10,17 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder, WebAppInfo
 import logging
 
+# Добавляем текущую директорию в путь для импортов
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Теперь можно импортировать main
+try:
+    from main import app
+    logger = logging.getLogger(__name__)
+    logger.info("✅ Successfully imported main app")
+except ImportError as e:
+    logger.error(f"❌ Failed to import main app: {e}")
+
 # Настройка логирования ОДИН РАЗ
 logging.basicConfig(
     level=logging.INFO,
