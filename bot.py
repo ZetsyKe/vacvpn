@@ -54,10 +54,16 @@ bot = Bot(
 )
 dp = Dispatcher()
 
-# Функции для работы с API
 async def make_api_request(endpoint: str, method: str = "GET", json_data: dict = None, params: dict = None):
     """Упрощенная функция для запросов к API"""
     try:
+        # Используем тот же URL что и веб-сервер
+        RAILWAY_STATIC_URL = os.getenv("RAILWAY_STATIC_URL")
+        if RAILWAY_STATIC_URL:
+            API_BASE_URL = f"https://{RAILWAY_STATIC_URL}"
+        else:
+            API_BASE_URL = "http://localhost:8443"
+            
         url = f"{API_BASE_URL}{endpoint}"
         timeout_config = httpx.Timeout(30.0, connect=10.0)
         
@@ -72,13 +78,12 @@ async def make_api_request(endpoint: str, method: str = "GET", json_data: dict =
             if response.status_code == 200:
                 return response.json()
             else:
-                logger.error(f"API returned status {response.status_code}")
+                logger.error(f"API returned status {response.status_code} for {url}")
                 return {"error": f"API error: {response.status_code}"}
                 
     except Exception as e:
-        logger.error(f"API request error: {e}")
+        logger.error(f"API request error for {endpoint}: {e}")
         return {"error": f"Connection error: {str(e)}"}
-
 async def get_user_info(user_id: int):
     """Получает информацию о пользователе через API"""
     return await make_api_request("/user-data", "GET", params={"user_id": str(user_id)})
