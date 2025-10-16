@@ -10,6 +10,26 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder, WebAppInfo
 import logging
 
+# Проверка окружения
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+logger.info("=" * 50)
+logger.info("🤖 BOT STARTUP CHECK")
+logger.info("=" * 50)
+logger.info(f"Python: {sys.version}")
+logger.info(f"Directory: {os.getcwd()}")
+logger.info(f"Files: {os.listdir('.')}")
+logger.info(f"TOKEN: {'✅ SET' if os.getenv('TOKEN') else '❌ MISSING'}")
+logger.info(f"RAILWAY_STATIC_URL: {os.getenv('RAILWAY_STATIC_URL')}")
+logger.info("=" * 50)
+
+if not os.getenv('TOKEN'):
+    logger.error("❌ CRITICAL: TOKEN environment variable is missing!")
+    sys.exit(1)
+
+# Остальной код бота...
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
