@@ -9,6 +9,7 @@ import asyncio
 from datetime import datetime
 import threading
 import subprocess
+import sys  # ДОБАВЬТЕ ЭТУ СТРОКУ
 
 # Настройка логирования
 logging.basicConfig(
