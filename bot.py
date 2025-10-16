@@ -6,6 +6,7 @@ import sys
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
+from aiogram.client.default import DefaultBotProperties
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder, WebAppInfo
 import logging
 
@@ -46,8 +47,11 @@ BOT_USERNAME = os.getenv("BOT_USERNAME", "vaaaac_bot")
 logger.info("🚀 Бот запускается на Railway...")
 logger.info(f"🌐 API сервер: {API_BASE_URL}")
 
-# Настройка бота (ИСПРАВЛЕННАЯ СТРОКА)
-bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
+# Настройка бота (ИСПРАВЛЕННАЯ СТРОКА для aiogram 3.7+)
+bot = Bot(
+    token=TOKEN, 
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
 dp = Dispatcher()
 
 # Функции для работы с API
