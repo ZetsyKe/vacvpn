@@ -3,8 +3,8 @@ import asyncio
 import httpx
 import signal
 import sys
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ParseMode
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder, WebAppInfo
 import logging
@@ -46,7 +46,7 @@ BOT_USERNAME = os.getenv("BOT_USERNAME", "vaaaac_bot")
 logger.info("🚀 Бот запускается на Railway...")
 logger.info(f"🌐 API сервер: {API_BASE_URL}")
 
-# Настройка бота
+# Настройка бота (ИСПРАВЛЕННАЯ СТРОКА)
 bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
@@ -373,20 +373,20 @@ async def cmd_vless(message: types.Message):
     vless_text = await get_vless_message(user_id)
     await message.answer(vless_text, reply_markup=get_vless_keyboard(), disable_web_page_preview=True)
 
-# Обработчики кнопок
-@dp.message(lambda message: message.text == "🔐 Личный кабинет")
+# Обработчики кнопок (используем F для фильтров)
+@dp.message(F.text == "🔐 Личный кабинет")
 async def cabinet_handler(message: types.Message):
     await cmd_cabinet(message)
 
-@dp.message(lambda message: message.text == "👥 Рефералка")
+@dp.message(F.text == "👥 Рефералка")
 async def referral_handler(message: types.Message):
     await cmd_referral(message)
 
-@dp.message(lambda message: message.text == "🛠️ Техподдержка")
+@dp.message(F.text == "🛠️ Техподдержка")
 async def support_handler(message: types.Message):
     await cmd_support(message)
 
-@dp.message(lambda message: message.text == "🌐 Веб-кабинет")
+@dp.message(F.text == "🌐 Веб-кабинет")
 async def web_app_handler(message: types.Message):
     user = message.from_user
     builder = InlineKeyboardBuilder()
@@ -402,12 +402,12 @@ async def web_app_handler(message: types.Message):
         reply_markup=builder.as_markup()
     )
 
-@dp.message(lambda message: message.text == "🔧 VLESS Конфиг")
+@dp.message(F.text == "🔧 VLESS Конфиг")
 async def vless_handler(message: types.Message):
     await cmd_vless(message)
 
 # Обработчики callback-кнопок
-@dp.callback_query(lambda c: c.data == "back_to_menu")
+@dp.callback_query(F.data == "back_to_menu")
 async def back_to_menu_handler(callback: types.CallbackQuery):
     await callback.message.delete()
     await callback.message.answer(
@@ -416,7 +416,7 @@ async def back_to_menu_handler(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-@dp.callback_query(lambda c: c.data == "refresh_cabinet")
+@dp.callback_query(F.data == "refresh_cabinet")
 async def refresh_cabinet_handler(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     cabinet_text = await get_cabinet_message(user_id)
@@ -428,7 +428,7 @@ async def refresh_cabinet_handler(callback: types.CallbackQuery):
         await callback.message.answer(cabinet_text, reply_markup=get_cabinet_keyboard())
         await callback.answer("✅ Данные обновлены")
 
-@dp.callback_query(lambda c: c.data == "refresh_refs")
+@dp.callback_query(F.data == "refresh_refs")
 async def refresh_refs_handler(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     new_ref_message = get_ref_message(user_id)
@@ -440,7 +440,7 @@ async def refresh_refs_handler(callback: types.CallbackQuery):
         await callback.message.answer(new_ref_message, reply_markup=get_ref_keyboard(user_id))
         await callback.answer("✅ Статистика обновлены")
 
-@dp.callback_query(lambda c: c.data == "refresh_vless")
+@dp.callback_query(F.data == "refresh_vless")
 async def refresh_vless_handler(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     vless_text = await get_vless_message(user_id)
