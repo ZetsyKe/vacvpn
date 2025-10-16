@@ -50,7 +50,7 @@ TARIFFS = {
         "days": 30
     },
     "1year": {
-        "name": "1 Год", 
+        "name": "1 Год",
         "price": 1300.0,
         "days": 365
     }
