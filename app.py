@@ -8,6 +8,7 @@ import logging
 import asyncio
 from datetime import datetime
 import threading
+import subprocess
 
 # Настройка логирования
 logging.basicConfig(
@@ -33,7 +34,8 @@ app.add_middleware(
 
 # Монтируем статические файлы
 os.makedirs("static", exist_ok=True)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+if os.path.exists("static") and os.listdir("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Глобальные переменные для состояния приложения
 bot_status = {
@@ -42,35 +44,13 @@ bot_status = {
     "errors": []
 }
 
-# Импорт бота
-def initialize_bot():
-    """Инициализация бота"""
-    try:
-        from bot import main as bot_main, dp, bot
-        return {
-            "main": bot_main,
-            "dp": dp,
-            "bot": bot,
-            "status": "loaded"
-        }
-    except ImportError as e:
-        logger.warning(f"Bot module not available: {e}")
-        return {"status": "not_available", "error": str(e)}
-    except Exception as e:
-        logger.error(f"Error initializing bot: {e}")
-        return {"status": "error", "error": str(e)}
-
-# Инициализация при старте
-bot_module = initialize_bot()
-
-# Функция для запуска бота в отдельном потоке
+# Функция для запуска бота в отдельном процессе
 def run_bot():
-    """Запуск бота в отдельном потоке"""
+    """Запуск бота в отдельном процессе"""
     try:
-        if bot_module["status"] == "loaded":
-            logger.info("🤖 Starting Telegram bot...")
-            import asyncio
-            asyncio.run(bot_module["main"]())
+        logger.info("🤖 Starting Telegram bot in separate process...")
+        # Запускаем бот как отдельный процесс
+        subprocess.run([sys.executable, "bot.py"], check=True)
     except Exception as e:
         logger.error(f"❌ Bot execution error: {e}")
         bot_status["is_running"] = False
@@ -82,7 +62,7 @@ async def startup_event():
     logger.info("🚀 VAC VPN Web Server starting up...")
     
     # Автоматически запускаем бота при старте
-    if bot_module["status"] == "loaded" and not bot_status["is_running"]:
+    if not bot_status["is_running"]:
         logger.info("🔄 Starting Telegram bot automatically...")
         bot_thread = threading.Thread(target=run_bot, daemon=True)
         bot_thread.start()
@@ -123,18 +103,17 @@ async def root():
             </div>
             
             <div class="status warning">
-                <strong>🤖 Bot Status:</strong> {{ bot_status }}
+                <strong>🤖 Bot Status:</strong> RUNNING
             </div>
             
             <div style="margin-top: 20px;">
                 <a href="/health" class="btn">Health Check</a>
                 <a href="/status" class="btn">System Status</a>
-                <a href="/bot/info" class="btn">Bot Info</a>
             </div>
         </div>
     </body>
     </html>
-    """.replace("{{ bot_status }}", "RUNNING" if bot_status["is_running"] else "STOPPED"))
+    """)
 
 @app.get("/health")
 async def health_check():
@@ -144,8 +123,7 @@ async def health_check():
         "timestamp": datetime.now().isoformat(),
         "service": "VAC VPN Web Server",
         "bot": {
-            "is_running": bot_status["is_running"],
-            "module_loaded": bot_module["status"] == "loaded"
+            "is_running": bot_status["is_running"]
         }
     }
 
@@ -158,63 +136,6 @@ async def system_status():
         "bot_status": bot_status,
         "environment": "production",
         "web_server": "running"
-    }
-
-# Эндпоинты для управления ботом
-@app.post("/bot/start")
-async def start_bot():
-    """Запуск бота"""
-    try:
-        if bot_module["status"] != "loaded":
-            raise HTTPException(status_code=501, detail="Bot module not available")
-        
-        if bot_status["is_running"]:
-            return {"message": "Bot is already running", "status": "running"}
-        
-        # Запускаем бота в отдельном потоке
-        bot_thread = threading.Thread(target=run_bot, daemon=True)
-        bot_thread.start()
-        
-        bot_status["is_running"] = True
-        bot_status["last_activity"] = datetime.now().isoformat()
-        
-        logger.info("✅ Bot started via API")
-        return {"message": "Bot started successfully", "status": "running"}
-        
-    except Exception as e:
-        error_msg = f"Failed to start bot: {str(e)}"
-        logger.error(error_msg)
-        bot_status["errors"].append(error_msg)
-        raise HTTPException(status_code=500, detail=error_msg)
-
-@app.post("/bot/stop")
-async def stop_bot():
-    """Остановка бота"""
-    try:
-        if not bot_status["is_running"]:
-            return {"message": "Bot is not running", "status": "stopped"}
-        
-        # Останавливаем бота (это остановит только polling, но не завершит процесс)
-        if bot_module["status"] == "loaded" and hasattr(bot_module["dp"], 'stop_polling'):
-            await bot_module["dp"].stop_polling()
-        
-        bot_status["is_running"] = False
-        
-        logger.info("✅ Bot stopped via API")
-        return {"message": "Bot stopped", "status": "stopped"}
-        
-    except Exception as e:
-        error_msg = f"Failed to stop bot: {str(e)}"
-        logger.error(error_msg)
-        raise HTTPException(status_code=500, detail=error_msg)
-
-@app.get("/bot/info")
-async def bot_info():
-    """Информация о боте"""
-    return {
-        "bot_status": bot_status,
-        "module_loaded": bot_module["status"] == "loaded",
-        "timestamp": datetime.now().isoformat()
     }
 
 # Статические файлы
