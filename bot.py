@@ -1,6 +1,8 @@
 import os
 import asyncio
 import httpx
+import signal
+import sys
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
@@ -20,13 +22,21 @@ TOKEN = os.getenv("TOKEN")
 WEB_APP_URL = os.getenv("WEB_APP_URL", "https://vacvpn.vercel.app")
 SUPPORT_NICK = os.getenv("SUPPORT_NICK", "@vacvpn_support")
 TG_CHANNEL = os.getenv("TG_CHANNEL", "@vac_vpn")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://vacvpn-api-production-d067.up.railway.app")
+
+# ВАЖНО: Используем тот же URL что и бэкенд
+RAILWAY_STATIC_URL = os.getenv("RAILWAY_STATIC_URL")
+if RAILWAY_STATIC_URL:
+    API_BASE_URL = f"https://{RAILWAY_STATIC_URL}"
+else:
+    API_BASE_URL = "http://localhost:8000"  # для локальной разработки
+
 BOT_USERNAME = os.getenv("BOT_USERNAME", "vaaaac_bot")
 
 if not TOKEN:
     raise ValueError("❌ Переменная TOKEN не найдена в окружении")
 
 logger.info("🚀 Бот запускается на Railway...")
+logger.info(f"🌐 API сервер: {API_BASE_URL}")
 
 # Настройка бота
 bot = Bot(
@@ -35,7 +45,7 @@ bot = Bot(
 )
 dp = Dispatcher()
 
-# Функции для работы с API (остаются без изменений)
+# Функции для работы с API
 async def make_api_request(url: str, method: str = "GET", json_data: dict = None, params: dict = None):
     """Упрощенная функция для запросов к API"""
     try:
@@ -98,7 +108,7 @@ async def send_referral_notification(referrer_id: int, referred_user):
         logger.error(f"❌ Не удалось отправить уведомление рефереру {referrer_id}: {e}")
         return False
 
-# Клавиатуры (остаются без изменений)
+# Клавиатуры
 def get_main_keyboard():
     builder = ReplyKeyboardBuilder()
     builder.row(
@@ -163,7 +173,7 @@ def get_vless_keyboard():
     )
     return builder.as_markup()
 
-# Текстовые сообщения (остаются без изменений)
+# Текстовые сообщения
 def get_welcome_message(user_name: str, is_referral: bool = False):
     message = f"""
 <b>Добро пожаловать в VAC VPN, {user_name}!</b>
@@ -302,7 +312,7 @@ async def get_vless_message(user_id: int):
     
     return message
 
-# Обработчики команд (остаются без изменений)
+# Обработчики команд
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user = message.from_user
@@ -361,7 +371,7 @@ async def cmd_vless(message: types.Message):
     vless_text = await get_vless_message(user_id)
     await message.answer(vless_text, reply_markup=get_vless_keyboard(), disable_web_page_preview=True)
 
-# Обработчики кнопок (остаются без изменений)
+# Обработчики кнопок
 @dp.message(lambda message: message.text == "🔐 Личный кабинет")
 async def cabinet_handler(message: types.Message):
     await cmd_cabinet(message)
@@ -394,7 +404,7 @@ async def web_app_handler(message: types.Message):
 async def vless_handler(message: types.Message):
     await cmd_vless(message)
 
-# Обработчики callback-кнопок (остаются без изменений)
+# Обработчики callback-кнопок
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu_handler(callback: types.CallbackQuery):
     await callback.message.delete()
@@ -459,5 +469,18 @@ async def main():
     finally:
         await bot.session.close()
 
+# Обработка graceful shutdown
+def signal_handler(signum, frame):
+    logger.info("🛑 Received shutdown signal, stopping bot...")
+    asyncio.create_task(shutdown())
+
+async def shutdown():
+    await bot.session.close()
+    sys.exit(0)
+
 if __name__ == "__main__":
+    # Регистрируем обработчики сигналов
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     asyncio.run(main())
