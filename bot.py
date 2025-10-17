@@ -31,23 +31,26 @@ if not os.getenv('TOKEN'):
 
 # Получаем переменные окружения
 TOKEN = os.getenv("TOKEN")
-WEB_APP_URL = os.getenv("WEB_APP_URL", "https://vacvpn.vercel.app")
 SUPPORT_NICK = os.getenv("SUPPORT_NICK", "@vacvpn_support")
 TG_CHANNEL = os.getenv("TG_CHANNEL", "@vac_vpn")
 
-# URL API - используем Railway URL
+# URL API и веб-приложения - используем Railway URL
 RAILWAY_STATIC_URL = os.getenv("RAILWAY_STATIC_URL")
 if RAILWAY_STATIC_URL:
+    # Используем тот же URL что и для API
     API_BASE_URL = f"https://{RAILWAY_STATIC_URL}"
+    WEB_APP_URL = f"https://{RAILWAY_STATIC_URL}"  # ВАЖНО: тот же URL!
 else:
     API_BASE_URL = "http://localhost:8443"
+    WEB_APP_URL = "http://localhost:8443"
 
 BOT_USERNAME = os.getenv("BOT_USERNAME", "vaaaac_bot")
 
 logger.info("🚀 Бот запускается на Railway...")
 logger.info(f"🌐 API сервер: {API_BASE_URL}")
+logger.info(f"🌐 Веб-приложение: {WEB_APP_URL}")
 
-# Настройка бота (ИСПРАВЛЕННАЯ СТРОКА для aiogram 3.7+)
+# Настройка бота
 bot = Bot(
     token=TOKEN, 
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
@@ -84,6 +87,7 @@ async def make_api_request(endpoint: str, method: str = "GET", json_data: dict =
     except Exception as e:
         logger.error(f"API request error for {endpoint}: {e}")
         return {"error": f"Connection error: {str(e)}"}
+
 async def get_user_info(user_id: int):
     """Получает информацию о пользователе через API"""
     return await make_api_request("/user-data", "GET", params={"user_id": str(user_id)})
@@ -287,7 +291,7 @@ async def get_vless_message(user_id: int):
 
 ❌ Ошибка: {vless_data['error']}
 
-💡 Для получения конфигурации необходима активная подписка.
+💡 Для получения конфигурации необходима активная подпискa.
 """
     
     if not vless_data.get('configs'):
