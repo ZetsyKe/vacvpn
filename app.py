@@ -19,6 +19,8 @@ import re
 import json
 import urllib.parse
 from typing import List, Optional
+from PIL import Image, ImageDraw, ImageFont
+import io
 
 # Настройка логирования
 logging.basicConfig(
@@ -44,8 +46,7 @@ app.add_middleware(
 
 # Монтируем статические файлы
 os.makedirs("static", exist_ok=True)
-if os.path.exists("static") and os.listdir("static"):
-    app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Конфигурация
 XRAY_MANAGER_URL = os.getenv("XRAY_MANAGER_URL", "http://45.134.13.189:8001")
@@ -148,6 +149,49 @@ class BuyWithBalanceRequest(BaseModel):
     tariff_id: str
     tariff_price: float
     tariff_days: int
+
+# Функция для создания placeholder логотипа
+def create_placeholder_logo():
+    """Создает placeholder логотип если его нет"""
+    try:
+        logo_path = "static/logo.png"
+        if not os.path.exists(logo_path):
+            logger.info("🎨 Creating placeholder logo...")
+            
+            # Создаем изображение 120x120
+            img = Image.new('RGB', (120, 120), color='#121212')
+            d = ImageDraw.Draw(img)
+            
+            # Рисуем зеленый круг
+            d.ellipse([10, 10, 110, 110], fill='#B0CB1F')
+            
+            # Добавляем текст VAC VPN
+            try:
+                # Пробуем использовать системный шрифт
+                font = ImageFont.truetype("arial.ttf", 16)
+            except:
+                try:
+                    font = ImageFont.truetype("arialbd.ttf", 16)
+                except:
+                    # Fallback на стандартный шрифт
+                    font = ImageFont.load_default()
+            
+            # Текст белым цветом
+            d.text((60, 40), "VAC", fill='#121212', font=font, anchor="mm")
+            d.text((60, 70), "VPN", fill='#121212', font=font, anchor="mm")
+            
+            # Сохраняем изображение
+            img.save(logo_path, "PNG")
+            logger.info("✅ Placeholder logo created successfully")
+            
+    except Exception as e:
+        logger.error(f"❌ Error creating placeholder logo: {e}")
+        # Создаем простейший placeholder как fallback
+        try:
+            img = Image.new('RGB', (120, 120), color='#B0CB1F')
+            img.save(logo_path, "PNG")
+        except:
+            pass
 
 # Функции работы с Xray через API
 async def add_user_to_xray(user_uuid: str) -> bool:
@@ -480,7 +524,6 @@ def process_subscription_days(user_id: str):
                     
                     if new_days == 0:
                         update_data['has_subscription'] = False
-                        # При окончании подписки можно удалить из Xray, но пока оставим
                     
                     db.collection('users').document(user_id).update(update_data)
                     logger.info(f"✅ Subscription days processed for user {user_id}: {subscription_days} -> {new_days} (-{days_passed} days)")
@@ -646,6 +689,9 @@ async def startup_event():
     """Действия при запуске приложения"""
     logger.info("🚀 VAC VPN Server starting up...")
     
+    # Создаем placeholder логотип при запуске
+    create_placeholder_logo()
+    
     # Автоматически запускаем бота при старте
     logger.info("🔄 Starting Telegram bot automatically...")
     bot_thread = threading.Thread(target=run_bot, daemon=True)
@@ -770,7 +816,7 @@ async def init_user(request: InitUserRequest):
                 'has_subscription': False,
                 'subscription_days': 0,
                 'subscription_start': None,
-                'vless_uuid': None,  # UUID будет сгенерирован при активации подписки
+                'vless_uuid': None,
                 'created_at': firestore.SERVER_TIMESTAMP
             }
             
@@ -1241,7 +1287,7 @@ async def get_vless_config(user_id: str):
         return {
             "success": True,
             "user_id": user_id,
-            "vless_uuid": vless_uuid,  # Возвращаем UUID для отладки
+            "vless_uuid": vless_uuid,
             "has_subscription": True,
             "subscription_days": user.get('subscription_days', 0),
             "configs": configs
@@ -1250,6 +1296,21 @@ async def get_vless_config(user_id: str):
     except Exception as e:
         logger.error(f"❌ Error getting VLESS config: {e}")
         return JSONResponse(status_code=500, content={"error": f"Error getting VLESS config: {str(e)}"})
+
+# Эндпоинт для получения логотипа
+@app.get("/logo")
+async def get_logo():
+    """Возвращает логотип"""
+    logo_path = "static/logo.png"
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path, media_type="image/png")
+    else:
+        # Создаем логотип если его нет
+        create_placeholder_logo()
+        if os.path.exists(logo_path):
+            return FileResponse(logo_path, media_type="image/png")
+        else:
+            raise HTTPException(status_code=404, detail="Logo not found")
 
 # Админские эндпоинты для управления Xray через API
 @app.post("/admin/generate-unique-uuid")
