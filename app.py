@@ -1484,6 +1484,79 @@ async def admin_reset_user(user_id: str):
     except Exception as e:
         logger.error(f"❌ Error resetting user: {e}")
         return {"error": str(e)}
+# Добавьте этот эндпоинт в ваш существующий бэкенд код:
+
+@app.on_event("startup")
+async def startup_event():
+    """Действия при запуске приложения"""
+    logger.info("🚀 VAC VPN Server starting up...")
+    
+    # Копируем логотип в статическую директорию если его там нет
+    ensure_logo_exists()
+    
+    # Автоматически запускаем бота при старте
+    logger.info("🔄 Starting Telegram bot automatically...")
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    logger.info("✅ Telegram bot started successfully")
+
+def ensure_logo_exists():
+    """Обеспечивает что логотип доступен в статической директории"""
+    try:
+        original_logo = "Airbrush-Image-Enhancer-1753455007914.png"
+        static_logo = "static/Airbrush-Image-Enhancer-1753455007914.png"
+        
+        # Создаем static директорию если ее нет
+        os.makedirs("static", exist_ok=True)
+        
+        # Если оригинальный логотип существует, копируем его в static
+        if os.path.exists(original_logo) and not os.path.exists(static_logo):
+            import shutil
+            shutil.copy2(original_logo, static_logo)
+            logger.info(f"✅ Logo copied to static directory: {static_logo}")
+        elif os.path.exists(static_logo):
+            logger.info(f"✅ Logo already exists in static directory: {static_logo}")
+        else:
+            logger.warning("⚠️ Original logo file not found, creating placeholder")
+            create_placeholder_logo()
+            
+    except Exception as e:
+        logger.error(f"❌ Error ensuring logo exists: {e}")
+        create_placeholder_logo()
+
+def create_placeholder_logo():
+    """Создает placeholder логотип если основной не найден"""
+    try:
+        logo_path = "static/Airbrush-Image-Enhancer-1753455007914.png"
+        
+        # Создаем изображение 120x120
+        img = Image.new('RGB', (120, 120), color='#121212')
+        d = ImageDraw.Draw(img)
+        
+        # Рисуем зеленый круг
+        d.ellipse([10, 10, 110, 110], fill='#B0CB1F')
+        
+        # Добавляем текст VAC VPN
+        try:
+            # Пробуем использовать системный шрифт
+            font = ImageFont.truetype("arial.ttf", 16)
+        except:
+            try:
+                font = ImageFont.truetype("arialbd.ttf", 16)
+            except:
+                # Fallback на стандартный шрифт
+                font = ImageFont.load_default()
+        
+        # Текст белым цветом
+        d.text((60, 40), "VAC", fill='#121212', font=font, anchor="mm")
+        d.text((60, 70), "VPN", fill='#121212', font=font, anchor="mm")
+        
+        # Сохраняем изображение
+        img.save(logo_path, "PNG")
+        logger.info("✅ Placeholder logo created successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ Error creating placeholder logo: {e}")
 
 if __name__ == "__main__":
     import uvicorn
