@@ -81,7 +81,23 @@
     }
     .logo {
       height: 120px;
+      width: 120px;
       object-fit: contain;
+      border-radius: 8px;
+    }
+    .logo-placeholder {
+      height: 120px;
+      width: 120px;
+      background: var(--primary);
+      color: var(--bg);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 16px;
+      text-align: center;
+      padding: 8px;
     }
     .top-bar-right {
       display: flex;
@@ -513,7 +529,9 @@
 <body>
 
   <div class="top-bar">
-    <img src="Airbrush-Image-Enhancer-1753455007914.png" alt="VAC VPN Logo" class="logo">
+    <div id="logoContainer">
+      <img src="https://vacvpn-api-production-d067.up.railway.app/static/logo.png" alt="VAC VPN Logo" class="logo" id="logoImage" onerror="handleLogoError()">
+    </div>
     <div class="top-bar-right">
       <div class="user-name" id="userName">Загрузка...</div>
       <div class="menu-btn" onclick="toggleMenu()">≡</div>
@@ -642,7 +660,7 @@
     </div>
 
     <div id="paymentMethods" style="display: none; margin: 12px 0;">
-      <div style="margin-bottom: 8px; font-weight: 600;">Способ оплаты:</div>
+      <div style="margin-bottom: 8px; font-weight: 600;">Способ оплата:</div>
       <div class="payment-methods">
         <div class="payment-method" id="paymentBalance" onclick="selectPaymentMethod('balance')">
           <div class="payment-icon">💰</div>
@@ -746,6 +764,67 @@
         description: 'Доступ к VPN на 365 дней. Реферал пополняет баланс'
       }
     };
+
+    // Функция для надежной загрузки логотипа
+    function loadLogoWithFallback() {
+        const logo = document.getElementById('logoImage');
+        const logoContainer = document.getElementById('logoContainer');
+        
+        if (!logo) return;
+        
+        const logoUrls = [
+            'https://vacvpn-api-production-d067.up.railway.app/static/logo.png',
+            '/static/logo.png',
+            'Airbrush-Image-Enhancer-1753455007914.png',
+            'https://via.placeholder.com/120x120/121212/B0CB1F?text=VAC+VPN'
+        ];
+        
+        let currentIndex = 0;
+        
+        function tryNextLogo() {
+            if (currentIndex >= logoUrls.length) {
+                // Все URL не сработали, показываем placeholder
+                showLogoPlaceholder();
+                return;
+            }
+            
+            const img = new Image();
+            img.onload = function() {
+                logo.src = logoUrls[currentIndex];
+                logo.style.display = 'block';
+                console.log('✅ Logo loaded:', logoUrls[currentIndex]);
+            };
+            img.onerror = function() {
+                console.log('❌ Failed to load logo:', logoUrls[currentIndex]);
+                currentIndex++;
+                setTimeout(tryNextLogo, 100);
+            };
+            img.src = logoUrls[currentIndex];
+        }
+        
+        tryNextLogo();
+    }
+
+    function handleLogoError() {
+        console.log('🔄 Logo error handler triggered');
+        showLogoPlaceholder();
+    }
+
+    function showLogoPlaceholder() {
+        const logoContainer = document.getElementById('logoContainer');
+        const logo = document.getElementById('logoImage');
+        
+        if (logo) {
+            logo.style.display = 'none';
+        }
+        
+        logoContainer.innerHTML = `
+            <div class="logo-placeholder">
+                VAC<br>VPN
+            </div>
+        `;
+        console.log('📝 Showing logo placeholder');
+    }
 
     // Инициализация интерфейса
     document.getElementById('userName').textContent = userName;
@@ -879,12 +958,10 @@
                     closeAddBalanceModal();
                     showSuccess('💳 Открываю страницу оплаты...');
                     
-                    // ИСПРАВЛЕНИЕ: Используем Telegram WebApp метод для открытия ссылки
+                    // Используем Telegram WebApp метод для открытия ссылки
                     if (window.Telegram && window.Telegram.WebApp) {
-                        // Метод 1: Прямое открытие через Telegram
                         window.Telegram.WebApp.openLink(paymentUrl);
                     } else {
-                        // Метод 2: Открытие в новом окне для браузера
                         window.open(paymentUrl, '_blank');
                     }
                     
@@ -915,7 +992,7 @@
         if (!currentPaymentId) return;
         
         let attempts = 0;
-        const maxAttempts = 60; // 10 минут (10 секунд * 60)
+        const maxAttempts = 60;
         
         const checkInterval = setInterval(async () => {
             attempts++;
@@ -960,7 +1037,7 @@
             } catch (error) {
                 console.error('Ошибка проверки платежа:', error);
             }
-        }, 10000); // Проверяем каждые 10 секунд
+        }, 10000);
     }
 
     // Функции тарифов
@@ -1005,7 +1082,7 @@
     // Функция выбора способа оплаты
     function selectPaymentMethod(method) {
         if (method === 'balance' && document.getElementById('paymentBalance').classList.contains('disabled')) {
-            return; // Не позволяем выбрать недоступный способ
+            return;
         }
         
         currentPaymentMethod = method;
@@ -1154,7 +1231,7 @@
     // Функция для перехода к оплате
     function proceedToPayment() {
         if (paymentUrl) {
-            // ИСПРАВЛЕНИЕ: Используем Telegram WebApp метод для открытия ссылки
+            // Используем Telegram WebApp метод для открытия ссылки
             if (window.Telegram && window.Telegram.WebApp) {
                 window.Telegram.WebApp.openLink(paymentUrl);
             } else {
@@ -1178,7 +1255,7 @@
         if (!currentPaymentId) return;
         
         let attempts = 0;
-        const maxAttempts = 60; // 10 минут (10 секунд * 60)
+        const maxAttempts = 60;
         
         const checkInterval = setInterval(async () => {
             attempts++;
@@ -1206,7 +1283,7 @@
             } catch (error) {
                 console.error('Ошибка проверки платежа:', error);
             }
-        }, 10000); // Проверяем каждые 10 секунд
+        }, 10000);
     }
 
     // Функция получения VLESS конфигурации
@@ -1564,6 +1641,7 @@
     // Инициализация при загрузке страницы
     document.addEventListener('DOMContentLoaded', function() {
         console.log('🚀 Starting VAC VPN WebApp...');
+        loadLogoWithFallback(); // Загружаем логотип с fallback
         initUser();
         
         // Закрываем меню при клике вне его
