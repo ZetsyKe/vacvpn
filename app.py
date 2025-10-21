@@ -743,6 +743,27 @@ async def startup_event():
     bot_thread.start()
     logger.info("✅ Telegram bot started successfully")
 
+@app.get("/debug-finland-connection")
+async def debug_finland_connection():
+    """Диагностика подключения к финскому серверу"""
+    try:
+        finland_url = os.getenv("FINLAND_XRAY_URL")
+        finland_key = os.getenv("FINLAND_XRAY_API_KEY")
+        
+        return {
+            "environment_vars": {
+                "FINLAND_XRAY_URL": finland_url,
+                "FINLAND_XRAY_API_KEY": finland_key[:10] + "..." if finland_key else None
+            },
+            "xray_servers_config": {
+                "finland_url": XRAY_SERVERS["finland"]["url"],
+                "finland_key": XRAY_SERVERS["finland"]["api_key"][:10] + "..."
+            }
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
 # API ЭНДПОИНТЫ
 @app.get("/")
 async def root():
