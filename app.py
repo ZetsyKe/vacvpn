@@ -68,17 +68,17 @@ VLESS_SERVERS = [
         "address": "45.134.13.189", 
         "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "AZTvYvIEtJv5aAS-F-6gMg3a6KXuMgRJIHBIdp-7bAQ",
+        "reality_pbk": "AZIvYvIEtJv5aA5-F-6gMg3a6KXuMgRJIHBLdp-7bAQ",
         "short_id": "abcd1234",
         "flow": "",
         "security": "reality"
     },
     {
-        "name": "🇫🇮 Финляндия #1",
+        "name": "🇫🇮 Финляндия #1", 
         "address": "91.103.140.230",
-        "port": 8443,  # ← порт 8443
+        "port": 8443,
         "sni": "www.google.com",
-        "reality_pbk": "E7HSWYdp7HixuxJUqgbdroYl4upgBQpooHIGbruLvx8",
+        "reality_pbk": "aIYE6amOh1vLmJAKFEzhTIfiPr9yseKiZwOoTjTalRk",  
         "short_id": "a1b2c3d4",
         "flow": "",
         "security": "reality"
