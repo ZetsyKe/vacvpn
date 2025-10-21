@@ -65,24 +65,24 @@ XRAY_API_KEY = "vac-vpn-secret-key-2024"
 VLESS_SERVERS = [
     {
         "name": "🇷🇺 Москва #1",
-        "address": "45.134.13.189",
+        "address": "45.134.13.189", 
         "port": 2053,
-        "sni": "www.google.com", 
+        "sni": "www.google.com",
         "reality_pbk": "AZTvYvIEtJv5aAS-F-6gMg3a6KXuMgRJIHBIdp-7bAQ",
         "short_id": "abcd1234",
         "flow": "",
         "security": "reality"
     },
-{
-    "name": "🇫🇮 Финляндия #1",
-    "address": "91.103.140.230",
-    "port": 2053,
-    "sni": "www.google.com",
-    "reality_pbk": "E7HSWYdp7HixuxJUqgbdroYl4upgBQpooHIGbruLvx8",
-    "short_id": "fin12345",
-    "flow": "",
-    "security": "reality"
-}
+    {
+        "name": "🇫🇮 Финляндия #1",
+        "address": "91.103.140.230",
+        "port": 8443,  # ← порт 8443
+        "sni": "www.google.com",
+        "reality_pbk": "E7HSWYdp7HixuxJUqgbdroYl4upgBQpooHIGbruLvx8",
+        "short_id": "a1b2c3d4",
+        "flow": "",
+        "security": "reality"
+    }
 ]
 
 # Тарифы
