@@ -63,14 +63,14 @@ VLESS_SERVERS = [
         "security": "reality"
     },
     {
-        "name": "🇫🇮 Финляндия #1",
-        "address": "91.103.140.230",
-        "port": 2053,
-        "sni": "www.google.com",
-        "reality_pbk": "GFjSOSi6S6Mynt8BkyUK2cfuFzrLZ2A4BsOmx99b8U0",  # НОВЫЙ публичный ключ
-        "short_id": "ef123456",
-        "flow": "",
-        "security": "reality"
+    "name": "🇫🇮 Финляндия #1",
+    "address": "91.103.140.230",  # Правильный IP
+    "port": 2053,
+    "sni": "www.google.com", 
+    "reality_pbk": "GFjSOSi6S6Mynt8BkyUK2cfuFzrLZ2A4BsOmx99b8U0",  # Публичный ключ
+    "short_id": "ef123456",  # Short ID
+    "flow": "",
+    "security": "reality"
     }
 ]
 
