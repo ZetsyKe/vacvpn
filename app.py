@@ -227,49 +227,61 @@ def create_placeholder_logo():
         logger.error(f"❌ Error creating placeholder logo: {e}")
 
 # Функции работы с Xray через API
-async def add_user_to_xray(user_uuid: str) -> bool:
-    """Добавить пользователя во все Xray серверы"""
+async def check_user_in_xray(user_uuid: str) -> bool:
+    """Проверить есть ли пользователь хотя бы в одном Xray"""
     try:
-        logger.info(f"🔄 [XRAY ADD] Adding user to all Xray servers: {user_uuid}")
+        logger.info(f"🔍 [XRAY CHECK] Starting check for UUID: {user_uuid}")
         
-        results = []
+        server_results = {}
+        
         for server_name, server_config in XRAY_SERVERS.items():
             try:
                 async with httpx.AsyncClient() as client:
-                    # Используем правильный endpoint с API ключом
-                    endpoint = f"{server_config['url']}/users"
+                    endpoints = [
+                        f"{server_config['url']}/users/{user_uuid}",
+                        f"{server_config['url']}/user/{user_uuid}", 
+                        f"{server_config['url']}/check/{user_uuid}",
+                        f"{server_config['url']}/users?uuid={user_uuid}"
+                    ]
                     
-                    logger.info(f"🔗 [XRAY ADD] Adding to {server_name} via: {endpoint}")
+                    server_found = False
+                    for endpoint in endpoints:
+                        try:
+                            logger.info(f"🌐 [XRAY CHECK] Checking {server_name} via: {endpoint}")
+                            response = await client.get(endpoint, timeout=30.0)
+                            
+                            logger.info(f"📡 [XRAY CHECK] {server_name} response: {response.status_code}")
+                            
+                            if response.status_code == 200:
+                                data = response.json()
+                                exists = data.get("exists", False)
+                                server_results[server_name] = exists
+                                
+                                if exists:
+                                    logger.info(f"✅ [XRAY CHECK] User exists in {server_name}")
+                                    server_found = True
+                                    break
+                                else:
+                                    logger.info(f"❌ [XRAY CHECK] User NOT found in {server_name}")
+                            
+                        except Exception as e:
+                            logger.warning(f"⚠️ [XRAY CHECK] {server_name} endpoint {endpoint} error: {e}")
                     
-                    response = await client.post(
-                        f"{endpoint}?uuid={user_uuid}",
-                        headers={"X-API-Key": server_config["api_key"]},
-                        timeout=30.0
-                    )
-                    
-                    if response.status_code == 200:
-                        response_data = response.json()
-                        if response_data.get("status") in ["success", "exists"]:
-                            logger.info(f"✅ [XRAY ADD] User {user_uuid} added to {server_name}")
-                            results.append(True)
-                        else:
-                            logger.error(f"❌ [XRAY ADD] {server_name} returned error: {response_data}")
-                            results.append(False)
-                    else:
-                        logger.error(f"❌ [XRAY ADD] {server_name} failed: {response.status_code} - {response.text}")
-                        results.append(False)
-                        
+                    if not server_found:
+                        server_results[server_name] = False
+                            
             except Exception as e:
-                logger.error(f"❌ [XRAY ADD] Error adding user to {server_name}: {e}")
-                results.append(False)
+                logger.warning(f"⚠️ [XRAY CHECK] Server {server_name} error: {e}")
+                server_results[server_name] = False
         
-        # Возвращаем True только если пользователь добавлен на ВСЕ серверы
-        success = all(results)
-        logger.info(f"📊 [XRAY ADD] Overall result: {success} (moscow: {results[0]}, finland: {results[1]})")
-        return success
-                
+        # Пользователь считается существующим если есть хотя бы в одном сервере
+        user_exists = any(server_results.values())
+        logger.info(f"📊 [XRAY CHECK] Final result: {user_exists} (moscow: {server_results.get('moscow')}, finland: {server_results.get('finland')})")
+        
+        return user_exists
+            
     except Exception as e:
-        logger.error(f"❌ [XRAY ADD] Critical error: {e}")
+        logger.error(f"❌ [XRAY CHECK] Exception: {str(e)}")
         return False
 
 async def check_user_in_xray(user_uuid: str) -> bool:
