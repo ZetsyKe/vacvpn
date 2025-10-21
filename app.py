@@ -51,7 +51,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Конфигурация
 XRAY_MANAGER_URL = os.getenv("XRAY_MANAGER_URL", "http://45.134.13.189:8001")
 XRAY_API_KEY = os.getenv("XRAY_API_KEY", "vac-vpn-secret-key-2024")
-
 VLESS_SERVERS = [
     {
         "name": "🇷🇺 Москва #1",
@@ -68,7 +67,7 @@ VLESS_SERVERS = [
         "address": "91.103.140.230",
         "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "zchFgXc6uKnnH6Z1ArVenrFzFJ3cDIvs3lxr",
+        "reality_pbk": "gHCpJO8sN73ig5h4sKE3agLkQen22FlnABnUu-Wg80E", 
         "short_id": "ef123456",
         "flow": "",
         "security": "reality"
