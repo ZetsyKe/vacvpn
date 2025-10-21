@@ -236,37 +236,35 @@ async def add_user_to_xray(user_uuid: str) -> bool:
         for server_name, server_config in XRAY_SERVERS.items():
             try:
                 async with httpx.AsyncClient() as client:
-                    endpoints = [
-                        f"{server_config['url']}/users?uuid={user_uuid}",
-                        f"{server_config['url']}/user?uuid={user_uuid}",
-                        f"{server_config['url']}/add?uuid={user_uuid}",
-                        f"{server_config['url']}/add-user?uuid={user_uuid}"
-                    ]
+                    # Используем правильный endpoint с API ключом
+                    endpoint = f"{server_config['url']}/users"
                     
-                    server_success = False
-                    for endpoint in endpoints:
-                        try:
-                            logger.info(f"🔗 [XRAY ADD] Trying endpoint: {endpoint}")
-                            response = await client.post(endpoint, timeout=30.0)
-                            
-                            if response.status_code == 200:
-                                logger.info(f"✅ [XRAY ADD] User {user_uuid} added to {server_name} via {endpoint}")
-                                server_success = True
-                                break
-                            else:
-                                logger.warning(f"⚠️ [XRAY ADD] Endpoint {endpoint} failed: {response.status_code}")
-                                
-                        except Exception as e:
-                            logger.warning(f"⚠️ [XRAY ADD] Endpoint {endpoint} error: {e}")
+                    logger.info(f"🔗 [XRAY ADD] Adding to {server_name} via: {endpoint}")
                     
-                    results.append(server_success)
+                    response = await client.post(
+                        f"{endpoint}?uuid={user_uuid}",
+                        headers={"X-API-Key": server_config["api_key"]},
+                        timeout=30.0
+                    )
                     
+                    if response.status_code == 200:
+                        response_data = response.json()
+                        if response_data.get("status") in ["success", "exists"]:
+                            logger.info(f"✅ [XRAY ADD] User {user_uuid} added to {server_name}")
+                            results.append(True)
+                        else:
+                            logger.error(f"❌ [XRAY ADD] {server_name} returned error: {response_data}")
+                            results.append(False)
+                    else:
+                        logger.error(f"❌ [XRAY ADD] {server_name} failed: {response.status_code} - {response.text}")
+                        results.append(False)
+                        
             except Exception as e:
                 logger.error(f"❌ [XRAY ADD] Error adding user to {server_name}: {e}")
                 results.append(False)
         
-        # Возвращаем True если пользователь добавлен хотя бы на один сервер
-        success = any(results)
+        # Возвращаем True только если пользователь добавлен на ВСЕ серверы
+        success = all(results)
         logger.info(f"📊 [XRAY ADD] Overall result: {success} (moscow: {results[0]}, finland: {results[1]})")
         return success
                 
@@ -282,30 +280,21 @@ async def check_user_in_xray(user_uuid: str) -> bool:
         for server_name, server_config in XRAY_SERVERS.items():
             try:
                 async with httpx.AsyncClient() as client:
-                    endpoints = [
+                    response = await client.get(
                         f"{server_config['url']}/users/{user_uuid}",
-                        f"{server_config['url']}/user/{user_uuid}",
-                        f"{server_config['url']}/check/{user_uuid}",
-                        f"{server_config['url']}/users?uuid={user_uuid}"
-                    ]
+                        headers={"X-API-Key": server_config["api_key"]},
+                        timeout=30.0
+                    )
                     
-                    for endpoint in endpoints:
-                        try:
-                            logger.info(f"🌐 [XRAY CHECK] Making request to: {endpoint}")
-                            response = await client.get(endpoint, timeout=30.0)
-                            
-                            logger.info(f"📡 [XRAY CHECK] Response status: {response.status_code}")
-                            
-                            if response.status_code == 200:
-                                data = response.json()
-                                exists = data.get("exists", False)
-                                if exists:
-                                    logger.info(f"✅ [XRAY CHECK] User exists in {server_name} Xray: {exists}")
-                                    return True
-                        
-                        except Exception as e:
-                            logger.warning(f"⚠️ [XRAY CHECK] Endpoint {endpoint} error: {e}")
-                            
+                    if response.status_code == 200:
+                        data = response.json()
+                        exists = data.get("exists", False)
+                        if exists:
+                            logger.info(f"✅ [XRAY CHECK] User exists in {server_name} Xray: {exists}")
+                            return True
+                        else:
+                            logger.info(f"❌ [XRAY CHECK] User NOT found in {server_name}")
+                    
             except Exception as e:
                 logger.warning(f"⚠️ [XRAY CHECK] Server {server_name} error: {e}")
         
@@ -315,7 +304,6 @@ async def check_user_in_xray(user_uuid: str) -> bool:
     except Exception as e:
         logger.error(f"❌ [XRAY CHECK] Exception: {str(e)}")
         return False
-
 async def get_xray_users_count() -> int:
     """Получить количество пользователей в Xray"""
     try:
