@@ -67,7 +67,7 @@ VLESS_SERVERS = [
         "address": "91.103.140.230",
         "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "gHCpJO8sN73ig5h4sKE3agLkQen22FlnABnUu-Wg80E", 
+        "reality_pbk": "GFjSOSi6S6Mynt8BkyUK2cfuFzrLZ2A4BsOmx99b8U0",  # НОВЫЙ публичный ключ
         "short_id": "ef123456",
         "flow": "",
         "security": "reality"
