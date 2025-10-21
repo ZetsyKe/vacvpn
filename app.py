@@ -73,16 +73,16 @@ VLESS_SERVERS = [
         "flow": "",
         "security": "reality"
     },
-    {
-        "name": "🇫🇮 Финляндия #1",
-        "address": "91.103.140.230",
-        "port": 2083,  # ← порт 2083
-        "sni": "www.google.com",
-        "reality_pbk": "GFjSOSi6S6Mynt8BkyUK2cfuFzrLZ2A4BsOmx99b8U0",
-        "short_id": "ef123456", 
-        "flow": "",
-        "security": "reality"
-    }
+{
+    "name": "🇫🇮 Финляндия #1",
+    "address": "91.103.140.230",
+    "port": 2053,
+    "sni": "www.google.com",
+    "reality_pbk": "E7HSWYdp7HixuxJUqgbdroYl4upgBQpooHIGbruLvx8",
+    "short_id": "fin12345",
+    "flow": "",
+    "security": "reality"
+}
 ]
 
 # Тарифы
