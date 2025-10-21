@@ -764,6 +764,30 @@ async def debug_finland_connection():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/test-outgoing-connection")
+async def test_outgoing_connection():
+    """Тестирование исходящих подключений из Railway"""
+    results = {}
+    
+    # Тестируем подключение к финскому серверу
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "http://91.103.140.230:8003/health",
+                timeout=10.0
+            )
+            results["finland_direct"] = {
+                "status": "success",
+                "status_code": response.status_code,
+                "data": response.json() if response.status_code == 200 else response.text
+            }
+    except Exception as e:
+        results["finland_direct"] = {
+            "status": "error", 
+            "error": str(e)
+        }
+    
+    return results
 # API ЭНДПОИНТЫ
 @app.get("/")
 async def root():
