@@ -49,15 +49,14 @@ os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Конфигурация
-# Конфигурация
 XRAY_SERVERS = {
     "moscow": {
-        "url": "http://45.134.13.189:8001",
-        "api_key": "vac-vpn-secret-key-2024"
+        "url": os.getenv("XRAY_MANAGER_URL", "http://45.134.13.189:8001"),
+        "api_key": os.getenv("XRAY_API_KEY", "vac-vpn-secret-key-2024")
     },
     "finland": {
-        "url": "http://91.103.140.230:8003",
-        "api_key": "wzl-GFlbAljj80hA_rxB0ZZm-BSStbSQFgV_orpmn0I"  # 👈 РАБОЧИЙ КЛЮЧ
+        "url": os.getenv("FINLAND_XRAY_URL", "http://91.103.140.230:8003"),
+        "api_key": os.getenv("FINLAND_XRAY_API_KEY", "wzl-GFlbAljj80hA_rxB0ZZm-BSStbSQFgV_orpmn0I")
     }
 }
 
