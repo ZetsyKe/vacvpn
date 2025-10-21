@@ -57,11 +57,10 @@ XRAY_SERVERS = {
     },
     "finland": {
         "url": "http://91.103.140.230:8003",
-        "api_key": "finland-secret-key-2024"
+        "api_key": "wzl-GFlbAljj80hA_rxB0ZZm-BSStbSQFgV_orpmn0I"  # 👈 РАБОЧИЙ КЛЮЧ
     }
 }
-XRAY_MANAGER_URL = "http://45.134.13.189:8001"
-XRAY_API_KEY = "vac-vpn-secret-key-2024"
+
 VLESS_SERVERS = [
     {
         "name": "🇷🇺 Москва #1",
@@ -78,7 +77,7 @@ VLESS_SERVERS = [
         "address": "91.103.140.230",
         "port": 8443,
         "sni": "www.google.com",
-        "reality_pbk": "aIYE6amOh1vLmJAKFEzhTIfiPr9yseKiZwOoTjTalRk",  
+        "reality_pbk": "aIYE6amOh1vLmJAKFEzhTIfiPr9yseKiZwOoTjTalRk",
         "short_id": "a1b2c3d4",
         "flow": "",
         "security": "reality"
