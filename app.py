@@ -56,7 +56,7 @@ XRAY_SERVERS = {
         "api_key": "vac-vpn-secret-key-2024"
     },
     "finland": {
-        "url": "http://91.103.140.230:8001",
+        "url": "http://91.103.140.230:8003",
         "api_key": "finland-secret-key-2024"
     }
 }
