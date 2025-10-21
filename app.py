@@ -62,6 +62,16 @@ VLESS_SERVERS = [
         "short_id": "abcd1234",  
         "flow": "",
         "security": "reality"
+    },
+    {
+        "name": "🇫🇮 Финляндия #1",
+        "address": "91.103.140.230",
+        "port": 2053,
+        "sni": "www.google.com",
+        "reality_pbk": "zchFgXc6uKnnH6Z1ArVenrFzFJ3cDIvs3lxr",
+        "short_id": "ef123456",
+        "flow": "",
+        "security": "reality"
     }
 ]
 
