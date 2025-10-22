@@ -59,12 +59,12 @@ XRAY_SERVERS = {
 VLESS_SERVERS = [
     {
         "name": "🇫🇮 Финляндия Reality", 
-        "address": "91.103.140.230",
-        "port": 8443,
+        "address": "91.103.140.230",  
+        "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "aIYE6amOh1vLmJAKFEzhTIfiPr9yseKiZwOoTjTalRk",
-        "short_id": "a1b2c3d4",
-        "flow": "xtls-rprx-vision",  # ДОБАВИТЬ flow
+        "reality_pbk": "DNP67ogDCzlvWidBwBLNZkqhN_v5b7fPy1OjdTljfHQ", 
+        "short_id": "5938b1888e7d058f",  
+        "flow": "xtls-rprx-vision",
         "security": "reality"
     }
 ]
