@@ -69,11 +69,11 @@ VLESS_SERVERS = [
     },
     {
         "name": "🇫🇮 Финляндия #1", 
-        "address": "91.103.140.230",
-        "port": 8443,
+        "address": "91.103.140.230",  # IP твоего нового сервера
+        "port": 2053,                 # Порт который мы настроили
         "sni": "www.google.com",
-        "reality_pbk": "aIYE6amOh1vLmJAKFEzhTIfiPr9yseKiZwOoTjTalRk",
-        "short_id": "a1b2c3d4",
+        "reality_pbk": "RiEEU2vtCrHqkR2wU8PexxXJQ2DGvRIbo3VmeBfVdXw",  # Твой публичный ключ
+        "short_id": "abcd1234",       # Short ID из конфига
         "flow": "",
         "security": "reality"
     }
