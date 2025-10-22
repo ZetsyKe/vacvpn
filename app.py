@@ -50,10 +50,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Конфигурация
 XRAY_SERVERS = {
-    "moscow": {
-        "url": os.getenv("XRAY_MANAGER_URL", "http://45.134.13.189:8001"),
-        "api_key": os.getenv("XRAY_API_KEY", "vac-vpn-secret-key-2024")
-    },
     "finland": {
         "url": os.getenv("FINLAND_XRAY_URL", "http://91.103.140.230:8003"),
         "api_key": os.getenv("FINLAND_XRAY_API_KEY", "wzl-GFlbAljj80hA_rxB0ZZm-BSStbSQFgV_orpmn0I")
@@ -62,16 +58,6 @@ XRAY_SERVERS = {
 
 VLESS_SERVERS = [
     {
-        "name": "🇷🇺 Москва #1",
-        "address": "45.134.13.189", 
-        "port": 2053,
-        "sni": "www.google.com",
-        "reality_pbk": "AZIvYvIEtJv5aA5-F-6gMg3a6KXuMgRJIHBLdp-7bAQ",
-        "short_id": "abcd1234",
-        "flow": "",
-        "security": "reality"
-    },
-    {
         "name": "🇫🇮 Финляндия #1", 
         "address": "91.103.140.230",
         "port": 8443,
@@ -79,7 +65,7 @@ VLESS_SERVERS = [
         "reality_pbk": "aIYE6amOh1vLmJAKFEzhTIfiPr9yseKiZwOoTjTalRk",
         "short_id": "a1b2c3d4",
         "flow": "",
-        "security": "reality"
+        "security": "none"  # Используем простой VLESS без Reality
     }
 ]
 
@@ -228,64 +214,7 @@ def create_placeholder_logo():
 
 # Функции работы с Xray через API
 async def check_user_in_xray(user_uuid: str) -> bool:
-    """Проверить есть ли пользователь хотя бы в одном Xray"""
-    try:
-        logger.info(f"🔍 [XRAY CHECK] Starting check for UUID: {user_uuid}")
-        
-        server_results = {}
-        
-        for server_name, server_config in XRAY_SERVERS.items():
-            try:
-                async with httpx.AsyncClient() as client:
-                    endpoints = [
-                        f"{server_config['url']}/users/{user_uuid}",
-                        f"{server_config['url']}/user/{user_uuid}", 
-                        f"{server_config['url']}/check/{user_uuid}",
-                        f"{server_config['url']}/users?uuid={user_uuid}"
-                    ]
-                    
-                    server_found = False
-                    for endpoint in endpoints:
-                        try:
-                            logger.info(f"🌐 [XRAY CHECK] Checking {server_name} via: {endpoint}")
-                            response = await client.get(endpoint, timeout=30.0)
-                            
-                            logger.info(f"📡 [XRAY CHECK] {server_name} response: {response.status_code}")
-                            
-                            if response.status_code == 200:
-                                data = response.json()
-                                exists = data.get("exists", False)
-                                server_results[server_name] = exists
-                                
-                                if exists:
-                                    logger.info(f"✅ [XRAY CHECK] User exists in {server_name}")
-                                    server_found = True
-                                    break
-                                else:
-                                    logger.info(f"❌ [XRAY CHECK] User NOT found in {server_name}")
-                            
-                        except Exception as e:
-                            logger.warning(f"⚠️ [XRAY CHECK] {server_name} endpoint {endpoint} error: {e}")
-                    
-                    if not server_found:
-                        server_results[server_name] = False
-                            
-            except Exception as e:
-                logger.warning(f"⚠️ [XRAY CHECK] Server {server_name} error: {e}")
-                server_results[server_name] = False
-        
-        # Пользователь считается существующим если есть хотя бы в одном сервере
-        user_exists = any(server_results.values())
-        logger.info(f"📊 [XRAY CHECK] Final result: {user_exists} (moscow: {server_results.get('moscow')}, finland: {server_results.get('finland')})")
-        
-        return user_exists
-            
-    except Exception as e:
-        logger.error(f"❌ [XRAY CHECK] Exception: {str(e)}")
-        return False
-
-async def check_user_in_xray(user_uuid: str) -> bool:
-    """Проверить есть ли пользователь хотя бы в одном Xray"""
+    """Проверить есть ли пользователь в Xray"""
     try:
         logger.info(f"🔍 [XRAY CHECK] Starting check for UUID: {user_uuid}")
         
@@ -316,20 +245,107 @@ async def check_user_in_xray(user_uuid: str) -> bool:
     except Exception as e:
         logger.error(f"❌ [XRAY CHECK] Exception: {str(e)}")
         return False
+
+async def add_user_to_xray(user_uuid: str) -> bool:
+    """Добавить пользователя во ВСЕ Xray серверы"""
+    try:
+        logger.info(f"🔄 [XRAY ADD] Starting to add user to all Xray servers: {user_uuid}")
+        
+        success_count = 0
+        total_servers = len(XRAY_SERVERS)
+        
+        for server_name, server_config in XRAY_SERVERS.items():
+            try:
+                async with httpx.AsyncClient() as client:
+                    # Пробуем разные endpoint'ы
+                    endpoints = [
+                        f"{server_config['url']}/users?uuid={user_uuid}",
+                        f"{server_config['url']}/users"
+                    ]
+                    
+                    server_success = False
+                    for endpoint in endpoints:
+                        try:
+                            logger.info(f"🌐 [XRAY ADD] Adding to {server_name} via: {endpoint}")
+                            
+                            if "?uuid=" in endpoint:
+                                # POST запрос с uuid в параметрах
+                                response = await client.post(
+                                    endpoint,
+                                    headers={"X-API-Key": server_config["api_key"]},
+                                    json={"flow": ""},
+                                    timeout=30.0
+                                )
+                            else:
+                                # POST запрос с uuid в теле
+                                response = await client.post(
+                                    endpoint,
+                                    headers={"X-API-Key": server_config["api_key"]},
+                                    json={"id": user_uuid, "flow": ""},
+                                    timeout=30.0
+                                )
+                            
+                            logger.info(f"📡 [XRAY ADD] {server_name} response: {response.status_code}")
+                            
+                            if response.status_code in [200, 201]:
+                                data = response.json()
+                                status = data.get("status", "")
+                                message = data.get("message", "")
+                                
+                                if status == "exists" or "already exists" in message.lower():
+                                    logger.info(f"✅ [XRAY ADD] User already exists in {server_name}")
+                                    server_success = True
+                                    break
+                                elif status == "added" or "user added" in message.lower():
+                                    logger.info(f"✅ [XRAY ADD] User successfully added to {server_name}")
+                                    server_success = True
+                                    break
+                                else:
+                                    logger.info(f"⚠️ [XRAY ADD] {server_name} unexpected response: {data}")
+                            
+                        except Exception as e:
+                            logger.warning(f"⚠️ [XRAY ADD] {server_name} endpoint {endpoint} error: {e}")
+                    
+                    if server_success:
+                        success_count += 1
+                        logger.info(f"✅ [XRAY ADD] Successfully added to {server_name}")
+                    else:
+                        logger.warning(f"❌ [XRAY ADD] Failed to add to {server_name}")
+                            
+            except Exception as e:
+                logger.warning(f"⚠️ [XRAY ADD] Server {server_name} error: {e}")
+        
+        # Считаем успешным если добавили хотя бы в один сервер
+        final_success = success_count > 0
+        logger.info(f"📊 [XRAY ADD] Final result: {final_success} ({success_count}/{total_servers} servers)")
+        
+        return final_success
+            
+    except Exception as e:
+        logger.error(f"❌ [XRAY ADD] Exception: {str(e)}")
+        return False
+
 async def get_xray_users_count() -> int:
     """Получить количество пользователей в Xray"""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{XRAY_MANAGER_URL}/users",
-                headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
-                timeout=30.0
-            )
-            
-            if response.status_code == 200:
-                users = response.json()
-                return len(users)
-            return 0
+        count = 0
+        for server_name, server_config in XRAY_SERVERS.items():
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{server_config['url']}/users",
+                        headers={"X-API-Key": server_config["api_key"]},
+                        timeout=30.0
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        users = data.get("users", [])
+                        count += len(users)
+            except Exception as e:
+                logger.warning(f"⚠️ Error getting users from {server_name}: {e}")
+        
+        return count
             
     except Exception as e:
         logger.error(f"❌ Error getting Xray users: {e}")
@@ -338,19 +354,26 @@ async def get_xray_users_count() -> int:
 async def remove_user_from_xray(user_uuid: str) -> bool:
     """Удалить пользователя из Xray через API"""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.delete(
-                f"{XRAY_MANAGER_URL}/users/{user_uuid}",
-                headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
-                timeout=30.0
-            )
-            
-            if response.status_code == 200:
-                logger.info(f"✅ User {user_uuid} removed from Xray via API")
-                return True
-            else:
-                logger.error(f"❌ Failed to remove user from Xray: {response.status_code} - {response.text}")
-                return False
+        success_count = 0
+        for server_name, server_config in XRAY_SERVERS.items():
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.delete(
+                        f"{server_config['url']}/users/{user_uuid}",
+                        headers={"X-API-Key": server_config["api_key"]},
+                        timeout=30.0
+                    )
+                    
+                    if response.status_code == 200:
+                        logger.info(f"✅ User {user_uuid} removed from {server_name} Xray")
+                        success_count += 1
+                    else:
+                        logger.error(f"❌ Failed to remove user from {server_name} Xray: {response.status_code}")
+                        
+            except Exception as e:
+                logger.error(f"❌ Error removing user from {server_name} Xray: {e}")
+        
+        return success_count > 0
                 
     except Exception as e:
         logger.error(f"❌ Error removing user from Xray via API: {e}")
@@ -478,51 +501,70 @@ def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
         return False
 
 def create_user_vless_configs(user_id: str, vless_uuid: str) -> List[dict]:
-    """Создает уникальные VLESS Reality конфигурации для пользователя"""
+    """Создает уникальные VLESS конфигурации для пользователя"""
     
     configs = []
     
     for server in VLESS_SERVERS:
         address = server["address"]
         port = server["port"]
-        reality_pbk = server["reality_pbk"]
-        sni = server["sni"]
-        short_id = server["short_id"]
-        flow = server["flow"]
+        security = server["security"]
+        sni = server.get("sni", "")
+        reality_pbk = server.get("reality_pbk", "")
+        short_id = server.get("short_id", "")
+        flow = server.get("flow", "")
         
-        # Убираем порт из SNI если есть
-        clean_sni = sni.replace(":443", "")
-        
-        # Создаем уникальный VLESS ссылку для этого пользователя
-        vless_link = (
-            f"vless://{vless_uuid}@{address}:{port}?"
-            f"type=tcp&"
-            f"security=reality&"
-            f"flow={flow}&"
-            f"pbk={reality_pbk}&"
-            f"fp=chrome&"
-            f"sni={clean_sni}&"
-            f"sid={short_id}#"
-            f"VAC-VPN-{user_id}"
-        )
+        # Создаем VLESS ссылку в зависимости от типа безопасности
+        if security == "reality":
+            # Reality конфиг
+            clean_sni = sni.replace(":443", "") if sni else ""
+            vless_link = (
+                f"vless://{vless_uuid}@{address}:{port}?"
+                f"type=tcp&"
+                f"security=reality&"
+                f"flow={flow}&"
+                f"pbk={reality_pbk}&"
+                f"fp=chrome&"
+                f"sni={clean_sni}&"
+                f"sid={short_id}#"
+                f"VAC-VPN-{user_id}"
+            )
+        else:
+            # Простой VLESS без безопасности
+            vless_link = (
+                f"vless://{vless_uuid}@{address}:{port}?"
+                f"encryption=none&"
+                f"type=tcp&"
+                f"security=none#"
+                f"VAC-VPN-{user_id}"
+            )
         
         # Конфиг для приложений
         config = {
             "name": f"{server['name']} - {user_id}",
             "protocol": "vless",
-            "uuid": vless_uuid,  # Уникальный для каждого пользователя
+            "uuid": vless_uuid,
             "server": address,
             "port": port,
-            "security": "reality",
-            "reality_pbk": reality_pbk,
-            "sni": clean_sni,
-            "short_id": short_id,
-            "flow": flow,
+            "security": security,
             "type": "tcp",
-            "fingerprint": "chrome",
-            "remark": f"VAC VPN Reality - {user_id}",
-            "user_id": user_id  # Добавляем ID пользователя
+            "remark": f"VAC VPN - {user_id}",
+            "user_id": user_id
         }
+        
+        # Добавляем Reality параметры если нужно
+        if security == "reality":
+            config.update({
+                "reality_pbk": reality_pbk,
+                "sni": sni.replace(":443", "") if sni else "",
+                "short_id": short_id,
+                "flow": flow,
+                "fingerprint": "chrome"
+            })
+        else:
+            config.update({
+                "encryption": "none"
+            })
         
         encoded_vless_link = urllib.parse.quote(vless_link)
         
@@ -743,51 +785,6 @@ async def startup_event():
     bot_thread.start()
     logger.info("✅ Telegram bot started successfully")
 
-@app.get("/debug-finland-connection")
-async def debug_finland_connection():
-    """Диагностика подключения к финскому серверу"""
-    try:
-        finland_url = os.getenv("FINLAND_XRAY_URL")
-        finland_key = os.getenv("FINLAND_XRAY_API_KEY")
-        
-        return {
-            "environment_vars": {
-                "FINLAND_XRAY_URL": finland_url,
-                "FINLAND_XRAY_API_KEY": finland_key[:10] + "..." if finland_key else None
-            },
-            "xray_servers_config": {
-                "finland_url": XRAY_SERVERS["finland"]["url"],
-                "finland_key": XRAY_SERVERS["finland"]["api_key"][:10] + "..."
-            }
-        }
-        
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.get("/test-outgoing-connection")
-async def test_outgoing_connection():
-    """Тестирование исходящих подключений из Railway"""
-    results = {}
-    
-    # Тестируем подключение к финскому серверу
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "http://91.103.140.230:8003/health",
-                timeout=10.0
-            )
-            results["finland_direct"] = {
-                "status": "success",
-                "status_code": response.status_code,
-                "data": response.json() if response.status_code == 200 else response.text
-            }
-    except Exception as e:
-        results["finland_direct"] = {
-            "status": "error", 
-            "error": str(e)
-        }
-    
-    return results
 # API ЭНДПОИНТЫ
 @app.get("/")
 async def root():
@@ -824,18 +821,26 @@ async def health_check():
 async def check_xray_connection():
     """Проверить подключение к Xray Manager"""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{XRAY_MANAGER_URL}/health",
-                timeout=10.0
-            )
-            return {
-                "connected": response.status_code == 200,
-                "status_code": response.status_code,
-                "response": response.text
-            }
+        results = {}
+        for server_name, server_config in XRAY_SERVERS.items():
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{server_config['url']}/health",
+                        headers={"X-API-Key": server_config["api_key"]},
+                        timeout=10.0
+                    )
+                    results[server_name] = {
+                        "connected": response.status_code == 200,
+                        "status_code": response.status_code,
+                        "response": response.text
+                    }
+            except Exception as e:
+                results[server_name] = {"connected": False, "error": str(e)}
+        
+        return results
     except Exception as e:
-        return {"connected": False, "error": str(e)}
+        return {"error": str(e)}
 
 @app.delete("/clear-referrals/{user_id}")
 async def clear_referrals(user_id: str):
@@ -1507,18 +1512,28 @@ async def generate_uuid_for_user(user_id: str):
 async def get_xray_users():
     """Показать всех пользователей в Xray конфиге через API"""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{XRAY_MANAGER_URL}/users",
-                headers={"Authorization": f"Bearer {XRAY_API_KEY}"},
-                timeout=5.0
-            )
-            
-            if response.status_code == 200:
-                users = response.json()
-                return {"users": users, "count": len(users)}
-            else:
-                return {"error": f"Failed to get Xray users: {response.status_code}"}
+        results = {}
+        for server_name, server_config in XRAY_SERVERS.items():
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{server_config['url']}/users",
+                        headers={"X-API-Key": server_config["api_key"]},
+                        timeout=30.0
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        results[server_name] = {
+                            "users": data.get("users", []),
+                            "count": len(data.get("users", []))
+                        }
+                    else:
+                        results[server_name] = {"error": f"Status: {response.status_code}"}
+            except Exception as e:
+                results[server_name] = {"error": str(e)}
+        
+        return results
     except Exception as e:
         return {"error": str(e)}
 
@@ -1573,6 +1588,45 @@ async def admin_reset_user(user_id: str):
         
     except Exception as e:
         logger.error(f"❌ Error resetting user: {e}")
+        return {"error": str(e)}
+
+@app.post("/admin/test-add-user")
+async def test_add_user(user_id: str):
+    """Тестовый endpoint для добавления пользователя в Xray"""
+    try:
+        # Получаем или создаем UUID для пользователя
+        user = get_user(user_id)
+        if not user:
+            return {"error": "User not found"}
+        
+        vless_uuid = user.get('vless_uuid')
+        if not vless_uuid:
+            vless_uuid = generate_user_uuid()
+            # Обновляем пользователя
+            user_ref = db.collection('users').document(user_id)
+            user_ref.update({
+                'vless_uuid': vless_uuid,
+                'updated_at': firestore.SERVER_TIMESTAMP
+            })
+        
+        # Добавляем в Xray
+        success = await add_user_to_xray(vless_uuid)
+        
+        if success:
+            return {
+                "success": True,
+                "user_id": user_id,
+                "vless_uuid": vless_uuid,
+                "message": "User successfully added to Xray"
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Failed to add user to Xray"
+            }
+            
+    except Exception as e:
+        logger.error(f"❌ Error in test add user: {e}")
         return {"error": str(e)}
 
 if __name__ == "__main__":
