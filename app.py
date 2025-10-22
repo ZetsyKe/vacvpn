@@ -64,7 +64,7 @@ VLESS_SERVERS = [
         "sni": "www.google.com",
         "reality_pbk": "aIYE6amOh1vLmJAKFEzhTIfiPr9yseKiZwOoTjTalRk",
         "short_id": "a1b2c3d4",
-        "flow": "",
+        "flow": "xtls-rprx-vision",  # ДОБАВИТЬ flow
         "security": "reality"
     }
 ]
