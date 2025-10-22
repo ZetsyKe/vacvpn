@@ -58,13 +58,23 @@ XRAY_SERVERS = {
 
 VLESS_SERVERS = [
     {
-        "name": "🇫🇮 Финляндия Reality", 
-        "address": "91.103.140.230",  
+        "name": "🇷🇺 Москва #1",
+        "address": "45.134.13.189", 
         "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "DNP67ogDCzlvWidBwBLNZkqhN_v5b7fPy1OjdTljfHQ", 
-        "short_id": "5938b1888e7d058f",  
-        "flow": "xtls-rprx-vision",
+        "reality_pbk": "AZIvYvIEtJv5aA5-F-6gMg3a6KXuMgRJIHBLdp-7bAQ",
+        "short_id": "abcd1234",
+        "flow": "",
+        "security": "reality"
+    },
+    {
+        "name": "🇫🇮 Финляндия #1", 
+        "address": "91.103.140.230",
+        "port": 8443,
+        "sni": "www.google.com",
+        "reality_pbk": "aIYE6amOh1vLmJAKFEzhTIfiPr9yseKiZwOoTjTalRk",
+        "short_id": "a1b2c3d4",
+        "flow": "",
         "security": "reality"
     }
 ]
