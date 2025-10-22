@@ -58,14 +58,14 @@ XRAY_SERVERS = {
 
 VLESS_SERVERS = [
     {
-        "name": "🇫🇮 Финляндия #1", 
+        "name": "🇫🇮 Финляндия Reality", 
         "address": "91.103.140.230",
         "port": 8443,
         "sni": "www.google.com",
         "reality_pbk": "aIYE6amOh1vLmJAKFEzhTIfiPr9yseKiZwOoTjTalRk",
         "short_id": "a1b2c3d4",
         "flow": "",
-        "security": "none"  # Используем простой VLESS без Reality
+        "security": "reality"
     }
 ]
 
