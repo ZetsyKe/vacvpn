@@ -66,12 +66,12 @@ VLESS_SERVERS = [
     {
         "id": "moscow",
         "name": "🇷🇺 Москва #1",
-        "address": "45.134.13.189", 
+        "address": "45.134.13.189",
         "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "AZIvYvIEtJv5aA5-F-6gMg3a6KXuMgRJIHBLdp-7bAQ",
+        "reality_pbk": "AZIvYvIEtJv5aA5-F-6gMg3a6KXuMgRJIHBLdp-7bAQ",  # ПРАВИЛЬНЫЙ!
         "short_id": "abcd1234",
-        "flow": "",
+        "flow": "xtls-rprx-vision",
         "security": "reality",
         "xray_server": "moscow"
     },
@@ -81,9 +81,9 @@ VLESS_SERVERS = [
         "address": "91.103.140.230",
         "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "RiEEU2vtCrHqkR2wU8PexxXJQ2DGvRIbo3VmeBfVdXw",
+        "reality_pbk": "dq4wpUCFhw0P_hmVJ0ilIKysrnBLuyj8d2jayuCtbCM",  # ПРАВИЛЬНЫЙ!
         "short_id": "abcd1234",
-        "flow": "",
+        "flow": "xtls-rprx-vision",
         "security": "reality",
         "xray_server": "finland"
     }
