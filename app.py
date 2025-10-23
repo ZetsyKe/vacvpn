@@ -75,16 +75,15 @@ VLESS_SERVERS = [
         "security": "reality"
     },
     {
-        "id": "finland", 
-        "name": "🇫🇮 Финляндия #1", 
+       "id": "finland", 
+        "name": "🇫🇮 Финляндия #1",
         "address": "91.103.140.230",
         "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "dq4wpUCFhw0P_hmVJ0ilIKysrnBLuyj8d2jayuCtbCM",
+        "reality_pbk": "cWlyBtyXwsALknJWJVV-ukzOTLHfSjkkq2uGQs5fTWc",
         "short_id": "abcd1234",
         "flow": "xtls-rprx-vision",
-        "security": "reality",
-        "xray_server": "finland"
+        "security": "reality"
     }
 ]
 
