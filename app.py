@@ -1416,7 +1416,73 @@ async def get_vless_config(user_id: str, server_id: str = None):
         logger.error(f"❌ Error getting VLESS config: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"error": f"Error getting VLESS config: {str(e)}"})
 
-# Остальные эндпоинты (admin, server-add-user и т.д.) остаются без изменений
+# Добавьте в main.py на Railway
+
+@app.get("/check-user-access")
+async def check_user_access(user_uuid: str):
+    """Проверяет есть ли у пользователя доступ к VPN"""
+    try:
+        # Ищем пользователя по UUID
+        users_ref = db.collection('users')
+        query = users_ref.where('vless_uuid', '==', user_uuid).limit(1)
+        results = query.stream()
+        
+        for doc in results:
+            user_data = doc.to_dict()
+            has_subscription = user_data.get('has_subscription', False)
+            subscription_days = user_data.get('subscription_days', 0)
+            
+            # Проверяем активна ли подписка
+            if has_subscription and subscription_days > 0:
+                return {
+                    "success": True,
+                    "has_access": True,
+                    "user_id": user_data.get('user_id'),
+                    "subscription_days": subscription_days
+                }
+        
+        return {
+            "success": True, 
+            "has_access": False,
+            "reason": "No active subscription"
+        }
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+@app.get("/active-users")
+async def get_active_users():
+    """Возвращает список пользователей с активными подписками"""
+    try:
+        users_ref = db.collection('users')
+        # Ищем пользователей с активной подпиской
+        query = users_ref.where('has_subscription', '==', True)
+        results = query.stream()
+        
+        active_users = []
+        for doc in results:
+            user_data = doc.to_dict()
+            if user_data.get('subscription_days', 0) > 0:
+                active_users.append({
+                    "user_id": user_data.get('user_id'),
+                    "uuid": user_data.get('vless_uuid'),
+                    "subscription_days": user_data.get('subscription_days', 0)
+                })
+        
+        return {
+            "success": True,
+            "users": active_users,
+            "total": len(active_users)
+        }
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
 
 if __name__ == "__main__":
     import uvicorn
