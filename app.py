@@ -64,16 +64,15 @@ XRAY_SERVERS = {
 
 VLESS_SERVERS = [
     {
-        "id": "moscow",
+        "id": "moscow", 
         "name": "🇷🇺 Москва #1",
-        "address": "45.134.13.189",
+        "address": "45.134.13.189",  # Ваш IP
         "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "AZIvYvIEtJv5aA5-F-6gMg3a6KXuMgRJIHBLdp-7bAQ",
+        "reality_pbk": "Mue7dfZz2BXeu_p4u2moigD8243gmcnO5ohEjLzGYR0",  # Публичный ключ
         "short_id": "abcd1234",
         "flow": "xtls-rprx-vision",
-        "security": "reality",
-        "xray_server": "moscow"
+        "security": "reality"
     },
     {
         "id": "finland", 
