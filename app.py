@@ -277,9 +277,13 @@ async def add_user_to_xray(user_uuid: str, server_id: str = None) -> bool:
                             
                             response = await client.post(
                                 endpoint,
-                                headers={"X-API-Key": server_config["api_key"]},
-                                json=payload,
+                                headers={
+                                    "X-API-Key": server_config["api_key"],
+                                    "Content-Type": "application/json"  # ← ДОБАВИТЬ ЭТУ СТРОЧКУ
+                                },
+                                json=payload,  # ← Убедиться что это json= а не params=
                                 timeout=10.0
+
                             )
                             
                             logger.info(f"📡 {server_name} response: {response.status_code}")
