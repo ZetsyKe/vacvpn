@@ -468,7 +468,7 @@ def generate_user_uuid():
     return str(uuid.uuid4())
 
 async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
-    """Гарантирует что у пользователя есть UUID (игнорирует ошибки Xray)"""
+    """Гарантирует что у пользователя есть UUID на всех серверах"""
     if not db:
         raise Exception("Database not connected")
     
@@ -482,19 +482,21 @@ async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
         user_data = user.to_dict()
         vless_uuid = user_data.get('vless_uuid')
         
-        # Если UUID уже есть, возвращаем его (НЕ проверяем Xray)
         if vless_uuid:
             logger.info(f"🔍 User {user_id} has existing UUID: {vless_uuid}")
             
-            # Пытаемся добавить в Xray, но не падаем при ошибке
-            try:
-                if not await check_user_in_xray(vless_uuid, server_id):
-                    logger.warning(f"⚠️ UUID exists but not in Xray, trying to add to server: {server_id}")
-                    success = await add_user_to_xray(vless_uuid, server_id)
-                    if not success:
-                        logger.warning(f"⚠️ Failed to add existing UUID to Xray, but continuing")
-            except Exception as e:
-                logger.warning(f"⚠️ Xray check/add failed but continuing: {e}")
+            # Добавляем на ВСЕ серверы, если не указан конкретный
+            servers_to_add = [server_id] if server_id else list(XRAY_SERVERS.keys())
+            
+            for target_server in servers_to_add:
+                try:
+                    if not await check_user_in_xray(vless_uuid, target_server):
+                        logger.warning(f"⚠️ UUID exists but not in Xray, trying to add to server: {target_server}")
+                        success = await add_user_to_xray(vless_uuid, target_server)
+                        if not success:
+                            logger.warning(f"⚠️ Failed to add existing UUID to Xray server: {target_server}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Xray check/add failed for server {target_server}: {e}")
             
             return vless_uuid
         
@@ -508,13 +510,16 @@ async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
             'updated_at': firestore.SERVER_TIMESTAMP
         })
         
-        # Пытаемся добавить в Xray, но не падаем при ошибке
-        try:
-            success = await add_user_to_xray(new_uuid, server_id)
-            if not success:
-                logger.warning(f"⚠️ Failed to add new UUID to Xray, but continuing: {new_uuid}")
-        except Exception as e:
-            logger.warning(f"⚠️ Xray add failed but continuing: {e}")
+        # Добавляем на ВСЕ серверы
+        servers_to_add = [server_id] if server_id else list(XRAY_SERVERS.keys())
+        
+        for target_server in servers_to_add:
+            try:
+                success = await add_user_to_xray(new_uuid, target_server)
+                if not success:
+                    logger.warning(f"⚠️ Failed to add new UUID to Xray server: {target_server}")
+            except Exception as e:
+                logger.warning(f"⚠️ Xray add failed for server {target_server}: {e}")
         
         logger.info(f"✅ New UUID created: {new_uuid}")
         return new_uuid
@@ -557,12 +562,17 @@ def create_user_vless_configs(user_id: str, vless_uuid: str, server_id: str = No
     configs = []
     servers_to_process = []
     
+    # Если server_id указан - берем только этот сервер
     if server_id:
         for server in VLESS_SERVERS:
             if server["id"] == server_id:
                 servers_to_process = [server]
                 break
+        # Если сервер не найден, возвращаем все
+        if not servers_to_process:
+            servers_to_process = VLESS_SERVERS
     else:
+        # Если server_id не указан - возвращаем ВСЕ серверы
         servers_to_process = VLESS_SERVERS
     
     for server in servers_to_process:
@@ -1163,7 +1173,7 @@ async def activate_tariff(request: ActivateTariffRequest):
         tariff_price = tariff_data["price"]
         tariff_days = tariff_data["days"]
         
-        selected_server = request.selected_server or "finland"
+        selected_server = request.selected_server or user.get('preferred_server') or "moscow"
         
         if request.payment_method == "balance":
             user_balance = user.get('balance', 0.0)
@@ -1276,7 +1286,7 @@ async def buy_with_balance(request: BuyWithBalanceRequest):
         if not user:
             return JSONResponse(status_code=404, content={"error": "User not found"})
         
-        selected_server = request.selected_server or "finland"
+        selected_server = request.selected_server or "moscow"
         
         user_balance = user.get('balance', 0.0)
         
@@ -1463,22 +1473,9 @@ async def get_vless_config(user_id: str, server_id: str = None):
         
         logger.info(f"✅ User {user_id} has subscription, days: {user.get('subscription_days', 0)}")
         
-        if not server_id:
-            server_id = user.get('preferred_server')
-            if not server_id and VLESS_SERVERS:
-                server_id = VLESS_SERVERS[0]["id"]
-        
-        logger.info(f"🔧 DEBUG: Using server_id: {server_id}")
-        
-        valid_servers = [server["id"] for server in VLESS_SERVERS]
-        if server_id not in valid_servers:
-            logger.error(f"❌ Invalid server ID: {server_id}. Valid: {valid_servers}")
-            return JSONResponse(status_code=400, content={"error": "Invalid server ID"})
-        
-        logger.info(f"🔧 DEBUG: Before ensure_user_uuid for server {server_id}")
-        
+        # ГАРАНТИРУЕМ что у пользователя есть UUID
         try:
-            vless_uuid = await ensure_user_uuid(user_id, server_id)
+            vless_uuid = await ensure_user_uuid(user_id)
             logger.info(f"✅ UUID ensured: {vless_uuid}")
         except Exception as e:
             logger.error(f"❌ Error ensuring UUID: {e}")
@@ -1486,9 +1483,10 @@ async def get_vless_config(user_id: str, server_id: str = None):
             if not vless_uuid:
                 return JSONResponse(status_code=500, content={"error": f"Cannot generate UUID: {str(e)}"})
         
+        # ВАЖНО: Если server_id не указан - возвращаем конфиги для ВСЕХ серверов
         configs = create_user_vless_configs(user_id, vless_uuid, server_id)
         
-        logger.info(f"✅ Generated {len(configs)} configs for user {user_id} on server {server_id}")
+        logger.info(f"✅ Generated {len(configs)} configs for user {user_id}")
         
         return {
             "success": True,
@@ -1496,7 +1494,7 @@ async def get_vless_config(user_id: str, server_id: str = None):
             "vless_uuid": vless_uuid,
             "has_subscription": True,
             "subscription_days": user.get('subscription_days', 0),
-            "selected_server": server_id,
+            "selected_server": server_id or "all",  # "all" означает все серверы
             "configs": configs
         }
         
