@@ -49,15 +49,16 @@ os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Конфигурация
+# Конфигурация - используем переменные окружения
 XRAY_SERVERS = {
     "moscow": {
-        "url": "http://localhost:8003",  # Локальный на московском сервере
-        "api_key": "moscow_api_key_here",
+        "url": os.getenv("XRAY_MANAGER_URL"), 
+        "api_key": os.getenv("XRAY_API_KEY"), 
         "display_name": "🇷🇺 Москва #1"
     },
     "finland": {
-        "url": "http://91.103.140.230:8003",  # ДОЛЖЕН БЫТЬ ТВОЙ IP!
-        "api_key": "wzl-GFlbAljj80hA_rxB0ZZm-BSStbSQFgV_orpmn0I",
+        "url": os.getenv("FINLAND_XRAY_URL"),  
+        "api_key": os.getenv("FINLAND_XRAY_API_KEY"),  
         "display_name": "🇫🇮 Финляндия #1"
     }
 }
