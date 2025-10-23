@@ -75,12 +75,12 @@ VLESS_SERVERS = [
         "security": "reality"
     },
     {
-       "id": "finland", 
-        "name": "🇫🇮 Финляндия #1",
+        "id": "finland", 
+        "name": "🇫🇮 Финляндия #1", 
         "address": "91.103.140.230",
         "port": 2053,
         "sni": "www.google.com",
-        "reality_pbk": "cWlyBtyXwsALknJWJVV-ukzOTLHfSjkkq2uGQs5fTWc",
+        "reality_pbk": "m69ctyCN-BW-SOfQK2YxA0M_ga3ylSmOxxa2TDfRIhM",  # НОВЫЙ ФИНСКИЙ КЛЮЧ!
         "short_id": "abcd1234",
         "flow": "xtls-rprx-vision",
         "security": "reality"
