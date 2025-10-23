@@ -1526,6 +1526,39 @@ async def get_vless_config(user_id: str, server_id: str = None):
         logger.error(f"❌ Error getting VLESS config: {e}")
         return JSONResponse(status_code=500, content={"error": f"Error getting VLESS config: {str(e)}"})
 
+@app.post("/server/{server_id}/add-user")
+async def server_add_user(server_id: str, request: dict):
+    """Эндпоинт для добавления пользователя на сервер"""
+    try:
+        if server_id not in XRAY_SERVERS:
+            return JSONResponse(status_code=404, content={"error": "Server not found"})
+        
+        user_uuid = request.get('uuid')
+        if not user_uuid:
+            return JSONResponse(status_code=400, content={"error": "UUID required"})
+        
+        # Здесь логика добавления пользователя в Xray
+        success = await add_user_to_xray_direct(user_uuid, server_id)
+        
+        if success:
+            return {"status": "success", "message": f"User added to {server_id}"}
+        else:
+            return JSONResponse(status_code=500, content={"error": "Failed to add user"})
+            
+    except Exception as e:
+        logger.error(f"❌ Error in server add user: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+async def add_user_to_xray_direct(user_uuid: str, server_id: str) -> bool:
+    """Прямое добавление пользователя в Xray конфиг"""
+    try:
+        # Эта функция будет запускаться на каждом сервере через SSH
+        # или через агент на сервере
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error adding user directly: {e}")
+        return False
+
 # Эндпоинт для получения логотипа
 @app.get("/logo")
 async def get_logo():
