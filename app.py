@@ -21,6 +21,12 @@ import urllib.parse
 from typing import List, Optional
 from PIL import Image, ImageDraw, ImageFont
 import io
+# Использование
+client = VPNClient(
+    server_id="finland",
+    railway_url="https://vacvpn-api-production-d067.up.railway.app",
+    api_key="wzl-GFlbAljj80hA_rxB0ZZm-BSStbSQFgV_orpmn0I"
+)
 
 # Настройка логирования
 logging.basicConfig(
@@ -51,13 +57,13 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Конфигурация
 XRAY_SERVERS = {
     "moscow": {
-        "url": os.getenv("MOSCOW_XRAY_URL", "http://45.134.13.189:8003"),
-        "api_key": os.getenv("MOSCOW_XRAY_API_KEY", "moscow_api_key_here"),
+        "url": "http://localhost:8003",  # Локальный на московском сервере
+        "api_key": "moscow_api_key_here",
         "display_name": "🇷🇺 Москва #1"
     },
     "finland": {
-        "url": os.getenv("FINLAND_XRAY_URL", "http://91.103.140.230:8003"),
-        "api_key": os.getenv("FINLAND_XRAY_API_KEY", "wzl-GFlbAljj80hA_rxB0ZZm-BSStbSQFgV_orpmn0I"),
+        "url": "http://localhost:8003",  # Локальный на финском сервере
+        "api_key": "wzl-GFlbAljj80hA_rxB0ZZm-BSStbSQFgV_orpmn0I",
         "display_name": "🇫🇮 Финляндия #1"
     }
 }
