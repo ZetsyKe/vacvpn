@@ -21,12 +21,6 @@ import urllib.parse
 from typing import List, Optional
 from PIL import Image, ImageDraw, ImageFont
 import io
-# Использование
-client = VPNClient(
-    server_id="finland",
-    railway_url="https://vacvpn-api-production-d067.up.railway.app",
-    api_key="wzl-GFlbAljj80hA_rxB0ZZm-BSStbSQFgV_orpmn0I"
-)
 
 # Настройка логирования
 logging.basicConfig(
