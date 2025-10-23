@@ -48,8 +48,12 @@ app.add_middleware(
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Конфигурация с использованием переменных окружения
 XRAY_SERVERS = {
+    "moscow": {
+        "url": os.getenv("XRAY_MANAGER_URL", "http://45.134.13.189:8003"),
+        "api_key": os.getenv("XRAY_API_KEY", "moscow_api_key_here"),
+        "display_name": "🇷🇺 Москва #1"
+    },
     "finland": {
         "url": os.getenv("FINLAND_XRAY_URL", "http://91.103.140.230:8003"),
         "api_key": os.getenv("FINLAND_XRAY_API_KEY", "wzl-GFlbAljj80hA_rxB0ZZm-BSStbSQFgV_orpmn0I"),
@@ -58,6 +62,18 @@ XRAY_SERVERS = {
 }
 
 VLESS_SERVERS = [
+    {
+        "id": "moscow",
+        "name": "🇷🇺 Москва #1",
+        "address": "45.134.13.189",
+        "port": 2053,
+        "sni": "www.google.com",
+        "reality_pbk": "AZIvYvIEtJv5aA5-F-6gMg3a6KXuMgRJIHBLdp-7bAQ",
+        "short_id": "abcd1234",
+        "flow": "xtls-rprx-vision",
+        "security": "reality",
+        "xray_server": "moscow"
+    },
     {
         "id": "finland", 
         "name": "🇫🇮 Финляндия #1", 
