@@ -56,7 +56,7 @@ XRAY_SERVERS = {
         "display_name": "🇷🇺 Москва #1"
     },
     "finland": {
-        "url": "http://localhost:8003",  # Локальный на финском сервере
+        "url": "http://91.103.140.230:8003",  # ДОЛЖЕН БЫТЬ ТВОЙ IP!
         "api_key": "wzl-GFlbAljj80hA_rxB0ZZm-BSStbSQFgV_orpmn0I",
         "display_name": "🇫🇮 Финляндия #1"
     }
