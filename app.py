@@ -59,8 +59,8 @@ XRAY_SERVERS = {
 
 VLESS_SERVERS = [
     {
-        "id": "moscow", 
-        "name": "🇷🇺 Москва #1",
+        "id": "London", 
+        "name": "London",
         "address": "45.134.13.189",  # Ваш IP
         "port": 2053,
         "sni": "www.google.com",
