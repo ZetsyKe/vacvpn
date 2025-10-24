@@ -54,11 +54,6 @@ XRAY_SERVERS = {
         "url": "http://45.134.13.189:8001",  # Московский сервер на порту 8001
         "api_key": "d67764b644f977a3edd4a6fb3cee00f1b89a406c1a86a662f490e797b7ea2367",
         "display_name": "🇷🇺 Москва #1"
-    },
-    "finland": {
-        "url": "http://91.103.140.230:8003",
-        "api_key": "wzl-GFlbAljj80hA_rxB0ZZm-BSStbSQFgV_orpmn0I",
-        "display_name": "🇫🇮 Финляндия #1"
     }
 }
 
@@ -72,17 +67,6 @@ VLESS_SERVERS = [
         "reality_pbk": "Mue7dfZz2BXeu_p4u2moigD8243gmcnO5ohEjLzGYR0",  # Публичный ключ
         "short_id": "abcd1234",
         "flow": "xtls-rprx-vision",
-        "security": "reality"
-    },
-    {
-       "id": "finland", 
-        "name": "🇫🇮 Финляндия #1", 
-        "address": "91.103.140.230",
-        "port": 2053,
-        "sni": "www.google.com",
-        "reality_pbk": "0DBqbJYnYP3yEKTPLpSUmg4c2Y9I2UA2eUAbhPq1R1g",
-        "short_id": "abcd1234",
-        "flow": "xtls-rprx-vision", 
         "security": "reality"
     }
 ]
