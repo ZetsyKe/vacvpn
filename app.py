@@ -161,6 +161,12 @@ class BuyWithBalanceRequest(BaseModel):
     tariff_days: int
     selected_server: str = None
 
+class SaveVlessKeyRequest(BaseModel):
+    user_id: str
+    server_id: str
+    vless_key: str
+    config_data: dict
+
 def ensure_logo_exists():
     """Обеспечивает что логотип доступен в статической директории"""
     try:
@@ -504,8 +510,79 @@ def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
         logger.error(f"❌ Error adding immediate referral bonus: {e}")
         return False
 
+def save_vless_key_to_db(user_id: str, server_id: str, vless_key: str, config_data: dict):
+    """Сохраняет VLESS ключ пользователя в базу данных"""
+    if not db:
+        logger.error("❌ Database not connected")
+        return False
+    
+    try:
+        vless_key_id = f"{user_id}_{server_id}"
+        
+        vless_data = {
+            'user_id': user_id,
+            'server_id': server_id,
+            'vless_key': vless_key,
+            'config_data': config_data,
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'updated_at': firestore.SERVER_TIMESTAMP,
+            'is_active': True
+        }
+        
+        db.collection('vless_keys').document(vless_key_id).set(vless_data)
+        logger.info(f"✅ VLESS key saved to DB for user {user_id} on server {server_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error saving VLESS key to DB: {e}")
+        return False
+
+def get_user_vless_keys(user_id: str):
+    """Получает все VLESS ключи пользователя из базы данных"""
+    if not db:
+        logger.error("❌ Database not connected")
+        return []
+    
+    try:
+        vless_keys_ref = db.collection('vless_keys').where('user_id', '==', user_id)
+        vless_keys = vless_keys_ref.stream()
+        
+        keys_list = []
+        for key_doc in vless_keys:
+            key_data = key_doc.to_dict()
+            keys_list.append(key_data)
+        
+        logger.info(f"✅ Retrieved {len(keys_list)} VLESS keys for user {user_id}")
+        return keys_list
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting VLESS keys: {e}")
+        return []
+
+def update_vless_key_status(user_id: str, server_id: str, is_active: bool):
+    """Обновляет статус VLESS ключа"""
+    if not db:
+        logger.error("❌ Database not connected")
+        return False
+    
+    try:
+        vless_key_id = f"{user_id}_{server_id}"
+        
+        db.collection('vless_keys').document(vless_key_id).update({
+            'is_active': is_active,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        })
+        
+        status = "activated" if is_active else "deactivated"
+        logger.info(f"✅ VLESS key status updated for user {user_id} on server {server_id}: {status}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error updating VLESS key status: {e}")
+        return False
+
 def create_user_vless_configs(user_id: str, vless_uuid: str, server_id: str = None) -> List[dict]:
-    """Создает VLESS конфигурации для пользователя"""
+    """Создает VLESS конфигурации для пользователя и сохраняет в БД"""
     
     configs = []
     servers_to_process = []
@@ -582,13 +659,18 @@ def create_user_vless_configs(user_id: str, vless_uuid: str, server_id: str = No
         
         encoded_vless_link = urllib.parse.quote(vless_link)
         
-        configs.append({
+        config_data = {
             "vless_link": vless_link,
             "config": config,
             "qr_code": f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={encoded_vless_link}",
             "server_name": server["name"],
             "server_id": server["id"]
-        })
+        }
+        
+        # СОХРАНЯЕМ VLESS ключ в базу данных
+        save_vless_key_to_db(user_id, server["id"], vless_link, config)
+        
+        configs.append(config_data)
     
     return configs
 
@@ -635,7 +717,11 @@ def process_subscription_days(user_id: str) -> bool:
                         # УДАЛЯЕМ пользователя из Xray при окончании подписки
                         if vless_uuid:
                             asyncio.create_task(remove_user_from_xray(vless_uuid))
-                            logger.info(f"🚫 Subscription ended for user {user_id}, removing from Xray")
+                            # Деактивируем все VLESS ключи пользователя
+                            user_vless_keys = get_user_vless_keys(user_id)
+                            for key_data in user_vless_keys:
+                                update_vless_key_status(user_id, key_data['server_id'], False)
+                            logger.info(f"🚫 Subscription ended for user {user_id}, removing from Xray and deactivating keys")
                     
                     db.collection('users').document(user_id).update(update_data)
                     logger.info(f"✅ Subscription days processed for user {user_id}: {subscription_days} -> {new_days} (-{days_passed} days)")
@@ -1072,6 +1158,9 @@ async def get_user_info(user_id: str):
         balance = user.get('balance', 0.0)
         preferred_server = user.get('preferred_server')
         
+        # Получаем все VLESS ключи пользователя
+        vless_keys = get_user_vless_keys(user_id)
+        
         referrals = get_referrals(user_id)
         referral_count = len(referrals)
         total_bonus_money = sum([ref.get('referrer_bonus', 0) for ref in referrals])
@@ -1083,6 +1172,7 @@ async def get_user_info(user_id: str):
             "subscription_days": subscription_days,
             "vless_uuid": vless_uuid,
             "preferred_server": preferred_server,
+            "vless_keys": vless_keys,  # Добавляем VLESS ключи в ответ
             "referral_stats": {
                 "total_referrals": referral_count,
                 "total_bonus_money": total_bonus_money,
@@ -1516,6 +1606,52 @@ async def get_vless_config(user_id: str, server_id: str = None):
         logger.error(f"❌ Error getting VLESS config: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"error": f"Error getting VLESS config: {str(e)}"})
 
+@app.post("/save-vless-key")
+async def save_vless_key(request: SaveVlessKeyRequest):
+    """Сохраняет VLESS ключ в базу данных"""
+    try:
+        if not db:
+            return JSONResponse(status_code=500, content={"error": "Database not connected"})
+        
+        success = save_vless_key_to_db(
+            request.user_id, 
+            request.server_id, 
+            request.vless_key, 
+            request.config_data
+        )
+        
+        if success:
+            return {
+                "success": True,
+                "message": "VLESS key saved successfully"
+            }
+        else:
+            return JSONResponse(status_code=500, content={"error": "Failed to save VLESS key"})
+            
+    except Exception as e:
+        logger.error(f"❌ Error saving VLESS key: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/get-user-vless-keys")
+async def get_user_vless_keys_endpoint(user_id: str):
+    """Получает все VLESS ключи пользователя"""
+    try:
+        if not db:
+            return JSONResponse(status_code=500, content={"error": "Database not connected"})
+        
+        vless_keys = get_user_vless_keys(user_id)
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "vless_keys": vless_keys,
+            "total_keys": len(vless_keys)
+        }
+            
+    except Exception as e:
+        logger.error(f"❌ Error getting user VLESS keys: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 @app.get("/check-user-access")
 async def check_user_access(user_uuid: str):
     """Проверяет есть ли у пользователя доступ к VPN"""
@@ -1589,9 +1725,6 @@ async def get_active_users():
             status_code=500,
             content={"success": False, "error": str(e)}
         )
-
-# Добавьте в requirements.txt:
-# apscheduler==3.10.4
 
 if __name__ == "__main__":
     import uvicorn
