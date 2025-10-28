@@ -1743,6 +1743,52 @@ async def force_add_to_xray(user_id: str, server_id: str = None):
     except Exception as e:
         logger.error(f"❌ Error in force-add-to-xray: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
+        
+@app.post("/admin-cancel-subscription")
+async def admin_cancel_subscription(user_id: str):
+    """Админ: отменить подписку пользователя"""
+    try:
+        if not db:
+            return JSONResponse(status_code=500, content={"error": "Database not connected"})
+        
+        user_ref = db.collection('users').document(user_id)
+        user = user_ref.get()
+        
+        if not user.exists:
+            return JSONResponse(status_code=404, content={"error": "User not found"})
+        
+        user_data = user.to_dict()
+        vless_uuid = user_data.get('vless_uuid')
+        
+        # Отменяем подписку
+        update_data = {
+            'has_subscription': False,
+            'subscription_days': 0,
+            'subscription_start': None,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        }
+        
+        user_ref.update(update_data)
+        
+        # Деактивируем все VLESS ключи пользователя
+        user_vless_keys = get_user_vless_keys(user_id)
+        for key_data in user_vless_keys:
+            update_vless_key_status(user_id, key_data['server_id'], False)
+        
+        logger.info(f"🚫 Subscription cancelled for user {user_id}")
+        
+        return {
+            "success": True,
+            "message": f"Subscription cancelled for user {user_id}",
+            "user_id": user_id,
+            "has_subscription": False,
+            "subscription_days": 0,
+            "vless_uuid": vless_uuid
+        }
+            
+    except Exception as e:
+        logger.error(f"❌ Error cancelling subscription: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 if __name__ == "__main__":
     import uvicorn
