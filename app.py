@@ -389,14 +389,6 @@ def generate_user_uuid():
     return str(uuid.uuid4())
 
 async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
-    if vless_uuid:
-    logger.info(f"🔍 User {user_id} has existing UUID: {vless_uuid}")
-    servers_to_add = [server_id] if server_id else list(XRAY_SERVERS.keys())
-    added_servers = []
-    for target_server in servers_to_add:
-        try:
-            logger.info(f"🚀 FORCE ADD: Adding user to Xray {target_server} even if exists")
-            success = await add_user_to_xray(vless_uuid, target_server)
     """Гарантирует что у пользователя есть UUID и он добавлен в Xray МГНОВЕННО"""
     if not db:
         raise Exception("Database not connected")
@@ -414,25 +406,31 @@ async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
         if vless_uuid:
             logger.info(f"🔍 User {user_id} has existing UUID: {vless_uuid}")
             
-            # МГНОВЕННО проверяем и добавляем на серверы если нужно
+            # ВАЖНОЕ ИСПРАВЛЕНИЕ: Всегда добавляем в Xray при активации подписки
+            # даже если UUID уже существует
             servers_to_add = [server_id] if server_id else list(XRAY_SERVERS.keys())
+            added_servers = []
             
             for target_server in servers_to_add:
                 try:
-                    user_exists = await check_user_in_xray(vless_uuid, target_server)
-                    if not user_exists:
-                        logger.info(f"🚀 URGENT: User not found in Xray, adding immediately to {target_server}")
-                        success = await add_user_to_xray(vless_uuid, target_server)
-                        if success:
-                            logger.info(f"✅ User immediately added to {target_server}")
-                        else:
-                            logger.error(f"❌ FAILED to add user to {target_server}")
+                    # ПРИНУДИТЕЛЬНО добавляем в Xray независимо от проверки
+                    logger.info(f"🚀 FORCE ADD: Adding user to Xray {target_server} even if exists")
+                    success = await add_user_to_xray(vless_uuid, target_server)
+                    if success:
+                        logger.info(f"✅ Successfully (re)added to {target_server}")
+                        added_servers.append(target_server)
+                    else:
+                        logger.error(f"❌ FAILED to add to {target_server}")
                 except Exception as e:
-                    logger.error(f"❌ Xray operation failed for server {target_server}: {e}")
+                    logger.error(f"❌ Xray add failed for server {target_server}: {e}")
             
-            return vless_uuid
+            if added_servers:
+                logger.info(f"✅ User {user_id} re-added to Xray servers: {added_servers}")
+                return vless_uuid
+            else:
+                raise Exception(f"Failed to add user to any Xray server")
         
-        # Генерируем новый UUID
+        # Генерируем новый UUID если его нет
         new_uuid = generate_user_uuid()
         logger.info(f"🆕 Generating new UUID for user {user_id}: {new_uuid}")
         
@@ -442,7 +440,7 @@ async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
             'updated_at': firestore.SERVER_TIMESTAMP
         })
         
-        # МГНОВЕННО добавляем на серверы
+        # Добавляем на серверы
         servers_to_add = [server_id] if server_id else list(XRAY_SERVERS.keys())
         added_servers = []
         
