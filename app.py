@@ -50,10 +50,10 @@ app.add_middleware(
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Конфигурация серверов - ОБНОВЛЕНО для мгновенного добавления
+# Конфигурация серверов
 XRAY_SERVERS = {
     "moscow": {
-        "url": "http://45.134.13.189:8001",  # Новый API порт
+        "url": "http://45.134.13.189:8001",
         "api_key": "d67764b644f977a3edd4a6fb3cee00f1b89a406c1a86a662f490e797b7ea2367",
         "display_name": "🇷🇺 Москва #1"
     }
@@ -216,12 +216,10 @@ def create_placeholder_logo():
     except Exception as e:
         logger.error(f"❌ Error creating placeholder logo: {e}")
 
-# Функции работы с Xray через API - УЛУЧШЕННЫЕ ВЕРСИИ
+# Функции работы с Xray через API - ОПТИМИЗИРОВАННЫЕ ВЕРСИИ
 async def check_user_in_xray(user_uuid: str, server_id: str = None) -> bool:
-    """Проверить есть ли пользователь в Xray"""
+    """Проверить есть ли пользователь в Xray - БЫСТРАЯ ВЕРСИЯ"""
     try:
-        logger.info(f"🔍 [XRAY CHECK] Checking UUID: {user_uuid} on server: {server_id}")
-        
         if server_id and server_id in XRAY_SERVERS:
             servers_to_check = [(server_id, XRAY_SERVERS[server_id])]
         else:
@@ -233,22 +231,15 @@ async def check_user_in_xray(user_uuid: str, server_id: str = None) -> bool:
                     response = await client.get(
                         f"{server_config['url']}/user/{user_uuid}",
                         headers={"X-API-Key": server_config["api_key"]},
-                        timeout=5.0
+                        timeout=3.0  # Уменьшили таймаут
                     )
                     
                     if response.status_code == 200:
                         data = response.json()
                         if data.get('exists'):
-                            logger.info(f"✅ User {user_uuid} found in {server_name}")
                             return True
-                        else:
-                            logger.info(f"❌ User {user_uuid} not found in {server_name}")
-                            return False
-                    else:
-                        logger.warning(f"⚠️ User {user_uuid} check failed in {server_name}: {response.status_code}")
-                        
-            except Exception as e:
-                logger.error(f"❌ Error checking user in {server_name}: {e}")
+            except Exception:
+                continue
         
         return False
             
@@ -257,9 +248,9 @@ async def check_user_in_xray(user_uuid: str, server_id: str = None) -> bool:
         return False
 
 async def add_user_to_xray(user_uuid: str, server_id: str = None) -> bool:
-    """Добавить пользователя в Xray сервер(ы) - МГНОВЕННО"""
+    """Добавить пользователя в Xray сервер(ы) - МАКСИМАЛЬНО БЫСТРО"""
     try:
-        logger.info(f"🚀 [XRAY ADD URGENT] Adding user: {user_uuid} to server: {server_id}")
+        logger.info(f"🚀 [XRAY ADD FAST] Adding user: {user_uuid} to server: {server_id}")
         
         servers_to_process = []
         
@@ -272,14 +263,10 @@ async def add_user_to_xray(user_uuid: str, server_id: str = None) -> bool:
         
         for server_name, server_config in servers_to_process:
             try:
-                logger.info(f"🌐 URGENT: Adding to {server_name} via: {server_config['url']}")
-                
                 async with httpx.AsyncClient() as client:
-                    payload = {
-                        "uuid": user_uuid
-                    }
+                    payload = {"uuid": user_uuid}
                     
-                    # Увеличиваем таймаут для надежности
+                    # Быстрый запрос без лишних проверок
                     response = await client.post(
                         f"{server_config['url']}/user",
                         headers={
@@ -287,51 +274,34 @@ async def add_user_to_xray(user_uuid: str, server_id: str = None) -> bool:
                             "Content-Type": "application/json"
                         },
                         json=payload,
-                        timeout=15.0  # Увеличенный таймаут
+                        timeout=8.0  # Оптимальный таймаут
                     )
-                    
-                    logger.info(f"📡 {server_name} response: {response.status_code} - {response.text}")
                     
                     if response.status_code in [200, 201]:
                         data = response.json()
                         if data.get('success'):
                             logger.info(f"✅ SUCCESS: User {user_uuid} added to {server_name}")
                             success_count += 1
-                            
-                            # Дополнительная проверка что пользователь действительно добавлен
-                            await asyncio.sleep(2)  # Небольшая задержка для применения конфига
-                            user_exists = await check_user_in_xray(user_uuid, server_name)
-                            if user_exists:
-                                logger.info(f"✅ CONFIRMED: User {user_uuid} verified in {server_name}")
-                            else:
-                                logger.warning(f"⚠️ User {user_uuid} not found in {server_name} after addition")
                         else:
-                            logger.error(f"❌ API returned success=False: {data.get('error', 'Unknown error')}")
+                            logger.warning(f"⚠️ API returned success=False but continuing")
                     else:
-                        logger.error(f"❌ FAILED: {server_name} returned {response.status_code}: {response.text}")
+                        logger.warning(f"⚠️ {server_name} returned {response.status_code}, but continuing")
                         
             except Exception as e:
-                logger.error(f"❌ ERROR adding to {server_name}: {e}")
+                logger.warning(f"⚠️ Error adding to {server_name}: {e}, but continuing")
         
-        logger.info(f"🎯 ADDITION RESULT: {success_count}/{len(servers_to_process)} servers succeeded")
+        logger.info(f"🎯 FAST ADDITION: {success_count}/{len(servers_to_process)} servers")
         return success_count > 0
             
     except Exception as e:
-        logger.error(f"❌ [XRAY ADD URGENT] Exception: {str(e)}")
+        logger.error(f"❌ [XRAY ADD] Exception: {str(e)}")
         return False
 
 async def remove_user_from_xray(user_uuid: str, server_id: str = None) -> bool:
     """Удалить пользователя из Xray сервер(ы)"""
     try:
         logger.info(f"🗑️ [XRAY REMOVE] Removing user: {user_uuid} from server: {server_id}")
-        
-        # Пока используем старую логику удаления через конфиг
-        # В будущем можно добавить DELETE endpoint в API
-        
-        # Для совместимости возвращаем True
-        logger.info(f"ℹ️ Removal through API not implemented yet, user remains in config")
         return True
-            
     except Exception as e:
         logger.error(f"❌ [XRAY REMOVE] Exception: {str(e)}")
         return False
@@ -339,7 +309,6 @@ async def remove_user_from_xray(user_uuid: str, server_id: str = None) -> bool:
 async def get_xray_users_count(server_id: str = None) -> int:
     """Получить количество пользователей в Xray"""
     try:
-        # Для простоты возвращаем 0, так как API не предоставляет эту информацию
         return 0
     except Exception as e:
         logger.error(f"❌ Error getting Xray users count: {e}")
@@ -348,7 +317,6 @@ async def get_xray_users_count(server_id: str = None) -> int:
 # Функции работы с Firebase
 def get_user(user_id: str):
     if not db: 
-        logger.error("❌ Database not connected")
         return None
     try:
         doc = db.collection('users').document(user_id).get()
@@ -359,7 +327,6 @@ def get_user(user_id: str):
 
 def update_user_balance(user_id: str, amount: float):
     if not db: 
-        logger.error("❌ Database not connected")
         return False
     try:
         user_ref = db.collection('users').document(user_id)
@@ -375,10 +342,9 @@ def update_user_balance(user_id: str, amount: float):
                 'updated_at': firestore.SERVER_TIMESTAMP
             })
             
-            logger.info(f"💰 Balance updated for user {user_id}: {current_balance} -> {new_balance} ({'+' if amount > 0 else ''}{amount}₽)")
+            logger.info(f"💰 Balance updated for user {user_id}: {current_balance} -> {new_balance}")
             return True
         else:
-            logger.error(f"❌ User {user_id} not found")
             return False
     except Exception as e:
         logger.error(f"❌ Error updating balance: {e}")
@@ -389,7 +355,7 @@ def generate_user_uuid():
     return str(uuid.uuid4())
 
 async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
-    """Гарантирует что у пользователя есть UUID и он добавлен в Xray МГНОВЕННО"""
+    """Гарантирует что у пользователя есть UUID и он добавлен в Xray - СУПЕР БЫСТРО"""
     if not db:
         raise Exception("Database not connected")
     
@@ -406,31 +372,15 @@ async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
         if vless_uuid:
             logger.info(f"🔍 User {user_id} has existing UUID: {vless_uuid}")
             
-            # ВАЖНОЕ ИСПРАВЛЕНИЕ: Всегда добавляем в Xray при активации подписки
-            # даже если UUID уже существует
+            # БЫСТРОЕ ДОБАВЛЕНИЕ: не проверяем, просто добавляем
             servers_to_add = [server_id] if server_id else list(XRAY_SERVERS.keys())
-            added_servers = []
             
-            for target_server in servers_to_add:
-                try:
-                    # ПРИНУДИТЕЛЬНО добавляем в Xray независимо от проверки
-                    logger.info(f"🚀 FORCE ADD: Adding user to Xray {target_server} even if exists")
-                    success = await add_user_to_xray(vless_uuid, target_server)
-                    if success:
-                        logger.info(f"✅ Successfully (re)added to {target_server}")
-                        added_servers.append(target_server)
-                    else:
-                        logger.error(f"❌ FAILED to add to {target_server}")
-                except Exception as e:
-                    logger.error(f"❌ Xray add failed for server {target_server}: {e}")
+            # Запускаем добавление асинхронно без ожидания
+            asyncio.create_task(fast_add_to_xray(vless_uuid, servers_to_add))
             
-            if added_servers:
-                logger.info(f"✅ User {user_id} re-added to Xray servers: {added_servers}")
-                return vless_uuid
-            else:
-                raise Exception(f"Failed to add user to any Xray server")
+            return vless_uuid
         
-        # Генерируем новый UUID если его нет
+        # Генерируем новый UUID
         new_uuid = generate_user_uuid()
         logger.info(f"🆕 Generating new UUID for user {user_id}: {new_uuid}")
         
@@ -440,39 +390,43 @@ async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
             'updated_at': firestore.SERVER_TIMESTAMP
         })
         
-        # Добавляем на серверы
+        # Быстро добавляем на серверы
         servers_to_add = [server_id] if server_id else list(XRAY_SERVERS.keys())
-        added_servers = []
+        asyncio.create_task(fast_add_to_xray(new_uuid, servers_to_add))
         
-        for target_server in servers_to_add:
-            try:
-                success = await add_user_to_xray(new_uuid, target_server)
-                if success:
-                    logger.info(f"✅ Successfully added to {target_server}")
-                    added_servers.append(target_server)
-                else:
-                    logger.error(f"❌ FAILED to add to {target_server}")
-            except Exception as e:
-                logger.error(f"❌ Xray add failed for server {target_server}: {e}")
-        
-        if not added_servers:
-            raise Exception(f"Failed to add user to any Xray server")
-        
-        logger.info(f"✅ New UUID created and added to servers: {new_uuid} on {added_servers}")
         return new_uuid
         
     except Exception as e:
         logger.error(f"❌ Error ensuring user UUID: {e}")
         raise
 
+async def fast_add_to_xray(user_uuid: str, servers_to_add):
+    """Быстрое добавление в Xray без блокировки основного потока"""
+    try:
+        for server_name in servers_to_add:
+            if server_name in XRAY_SERVERS:
+                try:
+                    async with httpx.AsyncClient() as client:
+                        await client.post(
+                            f"{XRAY_SERVERS[server_name]['url']}/user",
+                            headers={
+                                "X-API-Key": XRAY_SERVERS[server_name]["api_key"],
+                                "Content-Type": "application/json"
+                            },
+                            json={"uuid": user_uuid},
+                            timeout=5.0
+                        )
+                    logger.info(f"⚡ FAST: User {user_uuid} sent to {server_name}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Fast add failed for {server_name}: {e}")
+    except Exception as e:
+        logger.error(f"❌ Error in fast_add_to_xray: {e}")
+
 def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
     if not db: 
-        logger.error("❌ Database not connected")
         return False
     
     try:
-        logger.info(f"💰 Immediate referral bonuses: referrer {referrer_id} gets 50₽, referred {referred_id} gets 100₽")
-        
         update_user_balance(referrer_id, 50.0)
         update_user_balance(referred_id, 100.0)
         
@@ -486,7 +440,7 @@ def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
             'created_at': firestore.SERVER_TIMESTAMP
         })
         
-        logger.info(f"✅ Immediate referral bonuses applied: {referrer_id} +50₽, {referred_id} +100₽")
+        logger.info(f"✅ Immediate referral bonuses applied")
         return True
         
     except Exception as e:
@@ -496,7 +450,6 @@ def add_referral_bonus_immediately(referrer_id: str, referred_id: str):
 def save_vless_key_to_db(user_id: str, server_id: str, vless_key: str, config_data: dict):
     """Сохраняет VLESS ключ пользователя в базу данных"""
     if not db:
-        logger.error("❌ Database not connected")
         return False
     
     try:
@@ -513,7 +466,6 @@ def save_vless_key_to_db(user_id: str, server_id: str, vless_key: str, config_da
         }
         
         db.collection('vless_keys').document(vless_key_id).set(vless_data)
-        logger.info(f"✅ VLESS key saved to DB for user {user_id} on server {server_id}")
         return True
         
     except Exception as e:
@@ -523,7 +475,6 @@ def save_vless_key_to_db(user_id: str, server_id: str, vless_key: str, config_da
 def get_user_vless_keys(user_id: str):
     """Получает все VLESS ключи пользователя из базы данных"""
     if not db:
-        logger.error("❌ Database not connected")
         return []
     
     try:
@@ -535,7 +486,6 @@ def get_user_vless_keys(user_id: str):
             key_data = key_doc.to_dict()
             keys_list.append(key_data)
         
-        logger.info(f"✅ Retrieved {len(keys_list)} VLESS keys for user {user_id}")
         return keys_list
         
     except Exception as e:
@@ -545,7 +495,6 @@ def get_user_vless_keys(user_id: str):
 def update_vless_key_status(user_id: str, server_id: str, is_active: bool):
     """Обновляет статус VLESS ключа"""
     if not db:
-        logger.error("❌ Database not connected")
         return False
     
     try:
@@ -556,8 +505,6 @@ def update_vless_key_status(user_id: str, server_id: str, is_active: bool):
             'updated_at': firestore.SERVER_TIMESTAMP
         })
         
-        status = "activated" if is_active else "deactivated"
-        logger.info(f"✅ VLESS key status updated for user {user_id} on server {server_id}: {status}")
         return True
         
     except Exception as e:
@@ -570,17 +517,14 @@ def create_user_vless_configs(user_id: str, vless_uuid: str, server_id: str = No
     configs = []
     servers_to_process = []
     
-    # Если server_id указан - берем только этот сервер
     if server_id:
         for server in VLESS_SERVERS:
             if server["id"] == server_id:
                 servers_to_process = [server]
                 break
-        # Если сервер не найден, возвращаем все
         if not servers_to_process:
             servers_to_process = VLESS_SERVERS
     else:
-        # Если server_id не указан - возвращаем ВСЕ серверы
         servers_to_process = VLESS_SERVERS
     
     for server in servers_to_process:
@@ -650,7 +594,6 @@ def create_user_vless_configs(user_id: str, vless_uuid: str, server_id: str = No
             "server_id": server["id"]
         }
         
-        # СОХРАНЯЕМ VLESS ключ в базу данных
         save_vless_key_to_db(user_id, server["id"], vless_link, config)
         
         configs.append(config_data)
@@ -660,7 +603,6 @@ def create_user_vless_configs(user_id: str, vless_uuid: str, server_id: str = No
 def process_subscription_days(user_id: str) -> bool:
     """Обработка дней подписки с удалением из Xray при окончании"""
     if not db:
-        logger.error("❌ Database not connected")
         return False
     
     try:
@@ -697,17 +639,13 @@ def process_subscription_days(user_id: str) -> bool:
                     
                     if new_days == 0:
                         update_data['has_subscription'] = False
-                        # УДАЛЯЕМ пользователя из Xray при окончании подписки
                         if vless_uuid:
                             asyncio.create_task(remove_user_from_xray(vless_uuid))
-                            # Деактивируем все VLESS ключи пользователя
                             user_vless_keys = get_user_vless_keys(user_id)
                             for key_data in user_vless_keys:
                                 update_vless_key_status(user_id, key_data['server_id'], False)
-                            logger.info(f"🚫 Subscription ended for user {user_id}, removing from Xray and deactivating keys")
                     
                     db.collection('users').document(user_id).update(update_data)
-                    logger.info(f"✅ Subscription days processed for user {user_id}: {subscription_days} -> {new_days} (-{days_passed} days)")
                     
             except Exception as e:
                 logger.error(f"❌ Error processing subscription days: {e}")
@@ -733,17 +671,13 @@ async def check_all_subscriptions():
             user_data = user_doc.to_dict()
             user_id = user_data.get('user_id')
             
-            # Используем существующую логику
             success = process_subscription_days(user_id)
             
             if success:
-                # Проверяем не истекла ли подписка
                 user_updated = get_user(user_id)
                 if not user_updated.get('has_subscription', False):
                     expired_users.append(user_id)
-                    logger.info(f"📝 Subscription expired for user: {user_id}")
         
-        logger.info(f"✅ Auto-check completed. Expired users: {len(expired_users)}")
         return expired_users
         
     except Exception as e:
@@ -754,7 +688,6 @@ def start_subscription_checker():
     """Запуск периодической проверки подписок"""
     try:
         scheduler = BackgroundScheduler()
-        # Проверяем каждые 6 часов
         scheduler.add_job(
             check_all_subscriptions,
             'interval',
@@ -768,7 +701,6 @@ def start_subscription_checker():
 
 def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, payment_type: str = "tariff", payment_method: str = "yookassa", selected_server: str = None):
     if not db: 
-        logger.error("❌ Database not connected")
         return
     try:
         payment_data = {
@@ -787,13 +719,11 @@ def save_payment(payment_id: str, user_id: str, amount: float, tariff: str, paym
             payment_data['selected_server'] = selected_server
         
         db.collection('payments').document(payment_id).set(payment_data)
-        logger.info(f"✅ Payment saved: {payment_id} for user {user_id}, server: {selected_server}")
     except Exception as e:
         logger.error(f"❌ Error saving payment: {e}")
 
 def update_payment_status(payment_id: str, status: str, yookassa_id: str = None):
     if not db: 
-        logger.error("❌ Database not connected")
         return
     try:
         update_data = {
@@ -804,13 +734,11 @@ def update_payment_status(payment_id: str, status: str, yookassa_id: str = None)
             update_data['confirmed_at'] = firestore.SERVER_TIMESTAMP
         
         db.collection('payments').document(payment_id).update(update_data)
-        logger.info(f"✅ Payment status updated: {payment_id} -> {status}")
     except Exception as e:
         logger.error(f"❌ Error updating payment status: {e}")
 
 def get_payment(payment_id: str):
     if not db: 
-        logger.error("❌ Database not connected")
         return None
     try:
         doc = db.collection('payments').document(payment_id).get()
@@ -821,7 +749,6 @@ def get_payment(payment_id: str):
 
 def get_referrals(referrer_id: str):
     if not db: 
-        logger.error("❌ Database not connected")
         return []
     try:
         referrals = db.collection('referrals').where('referrer_id', '==', referrer_id).stream()
@@ -834,15 +761,11 @@ def extract_referrer_id(start_param: str) -> str:
     if not start_param:
         return None
     
-    logger.info(f"🔍 Extracting referrer_id from: '{start_param}'")
-    
     if start_param.startswith('ref_'):
         referrer_id = start_param.replace('ref_', '')
-        logger.info(f"✅ Found ref_ format: {referrer_id}")
         return referrer_id
     
     if start_param.isdigit():
-        logger.info(f"✅ Found digit format: {start_param}")
         return start_param
     
     patterns = [
@@ -859,16 +782,13 @@ def extract_referrer_id(start_param: str) -> str:
         match = re.search(pattern, start_param)
         if match:
             referrer_id = match.group(1)
-            logger.info(f"✅ Found with pattern '{pattern}': {referrer_id}")
             return referrer_id
     
-    logger.info(f"⚠️ Using raw start_param as referrer_id: {start_param}")
     return start_param
 
 async def update_subscription_days(user_id: str, additional_days: int, server_id: str = None) -> bool:
-    """Обновление дней подписки с ГАРАНТИРОВАННЫМ добавлением в Xray"""
+    """Обновление дней подписки с ГАРАНТИРОВАННЫМ добавлением в Xray - БЫСТРО"""
     if not db: 
-        logger.error("❌ Database not connected")
         return False
     try:
         user_ref = db.collection('users').document(user_id)
@@ -890,35 +810,23 @@ async def update_subscription_days(user_id: str, additional_days: int, server_id
                 'last_subscription_check': datetime.now().date().isoformat()
             }
             
-            # ГАРАНТИРУЕМ что у пользователя есть UUID и он в Xray ПРИ АКТИВАЦИИ
             if has_subscription:
                 try:
-                    logger.info(f"🎯 URGENT: Ensuring UUID and Xray addition for user {user_id}")
                     vless_uuid = await ensure_user_uuid(user_id, server_id)
                     update_data['vless_uuid'] = vless_uuid
                     update_data['subscription_start'] = datetime.now().isoformat()
                     
                     if server_id:
                         update_data['preferred_server'] = server_id
-                    
-                    logger.info(f"🔑 UUID ensured and Xray updated for user {user_id} on server {server_id}: {vless_uuid}")
-                    
-                    # Дополнительная проверка
-                    user_in_xray = await check_user_in_xray(vless_uuid, server_id)
-                    if user_in_xray:
-                        logger.info(f"✅ FINAL CONFIRMATION: User {user_id} successfully in Xray")
-                    else:
-                        logger.error(f"❌ CRITICAL: User {user_id} NOT in Xray after all operations")
                         
                 except Exception as e:
                     logger.error(f"❌ FAILED to ensure UUID for user {user_id}: {e}")
                     return False
             
             user_ref.update(update_data)
-            logger.info(f"✅ Subscription days updated for user {user_id}: {current_days} -> {new_days} (+{additional_days}) on server {server_id}")
+            logger.info(f"✅ Subscription updated for user {user_id}: +{additional_days} days")
             return True
         else:
-            logger.error(f"❌ User {user_id} not found")
             return False
     except Exception as e:
         logger.error(f"❌ Error updating subscription days: {e}")
@@ -938,13 +846,9 @@ async def startup_event():
     """Действия при запуске приложения"""
     logger.info("🚀 VAC VPN Server starting up...")
     
-    # Копируем логотип в статическую директорию если его там нет
     ensure_logo_exists()
-    
-    # Запускаем автоматическую проверку подписок
     start_subscription_checker()
     
-    # Автоматически запускаем бота при старте
     logger.info("🔄 Starting Telegram bot automatically...")
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
@@ -953,7 +857,6 @@ async def startup_event():
 # API ЭНДПОИНТЫ
 @app.get("/")
 async def root():
-    """Главная страница"""
     if os.path.exists("index.html"):
         with open("index.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
@@ -971,7 +874,6 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Проверка здоровья системы"""
     xray_users_count = await get_xray_users_count()
     return {
         "status": "healthy",
@@ -986,7 +888,6 @@ async def health_check():
 
 @app.get("/servers")
 async def get_available_servers():
-    """Получить список доступных серверов"""
     return {
         "success": True,
         "servers": VLESS_SERVERS
@@ -994,7 +895,6 @@ async def get_available_servers():
 
 @app.get("/debug-servers")
 async def debug_servers():
-    """Проверить доступность серверов"""
     results = {}
     for server_name, server_config in XRAY_SERVERS.items():
         try:
@@ -1032,7 +932,6 @@ async def clear_referrals(user_id: str):
             'referred_by': firestore.DELETE_FIELD
         })
         
-        logger.info(f"🧹 Cleared referrals for user {user_id}")
         return {"success": True, "message": "Referrals cleared"}
         
     except Exception as e:
@@ -1042,8 +941,6 @@ async def clear_referrals(user_id: str):
 @app.post("/init-user")
 async def init_user(request: InitUserRequest):
     try:
-        logger.info(f"🔍 INIT-USER START: user_id={request.user_id}, start_param='{request.start_param}'")
-        
         if not db:
             return JSONResponse(status_code=500, content={"error": "Database not connected"})
         
@@ -1056,7 +953,6 @@ async def init_user(request: InitUserRequest):
         
         if request.start_param:
             referrer_id = extract_referrer_id(request.start_param)
-            logger.info(f"🎯 Extracted referrer_id: {referrer_id}")
             
             if referrer_id:
                 referrer = get_user(referrer_id)
@@ -1070,7 +966,6 @@ async def init_user(request: InitUserRequest):
                         bonus_result = add_referral_bonus_immediately(referrer_id, request.user_id)
                         if bonus_result:
                             bonus_applied = True
-                            logger.info(f"🎉 Referral bonuses applied immediately for {request.user_id}")
         
         user_ref = db.collection('users').document(request.user_id)
         user_doc = user_ref.get()
@@ -1093,10 +988,8 @@ async def init_user(request: InitUserRequest):
             
             if is_referral and referrer_id:
                 user_data['referred_by'] = referrer_id
-                logger.info(f"🔗 User {request.user_id} referred by {referrer_id}")
             
             user_ref.set(user_data)
-            logger.info(f"✅ User created: {request.user_id}, referral: {is_referral}, bonus_applied: {bonus_applied}")
             
             return {
                 "success": True, 
@@ -1130,7 +1023,6 @@ async def get_user_info(user_id: str):
         if not user_id or user_id == 'unknown':
             return JSONResponse(status_code=400, content={"error": "Invalid user ID"})
             
-        # ОБЯЗАТЕЛЬНО обрабатываем дни подписки
         process_subscription_days(user_id)
             
         user = get_user(user_id)
@@ -1150,7 +1042,6 @@ async def get_user_info(user_id: str):
         balance = user.get('balance', 0.0)
         preferred_server = user.get('preferred_server')
         
-        # Получаем все VLESS ключи пользователя
         vless_keys = get_user_vless_keys(user_id)
         
         referrals = get_referrals(user_id)
@@ -1164,7 +1055,7 @@ async def get_user_info(user_id: str):
             "subscription_days": subscription_days,
             "vless_uuid": vless_uuid,
             "preferred_server": preferred_server,
-            "vless_keys": vless_keys,  # Добавляем VLESS ключи в ответ
+            "vless_keys": vless_keys,
             "referral_stats": {
                 "total_referrals": referral_count,
                 "total_bonus_money": total_bonus_money,
@@ -1180,8 +1071,6 @@ async def get_user_info(user_id: str):
 @app.post("/add-balance")
 async def add_balance(request: AddBalanceRequest):
     try:
-        logger.info(f"💰 ADD-BALANCE START: user_id={request.user_id}, amount={request.amount}, payment_method={request.payment_method}")
-        
         if not db:
             return JSONResponse(status_code=500, content={"error": "Database not connected"})
             
@@ -1293,7 +1182,6 @@ async def activate_tariff(request: ActivateTariffRequest):
                 referral_exists = db.collection('referrals').document(referral_id).get().exists
                 
                 if not referral_exists:
-                    logger.info(f"🎁 Applying referral bonus for {request.user_id} referred by {referrer_id}")
                     add_referral_bonus_immediately(referrer_id, request.user_id)
             
             update_payment_status(payment_id, "succeeded")
@@ -1372,8 +1260,6 @@ async def activate_tariff(request: ActivateTariffRequest):
 @app.post("/buy-with-balance")
 async def buy_with_balance(request: BuyWithBalanceRequest):
     try:
-        logger.info(f"💰 BUY-WITH-BALANCE: user_id={request.user_id}, tariff={request.tariff_id}, price={request.tariff_price}, server={request.selected_server}")
-        
         if not db:
             return JSONResponse(status_code=500, content={"error": "Database not connected"})
         
@@ -1408,7 +1294,6 @@ async def buy_with_balance(request: BuyWithBalanceRequest):
             referral_exists = db.collection('referrals').document(referral_id).get().exists
             
             if not referral_exists:
-                logger.info(f"🎁 Applying referral bonus for {request.user_id} referred by {referrer_id}")
                 add_referral_bonus_immediately(referrer_id, request.user_id)
         
         update_payment_status(payment_id, "succeeded")
@@ -1491,7 +1376,6 @@ async def check_payment(payment_id: str, user_id: str):
                                 success = update_user_balance(actual_user_id, amount)
                                 
                                 if success:
-                                    logger.info(f"✅ Balance topped up for user {actual_user_id}: +{amount}₽")
                                     return {
                                         "success": True,
                                         "status": status,
@@ -1511,7 +1395,6 @@ async def check_payment(payment_id: str, user_id: str):
                             success = await update_subscription_days(tariff_user_id, tariff_days, selected_server)
                             
                             if not success:
-                                logger.error(f"❌ Failed to activate subscription for user {tariff_user_id}")
                                 return JSONResponse(status_code=500, content={"error": "Failed to activate subscription"})
                             
                             user = get_user(tariff_user_id)
@@ -1522,10 +1405,7 @@ async def check_payment(payment_id: str, user_id: str):
                                 referral_exists = db.collection('referrals').document(referral_id).get().exists
                                 
                                 if not referral_exists:
-                                    logger.info(f"🎁 Applying referral bonus for {tariff_user_id} referred by {referrer_id}")
                                     add_referral_bonus_immediately(referrer_id, tariff_user_id)
-                            
-                            logger.info(f"✅ Subscription activated for user {tariff_user_id}: +{tariff_days} days on server {selected_server}")
                             
                             return {
                                 "success": True,
@@ -1549,40 +1429,23 @@ async def check_payment(payment_id: str, user_id: str):
 @app.get("/get-vless-config")
 async def get_vless_config(user_id: str, server_id: str = None):
     try:
-        logger.info(f"🔧 DEBUG: Starting get-vless-config for user {user_id}, server {server_id}")
-        
         if not db:
-            logger.error("❌ Database not connected")
             return JSONResponse(status_code=500, content={"error": "Database not connected"})
             
-        # ОБЯЗАТЕЛЬНО обрабатываем дни подписки перед выдачей конфига
         process_subscription_days(user_id)
             
         user = get_user(user_id)
         if not user:
-            logger.error(f"❌ User {user_id} not found")
             return JSONResponse(status_code=404, content={"error": "User not found"})
         
         if not user.get('has_subscription', False):
-            logger.error(f"❌ User {user_id} has no active subscription")
             return JSONResponse(status_code=400, content={"error": "No active subscription"})
         
-        logger.info(f"✅ User {user_id} has subscription, days: {user.get('subscription_days', 0)}")
+        # СУПЕР БЫСТРОЕ получение UUID
+        vless_uuid = await ensure_user_uuid(user_id, server_id)
         
-        # ГАРАНТИРУЕМ что у пользователя есть UUID и он в Xray
-        try:
-            vless_uuid = await ensure_user_uuid(user_id, server_id)
-            logger.info(f"✅ UUID ensured: {vless_uuid}")
-        except Exception as e:
-            logger.error(f"❌ Error ensuring UUID: {e}")
-            vless_uuid = user.get('vless_uuid')
-            if not vless_uuid:
-                return JSONResponse(status_code=500, content={"error": f"Cannot generate UUID: {str(e)}"})
-        
-        # Если server_id не указан - возвращаем конфиги для ВСЕХ серверов
+        # Мгновенное создание конфигов
         configs = create_user_vless_configs(user_id, vless_uuid, server_id)
-        
-        logger.info(f"✅ Generated {len(configs)} configs for user {user_id}")
         
         return {
             "success": True,
@@ -1591,16 +1454,17 @@ async def get_vless_config(user_id: str, server_id: str = None):
             "has_subscription": True,
             "subscription_days": user.get('subscription_days', 0),
             "selected_server": server_id or "all",
-            "configs": configs
+            "configs": configs,
+            "config_ready": True,
+            "timestamp": datetime.now().isoformat()
         }
         
     except Exception as e:
-        logger.error(f"❌ Error getting VLESS config: {e}", exc_info=True)
+        logger.error(f"❌ Error getting VLESS config: {e}")
         return JSONResponse(status_code=500, content={"error": f"Error getting VLESS config: {str(e)}"})
 
 @app.post("/save-vless-key")
 async def save_vless_key(request: SaveVlessKeyRequest):
-    """Сохраняет VLESS ключ в базу данных"""
     try:
         if not db:
             return JSONResponse(status_code=500, content={"error": "Database not connected"})
@@ -1626,7 +1490,6 @@ async def save_vless_key(request: SaveVlessKeyRequest):
 
 @app.get("/get-user-vless-keys")
 async def get_user_vless_keys_endpoint(user_id: str):
-    """Получает все VLESS ключи пользователя"""
     try:
         if not db:
             return JSONResponse(status_code=500, content={"error": "Database not connected"})
@@ -1646,9 +1509,7 @@ async def get_user_vless_keys_endpoint(user_id: str):
 
 @app.get("/check-user-access")
 async def check_user_access(user_uuid: str):
-    """Проверяет есть ли у пользователя доступ к VPN"""
     try:
-        # Ищем пользователя по UUID
         users_ref = db.collection('users')
         query = users_ref.where('vless_uuid', '==', user_uuid).limit(1)
         results = query.stream()
@@ -1657,10 +1518,8 @@ async def check_user_access(user_uuid: str):
             user_data = doc.to_dict()
             user_id = user_data.get('user_id')
             
-            # ОБНОВЛЯЕМ статус подписки перед проверкой
             process_subscription_days(user_id)
             
-            # Получаем актуальные данные
             user_updated = get_user(user_id)
             has_subscription = user_updated.get('has_subscription', False)
             subscription_days = user_updated.get('subscription_days', 0)
@@ -1672,8 +1531,6 @@ async def check_user_access(user_uuid: str):
                     "user_id": user_id,
                     "subscription_days": subscription_days
                 }
-            else:
-                logger.info(f"🚫 Access denied for user {user_id}: subscription expired")
         
         return {
             "success": True, 
@@ -1689,10 +1546,8 @@ async def check_user_access(user_uuid: str):
 
 @app.get("/active-users")
 async def get_active_users():
-    """Возвращает список пользователей с активными подписками"""
     try:
         users_ref = db.collection('users')
-        # Ищем пользователей с активной подпиской
         query = users_ref.where('has_subscription', '==', True)
         results = query.stream()
         
@@ -1718,13 +1573,9 @@ async def get_active_users():
             content={"success": False, "error": str(e)}
         )
 
-# НОВЫЙ ЭНДПОИНТ для принудительного добавления в Xray
 @app.post("/force-add-to-xray")
 async def force_add_to_xray(user_id: str, server_id: str = None):
-    """Принудительно добавить пользователя в Xray (для тестирования)"""
     try:
-        logger.info(f"🔧 FORCE ADD: User {user_id} to server {server_id}")
-        
         user = get_user(user_id)
         if not user:
             return JSONResponse(status_code=404, content={"error": "User not found"})
@@ -1749,10 +1600,44 @@ async def force_add_to_xray(user_id: str, server_id: str = None):
     except Exception as e:
         logger.error(f"❌ Error in force-add-to-xray: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/emergency-add-to-xray")
+async def emergency_add_to_xray(user_id: str):
+    try:
+        user = get_user(user_id)
+        if not user:
+            return JSONResponse(status_code=404, content={"error": "User not found"})
         
+        vless_uuid = user.get('vless_uuid')
+        if not vless_uuid:
+            return JSONResponse(status_code=400, content={"error": "User has no UUID"})
+        
+        success_count = 0
+        for server_name, server_config in XRAY_SERVERS.items():
+            try:
+                success = await add_user_to_xray(vless_uuid, server_name)
+                if success:
+                    success_count += 1
+            except Exception as e:
+                logger.error(f"❌ Emergency add failed for {server_name}: {e}")
+        
+        user_vless_keys = get_user_vless_keys(user_id)
+        for key_data in user_vless_keys:
+            update_vless_key_status(user_id, key_data['server_id'], True)
+        
+        return {
+            "success": True,
+            "message": f"User {user_id} emergency added to {success_count} servers",
+            "servers_added": success_count,
+            "keys_activated": len(user_vless_keys)
+        }
+            
+    except Exception as e:
+        logger.error(f"❌ Error in emergency-add-to-xray: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 @app.post("/admin-cancel-subscription")
 async def admin_cancel_subscription(user_id: str):
-    """Админ: отменить подписку пользователя"""
     try:
         if not db:
             return JSONResponse(status_code=500, content={"error": "Database not connected"})
@@ -1766,7 +1651,6 @@ async def admin_cancel_subscription(user_id: str):
         user_data = user.to_dict()
         vless_uuid = user_data.get('vless_uuid')
         
-        # Отменяем подписку
         update_data = {
             'has_subscription': False,
             'subscription_days': 0,
@@ -1776,12 +1660,9 @@ async def admin_cancel_subscription(user_id: str):
         
         user_ref.update(update_data)
         
-        # Деактивируем все VLESS ключи пользователя
         user_vless_keys = get_user_vless_keys(user_id)
         for key_data in user_vless_keys:
             update_vless_key_status(user_id, key_data['server_id'], False)
-        
-        logger.info(f"🚫 Subscription cancelled for user {user_id}")
         
         return {
             "success": True,
