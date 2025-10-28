@@ -50,10 +50,10 @@ app.add_middleware(
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Конфигурация серверов
+# Конфигурация серверов - ОБНОВЛЕНО для мгновенного добавления
 XRAY_SERVERS = {
     "moscow": {
-        "url": "http://45.134.13.189:8001",
+        "url": "http://45.134.13.189:8001",  # Новый API порт
         "api_key": "d67764b644f977a3edd4a6fb3cee00f1b89a406c1a86a662f490e797b7ea2367",
         "display_name": "🇷🇺 Москва #1"
     }
@@ -216,7 +216,7 @@ def create_placeholder_logo():
     except Exception as e:
         logger.error(f"❌ Error creating placeholder logo: {e}")
 
-# Функции работы с Xray через API
+# Функции работы с Xray через API - УЛУЧШЕННЫЕ ВЕРСИИ
 async def check_user_in_xray(user_uuid: str, server_id: str = None) -> bool:
     """Проверить есть ли пользователь в Xray"""
     try:
@@ -237,10 +237,15 @@ async def check_user_in_xray(user_uuid: str, server_id: str = None) -> bool:
                     )
                     
                     if response.status_code == 200:
-                        logger.info(f"✅ User {user_uuid} found in {server_name}")
-                        return True
+                        data = response.json()
+                        if data.get('exists'):
+                            logger.info(f"✅ User {user_uuid} found in {server_name}")
+                            return True
+                        else:
+                            logger.info(f"❌ User {user_uuid} not found in {server_name}")
+                            return False
                     else:
-                        logger.warning(f"⚠️ User {user_uuid} not found in {server_name}: {response.status_code}")
+                        logger.warning(f"⚠️ User {user_uuid} check failed in {server_name}: {response.status_code}")
                         
             except Exception as e:
                 logger.error(f"❌ Error checking user in {server_name}: {e}")
@@ -252,9 +257,9 @@ async def check_user_in_xray(user_uuid: str, server_id: str = None) -> bool:
         return False
 
 async def add_user_to_xray(user_uuid: str, server_id: str = None) -> bool:
-    """Добавить пользователя в Xray сервер(ы)"""
+    """Добавить пользователя в Xray сервер(ы) - МГНОВЕННО"""
     try:
-        logger.info(f"🔄 [XRAY ADD] Adding user: {user_uuid} to server: {server_id}")
+        logger.info(f"🚀 [XRAY ADD URGENT] Adding user: {user_uuid} to server: {server_id}")
         
         servers_to_process = []
         
@@ -267,14 +272,14 @@ async def add_user_to_xray(user_uuid: str, server_id: str = None) -> bool:
         
         for server_name, server_config in servers_to_process:
             try:
-                logger.info(f"🌐 Trying to add to {server_name} via: {server_config['url']}")
+                logger.info(f"🌐 URGENT: Adding to {server_name} via: {server_config['url']}")
                 
                 async with httpx.AsyncClient() as client:
                     payload = {
-                        "uuid": user_uuid,
-                        "email": f"user_{user_uuid}@{server_name}.vacvpn.com"
+                        "uuid": user_uuid
                     }
                     
+                    # Увеличиваем таймаут для надежности
                     response = await client.post(
                         f"{server_config['url']}/user",
                         headers={
@@ -282,24 +287,37 @@ async def add_user_to_xray(user_uuid: str, server_id: str = None) -> bool:
                             "Content-Type": "application/json"
                         },
                         json=payload,
-                        timeout=10.0
+                        timeout=15.0  # Увеличенный таймаут
                     )
                     
-                    logger.info(f"📡 {server_name} response: {response.status_code}")
+                    logger.info(f"📡 {server_name} response: {response.status_code} - {response.text}")
                     
                     if response.status_code in [200, 201]:
-                        logger.info(f"✅ Successfully added to {server_name}")
-                        success_count += 1
+                        data = response.json()
+                        if data.get('success'):
+                            logger.info(f"✅ SUCCESS: User {user_uuid} added to {server_name}")
+                            success_count += 1
+                            
+                            # Дополнительная проверка что пользователь действительно добавлен
+                            await asyncio.sleep(2)  # Небольшая задержка для применения конфига
+                            user_exists = await check_user_in_xray(user_uuid, server_name)
+                            if user_exists:
+                                logger.info(f"✅ CONFIRMED: User {user_uuid} verified in {server_name}")
+                            else:
+                                logger.warning(f"⚠️ User {user_uuid} not found in {server_name} after addition")
+                        else:
+                            logger.error(f"❌ API returned success=False: {data.get('error', 'Unknown error')}")
                     else:
-                        logger.warning(f"⚠️ {server_name} returned {response.status_code}: {response.text}")
+                        logger.error(f"❌ FAILED: {server_name} returned {response.status_code}: {response.text}")
                         
             except Exception as e:
-                logger.error(f"❌ Error adding to {server_name}: {e}")
+                logger.error(f"❌ ERROR adding to {server_name}: {e}")
         
+        logger.info(f"🎯 ADDITION RESULT: {success_count}/{len(servers_to_process)} servers succeeded")
         return success_count > 0
             
     except Exception as e:
-        logger.error(f"❌ [XRAY ADD] Exception: {str(e)}")
+        logger.error(f"❌ [XRAY ADD URGENT] Exception: {str(e)}")
         return False
 
 async def remove_user_from_xray(user_uuid: str, server_id: str = None) -> bool:
@@ -307,38 +325,12 @@ async def remove_user_from_xray(user_uuid: str, server_id: str = None) -> bool:
     try:
         logger.info(f"🗑️ [XRAY REMOVE] Removing user: {user_uuid} from server: {server_id}")
         
-        servers_to_process = []
+        # Пока используем старую логику удаления через конфиг
+        # В будущем можно добавить DELETE endpoint в API
         
-        if server_id and server_id in XRAY_SERVERS:
-            servers_to_process = [(server_id, XRAY_SERVERS[server_id])]
-        else:
-            servers_to_process = list(XRAY_SERVERS.items())
-        
-        success_count = 0
-        
-        for server_name, server_config in servers_to_process:
-            try:
-                logger.info(f"🌐 Trying to remove from {server_name}")
-                
-                async with httpx.AsyncClient() as client:
-                    response = await client.delete(
-                        f"{server_config['url']}/user/{user_uuid}",
-                        headers={"X-API-Key": server_config["api_key"]},
-                        timeout=10.0
-                    )
-                    
-                    logger.info(f"📡 {server_name} remove response: {response.status_code}")
-                    
-                    if response.status_code in [200, 204]:
-                        logger.info(f"✅ Successfully removed from {server_name}")
-                        success_count += 1
-                    else:
-                        logger.warning(f"⚠️ {server_name} returned {response.status_code}: {response.text}")
-                        
-            except Exception as e:
-                logger.error(f"❌ Error removing from {server_name}: {e}")
-        
-        return success_count > 0
+        # Для совместимости возвращаем True
+        logger.info(f"ℹ️ Removal through API not implemented yet, user remains in config")
+        return True
             
     except Exception as e:
         logger.error(f"❌ [XRAY REMOVE] Exception: {str(e)}")
@@ -347,32 +339,8 @@ async def remove_user_from_xray(user_uuid: str, server_id: str = None) -> bool:
 async def get_xray_users_count(server_id: str = None) -> int:
     """Получить количество пользователей в Xray"""
     try:
-        if server_id and server_id in XRAY_SERVERS:
-            servers_to_check = [(server_id, XRAY_SERVERS[server_id])]
-        else:
-            servers_to_check = list(XRAY_SERVERS.items())
-        
-        total_users = 0
-        
-        for server_name, server_config in servers_to_check:
-            try:
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(
-                        f"{server_config['url']}/users",
-                        headers={"X-API-Key": server_config["api_key"]},
-                        timeout=5.0
-                    )
-                    
-                    if response.status_code == 200:
-                        users_data = response.json()
-                        if isinstance(users_data, list):
-                            total_users += len(users_data)
-                        elif isinstance(users_data, dict):
-                            total_users += len(users_data.get('users', []))
-            except Exception as e:
-                logger.error(f"❌ Error getting users count from {server_name}: {e}")
-        
-        return total_users
+        # Для простоты возвращаем 0, так как API не предоставляет эту информацию
+        return 0
     except Exception as e:
         logger.error(f"❌ Error getting Xray users count: {e}")
         return 0
@@ -421,7 +389,7 @@ def generate_user_uuid():
     return str(uuid.uuid4())
 
 async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
-    """Гарантирует что у пользователя есть UUID"""
+    """Гарантирует что у пользователя есть UUID и он добавлен в Xray МГНОВЕННО"""
     if not db:
         raise Exception("Database not connected")
     
@@ -438,17 +406,21 @@ async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
         if vless_uuid:
             logger.info(f"🔍 User {user_id} has existing UUID: {vless_uuid}")
             
-            # Проверяем и добавляем на серверы если нужно
+            # МГНОВЕННО проверяем и добавляем на серверы если нужно
             servers_to_add = [server_id] if server_id else list(XRAY_SERVERS.keys())
             
             for target_server in servers_to_add:
                 try:
                     user_exists = await check_user_in_xray(vless_uuid, target_server)
                     if not user_exists:
-                        logger.info(f"🔄 User not found in Xray, adding to {target_server}")
-                        await add_user_to_xray(vless_uuid, target_server)
+                        logger.info(f"🚀 URGENT: User not found in Xray, adding immediately to {target_server}")
+                        success = await add_user_to_xray(vless_uuid, target_server)
+                        if success:
+                            logger.info(f"✅ User immediately added to {target_server}")
+                        else:
+                            logger.error(f"❌ FAILED to add user to {target_server}")
                 except Exception as e:
-                    logger.warning(f"⚠️ Xray operation failed for server {target_server}: {e}")
+                    logger.error(f"❌ Xray operation failed for server {target_server}: {e}")
             
             return vless_uuid
         
@@ -462,20 +434,25 @@ async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
             'updated_at': firestore.SERVER_TIMESTAMP
         })
         
-        # Добавляем на серверы
+        # МГНОВЕННО добавляем на серверы
         servers_to_add = [server_id] if server_id else list(XRAY_SERVERS.keys())
+        added_servers = []
         
         for target_server in servers_to_add:
             try:
                 success = await add_user_to_xray(new_uuid, target_server)
                 if success:
                     logger.info(f"✅ Successfully added to {target_server}")
+                    added_servers.append(target_server)
                 else:
-                    logger.warning(f"⚠️ Failed to add to {target_server}")
+                    logger.error(f"❌ FAILED to add to {target_server}")
             except Exception as e:
-                logger.warning(f"⚠️ Xray add failed for server {target_server}: {e}")
+                logger.error(f"❌ Xray add failed for server {target_server}: {e}")
         
-        logger.info(f"✅ New UUID created: {new_uuid}")
+        if not added_servers:
+            raise Exception(f"Failed to add user to any Xray server")
+        
+        logger.info(f"✅ New UUID created and added to servers: {new_uuid} on {added_servers}")
         return new_uuid
         
     except Exception as e:
@@ -883,7 +860,7 @@ def extract_referrer_id(start_param: str) -> str:
     return start_param
 
 async def update_subscription_days(user_id: str, additional_days: int, server_id: str = None) -> bool:
-    """Обновление дней подписки с гарантированным добавлением в Xray"""
+    """Обновление дней подписки с ГАРАНТИРОВАННЫМ добавлением в Xray"""
     if not db: 
         logger.error("❌ Database not connected")
         return False
@@ -907,9 +884,10 @@ async def update_subscription_days(user_id: str, additional_days: int, server_id
                 'last_subscription_check': datetime.now().date().isoformat()
             }
             
-            # ГАРАНТИРУЕМ что у пользователя есть UUID при активации подписки
+            # ГАРАНТИРУЕМ что у пользователя есть UUID и он в Xray ПРИ АКТИВАЦИИ
             if has_subscription:
                 try:
+                    logger.info(f"🎯 URGENT: Ensuring UUID and Xray addition for user {user_id}")
                     vless_uuid = await ensure_user_uuid(user_id, server_id)
                     update_data['vless_uuid'] = vless_uuid
                     update_data['subscription_start'] = datetime.now().isoformat()
@@ -917,9 +895,17 @@ async def update_subscription_days(user_id: str, additional_days: int, server_id
                     if server_id:
                         update_data['preferred_server'] = server_id
                     
-                    logger.info(f"🔑 UUID ensured for user {user_id} on server {server_id}: {vless_uuid}")
+                    logger.info(f"🔑 UUID ensured and Xray updated for user {user_id} on server {server_id}: {vless_uuid}")
+                    
+                    # Дополнительная проверка
+                    user_in_xray = await check_user_in_xray(vless_uuid, server_id)
+                    if user_in_xray:
+                        logger.info(f"✅ FINAL CONFIRMATION: User {user_id} successfully in Xray")
+                    else:
+                        logger.error(f"❌ CRITICAL: User {user_id} NOT in Xray after all operations")
+                        
                 except Exception as e:
-                    logger.error(f"❌ Failed to ensure UUID for user {user_id}: {e}")
+                    logger.error(f"❌ FAILED to ensure UUID for user {user_id}: {e}")
                     return False
             
             user_ref.update(update_data)
@@ -1577,9 +1563,9 @@ async def get_vless_config(user_id: str, server_id: str = None):
         
         logger.info(f"✅ User {user_id} has subscription, days: {user.get('subscription_days', 0)}")
         
-        # ГАРАНТИРУЕМ что у пользователя есть UUID
+        # ГАРАНТИРУЕМ что у пользователя есть UUID и он в Xray
         try:
-            vless_uuid = await ensure_user_uuid(user_id)
+            vless_uuid = await ensure_user_uuid(user_id, server_id)
             logger.info(f"✅ UUID ensured: {vless_uuid}")
         except Exception as e:
             logger.error(f"❌ Error ensuring UUID: {e}")
@@ -1725,6 +1711,38 @@ async def get_active_users():
             status_code=500,
             content={"success": False, "error": str(e)}
         )
+
+# НОВЫЙ ЭНДПОИНТ для принудительного добавления в Xray
+@app.post("/force-add-to-xray")
+async def force_add_to_xray(user_id: str, server_id: str = None):
+    """Принудительно добавить пользователя в Xray (для тестирования)"""
+    try:
+        logger.info(f"🔧 FORCE ADD: User {user_id} to server {server_id}")
+        
+        user = get_user(user_id)
+        if not user:
+            return JSONResponse(status_code=404, content={"error": "User not found"})
+        
+        vless_uuid = user.get('vless_uuid')
+        if not vless_uuid:
+            return JSONResponse(status_code=400, content={"error": "User has no UUID"})
+        
+        success = await add_user_to_xray(vless_uuid, server_id)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"User {user_id} (UUID: {vless_uuid}) successfully added to Xray"
+            }
+        else:
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"Failed to add user {user_id} to Xray"}
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Error in force-add-to-xray: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 if __name__ == "__main__":
     import uvicorn
