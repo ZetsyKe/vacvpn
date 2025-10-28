@@ -389,6 +389,14 @@ def generate_user_uuid():
     return str(uuid.uuid4())
 
 async def ensure_user_uuid(user_id: str, server_id: str = None) -> str:
+    if vless_uuid:
+    logger.info(f"🔍 User {user_id} has existing UUID: {vless_uuid}")
+    servers_to_add = [server_id] if server_id else list(XRAY_SERVERS.keys())
+    added_servers = []
+    for target_server in servers_to_add:
+        try:
+            logger.info(f"🚀 FORCE ADD: Adding user to Xray {target_server} even if exists")
+            success = await add_user_to_xray(vless_uuid, target_server)
     """Гарантирует что у пользователя есть UUID и он добавлен в Xray МГНОВЕННО"""
     if not db:
         raise Exception("Database not connected")
