@@ -1792,6 +1792,108 @@ async def get_user_configs(user_id: str):
     except Exception as e:
         logger.error(f"❌ Error getting user configs: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/admin/xray-current-users")
+async def get_xray_current_users():
+    """Получить всех пользователей из Xray конфигурации"""
+    try:
+        current_uuids = get_current_uuids()
+        
+        # Получаем дополнительную информацию о пользователях из базы
+        users_info = []
+        for uuid in current_uuids:
+            # Находим пользователя в базе по UUID
+            users_ref = db.collection('users')
+            query = users_ref.where('vless_uuid', '==', uuid).limit(1)
+            results = query.stream()
+            
+            user_data = None
+            for doc in results:
+                user_data = doc.to_dict()
+                user_data['user_id'] = doc.id
+                break
+            
+            users_info.append({
+                'uuid': uuid,
+                'user_id': user_data.get('user_id') if user_data else 'Unknown',
+                'username': user_data.get('username', '') if user_data else '',
+                'first_name': user_data.get('first_name', '') if user_data else '',
+                'has_subscription': user_data.get('has_subscription', False) if user_data else False,
+                'subscription_days': user_data.get('subscription_days', 0) if user_data else 0
+            })
+        
+        return {
+            "success": True,
+            "total_users": len(current_uuids),
+            "users": users_info,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting Xray users: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/admin/xray-raw-config")
+async def get_xray_raw_config():
+    """Получить сырую конфигурацию Xray"""
+    try:
+        with open(XRAY_CONFIG_PATH, 'r') as f:
+            config = json.load(f)
+        
+        # Находим VLESS inbound и пользователей
+        vless_inbounds = []
+        for inbound in config.get('inbounds', []):
+            if inbound.get('protocol') == 'vless':
+                clients = inbound.get('settings', {}).get('clients', [])
+                vless_inbounds.append({
+                    'tag': inbound.get('tag', ''),
+                    'port': inbound.get('port'),
+                    'total_clients': len(clients),
+                    'clients': clients
+                })
+        
+        return {
+            "success": True,
+            "vless_inbounds": vless_inbounds,
+            "total_inbounds": len(vless_inbounds)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error reading Xray config: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/admin/xray-stats")
+async def get_xray_stats():
+    """Статистика Xray"""
+    try:
+        current_uuids = get_current_uuids()
+        
+        # Считаем пользователей с подпиской в Xray
+        active_in_xray = 0
+        for uuid in current_uuids:
+            users_ref = db.collection('users')
+            query = users_ref.where('vless_uuid', '==', uuid).limit(1)
+            results = query.stream()
+            
+            for doc in results:
+                user_data = doc.to_dict()
+                if user_data.get('has_subscription') and user_data.get('subscription_days', 0) > 0:
+                    active_in_xray += 1
+                break
+        
+        return {
+            "success": True,
+            "total_users_in_xray": len(current_uuids),
+            "active_subscriptions_in_xray": active_in_xray,
+            "unknown_users_in_xray": len(current_uuids) - active_in_xray,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting Xray stats: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
