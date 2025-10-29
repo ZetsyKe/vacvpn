@@ -247,56 +247,58 @@ async def check_user_in_xray(user_uuid: str, server_id: str = None) -> bool:
         logger.error(f"❌ [XRAY CHECK] Exception: {str(e)}")
         return False
 
-async def add_user_to_xray(user_uuid: str, server_id: str = None) -> bool:
-    """Добавить пользователя в Xray сервер(ы) - МАКСИМАЛЬНО БЫСТРО"""
+def remove_user_from_xray(user_uuid: str) -> bool:
+    """Удалить пользователя из Xray config"""
     try:
-        logger.info(f"🚀 [XRAY ADD FAST] Adding user: {user_uuid} to server: {server_id}")
+        logger.info(f"🔄 Удаляем пользователя {user_uuid} из Xray config...")
         
-        servers_to_process = []
-        
-        if server_id and server_id in XRAY_SERVERS:
-            servers_to_process = [(server_id, XRAY_SERVERS[server_id])]
-        else:
-            servers_to_process = list(XRAY_SERVERS.items())
-        
-        success_count = 0
-        
-        for server_name, server_config in servers_to_process:
-            try:
-                async with httpx.AsyncClient() as client:
-                    payload = {"uuid": user_uuid}
-                    
-                    # Быстрый запрос без лишних проверок
-                    response = await client.post(
-                        f"{server_config['url']}/user",
-                        headers={
-                            "X-API-Key": server_config["api_key"],
-                            "Content-Type": "application/json"
-                        },
-                        json=payload,
-                        timeout=8.0  # Оптимальный таймаут
-                    )
-                    
-                    if response.status_code in [200, 201]:
-                        data = response.json()
-                        if data.get('success'):
-                            logger.info(f"✅ SUCCESS: User {user_uuid} added to {server_name}")
-                            success_count += 1
-                        else:
-                            logger.warning(f"⚠️ API returned success=False but continuing")
-                    else:
-                        logger.warning(f"⚠️ {server_name} returned {response.status_code}, but continuing")
-                        
-            except Exception as e:
-                logger.warning(f"⚠️ Error adding to {server_name}: {e}, but continuing")
-        
-        logger.info(f"🎯 FAST ADDITION: {success_count}/{len(servers_to_process)} servers")
-        return success_count > 0
-            
-    except Exception as e:
-        logger.error(f"❌ [XRAY ADD] Exception: {str(e)}")
-        return False
+        with open(XRAY_CONFIG_PATH, 'r') as f:
+            config = json.load(f)
 
+        user_removed = False
+        
+        # Находим VLESS inbound
+        for inbound in config.get('inbounds', []):
+            if (inbound.get('protocol') == 'vless' and
+                inbound.get('settings', {}).get('clients') is not None):
+                
+                clients = inbound['settings']['clients']
+                original_count = len(clients)
+                
+                # Удаляем пользователя
+                inbound['settings']['clients'] = [
+                    client for client in clients 
+                    if client.get('id') != user_uuid
+                ]
+                
+                if len(inbound['settings']['clients']) < original_count:
+                    user_removed = True
+                    logger.info(f"✅ Пользователь {user_uuid} удален из Xray config")
+                    logger.info(f"📊 Осталось пользователей: {len(inbound['settings']['clients'])}")
+                break
+
+        if not user_removed:
+            logger.info(f"ℹ️ Пользователь {user_uuid} не найден в Xray config")
+            return True
+
+        # Сохраняем конфиг
+        with open(XRAY_CONFIG_PATH, 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        # Перезагружаем Xray
+        try:
+            subprocess.run(['systemctl', 'reload', 'xray'], check=True, timeout=10)
+            logger.info("🔄 Xray перезагружен после удаления пользователя")
+        except Exception as e:
+            logger.error(f"❌ Ошибка перезагрузки Xray: {e}")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка удаления пользователя из Xray: {e}")
+        return False
+        
 async def remove_user_from_xray(user_uuid: str, server_id: str = None) -> bool:
     """Удалить пользователя из Xray сервер(ы)"""
     try:
@@ -1860,37 +1862,6 @@ async def get_xray_raw_config():
         
     except Exception as e:
         logger.error(f"❌ Error reading Xray config: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-@app.get("/admin/xray-stats")
-async def get_xray_stats():
-    """Статистика Xray"""
-    try:
-        current_uuids = get_current_uuids()
-        
-        # Считаем пользователей с подпиской в Xray
-        active_in_xray = 0
-        for uuid in current_uuids:
-            users_ref = db.collection('users')
-            query = users_ref.where('vless_uuid', '==', uuid).limit(1)
-            results = query.stream()
-            
-            for doc in results:
-                user_data = doc.to_dict()
-                if user_data.get('has_subscription') and user_data.get('subscription_days', 0) > 0:
-                    active_in_xray += 1
-                break
-        
-        return {
-            "success": True,
-            "total_users_in_xray": len(current_uuids),
-            "active_subscriptions_in_xray": active_in_xray,
-            "unknown_users_in_xray": len(current_uuids) - active_in_xray,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ Error getting Xray stats: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
