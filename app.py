@@ -1676,7 +1676,122 @@ async def admin_cancel_subscription(user_id: str):
     except Exception as e:
         logger.error(f"❌ Error cancelling subscription: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
+@app.get("/admin/last-added-users")
+async def get_last_added_users(limit: int = 10):
+    """Получить последних добавленных пользователей"""
+    try:
+        if not db:
+            return JSONResponse(status_code=500, content={"error": "Database not connected"})
+        
+        # Получаем пользователей отсортированных по дате создания
+        users_ref = db.collection('users').order_by('created_at', direction=firestore.Query.DESCENDING).limit(limit)
+        users = users_ref.stream()
+        
+        last_users = []
+        for user_doc in users:
+            user_data = user_doc.to_dict()
+            user_data['user_id'] = user_doc.id
+            
+            # Получаем информацию о подписке
+            has_subscription = user_data.get('has_subscription', False)
+            subscription_days = user_data.get('subscription_days', 0)
+            
+            # Получаем VLESS ключи пользователя
+            vless_keys = get_user_vless_keys(user_doc.id)
+            
+            last_users.append({
+                'user_id': user_doc.id,
+                'username': user_data.get('username', ''),
+                'first_name': user_data.get('first_name', ''),
+                'last_name': user_data.get('last_name', ''),
+                'created_at': user_data.get('created_at'),
+                'has_subscription': has_subscription,
+                'subscription_days': subscription_days,
+                'vless_uuid': user_data.get('vless_uuid'),
+                'balance': user_data.get('balance', 0),
+                'vless_keys_count': len(vless_keys),
+                'vless_keys': vless_keys
+            })
+        
+        return {
+            "success": True,
+            "total_count": len(last_users),
+            "users": last_users
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting last added users: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
+@app.get("/admin/recent-configs")
+async def get_recent_configs(limit: int = 20):
+    """Получить последние созданные конфиги"""
+    try:
+        if not db:
+            return JSONResponse(status_code=500, content={"error": "Database not connected"})
+        
+        # Получаем последние VLESS ключи
+        vless_keys_ref = db.collection('vless_keys').order_by('created_at', direction=firestore.Query.DESCENDING).limit(limit)
+        vless_keys = vless_keys_ref.stream()
+        
+        recent_configs = []
+        for key_doc in vless_keys:
+            key_data = key_doc.to_dict()
+            
+            # Получаем информацию о пользователе
+            user_data = get_user(key_data.get('user_id'))
+            
+            recent_configs.append({
+                'user_id': key_data.get('user_id'),
+                'username': user_data.get('username', '') if user_data else 'Unknown',
+                'server_id': key_data.get('server_id'),
+                'created_at': key_data.get('created_at'),
+                'is_active': key_data.get('is_active', True),
+                'config_data': key_data.get('config_data', {})
+            })
+        
+        return {
+            "success": True,
+            "total_count": len(recent_configs),
+            "configs": recent_configs
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting recent configs: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/admin/user-configs/{user_id}")
+async def get_user_configs(user_id: str):
+    """Получить все конфиги конкретного пользователя"""
+    try:
+        if not db:
+            return JSONResponse(status_code=500, content={"error": "Database not connected"})
+        
+        user = get_user(user_id)
+        if not user:
+            return JSONResponse(status_code=404, content={"error": "User not found"})
+        
+        vless_keys = get_user_vless_keys(user_id)
+        
+        return {
+            "success": True,
+            "user_info": {
+                "user_id": user_id,
+                "username": user.get('username', ''),
+                "first_name": user.get('first_name', ''),
+                "last_name": user.get('last_name', ''),
+                "has_subscription": user.get('has_subscription', False),
+                "subscription_days": user.get('subscription_days', 0),
+                "vless_uuid": user.get('vless_uuid'),
+                "balance": user.get('balance', 0)
+            },
+            "configs": vless_keys,
+            "total_configs": len(vless_keys)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting user configs: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
